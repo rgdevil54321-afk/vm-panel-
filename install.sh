@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  ⚡ vPanel Pro - Next-Gen QEMU Virtual Machine Management Web Panel
+#  ⚡ Venlix Nodes - Next-Gen QEMU Virtual Machine Management Web Panel
 #  Full Support Installer for Debian (11, 12, 13) & Ubuntu (20.04, 22.04, 24.04)
 # =============================================================================
 
@@ -75,7 +75,7 @@ do_install() {
   safe_clear
   printf "${CYAN}${BOLD}"
   echo "================================================================="
-  echo "             🚀 Installing vPanel Pro on $OS_NAME                "
+  echo "             🚀 Installing Venlix Nodes on $OS_NAME                "
   echo "================================================================="
   printf "${NC}\n"
 
@@ -183,7 +183,7 @@ EOF
     npm install -g pm2 --no-audit --no-fund
   fi
 
-  log_info "Starting vPanel Pro cluster with PM2..."
+  log_info "Starting Venlix Nodes cluster with PM2..."
   pm2 delete vpanel >/dev/null 2>&1 || true
   pm2 start ecosystem.config.js || pm2 start src/server.js --name vpanel
   pm2 save
@@ -195,7 +195,7 @@ EOF
   echo ""
   printf "${GREEN}${BOLD}"
   echo "================================================================="
-  echo "           🎉 vPanel Pro Successfully Installed & Online!        "
+  echo "           🎉 Venlix Nodes Successfully Installed & Online!        "
   echo "================================================================="
   printf "${NC}\n"
   echo "  🌐 Web Panel URL:    http://${s_ip}:3001"
@@ -272,7 +272,7 @@ do_update() {
   safe_clear
   printf "${CYAN}${BOLD}"
   echo "================================================================="
-  echo "                   🔄 Updating vPanel Pro                        "
+  echo "                   🔄 Updating Venlix Nodes                        "
   echo "================================================================="
   printf "${NC}\n"
 
@@ -295,7 +295,7 @@ do_update() {
     pm2 save
   fi
 
-  log_ok "vPanel Pro has been updated successfully!"
+  log_ok "Venlix Nodes has been updated successfully!"
   echo ""
 }
 
@@ -381,11 +381,11 @@ do_uninstall() {
   safe_clear
   printf "${RED}${BOLD}"
   echo "================================================================="
-  echo "                 🗑️  Uninstall vPanel Pro                        "
+  echo "                 🗑️  Uninstall Venlix Nodes                        "
   echo "================================================================="
   printf "${NC}\n"
 
-  read -r -p "Are you sure you want to completely uninstall vPanel Pro? (y/N): " CONFIRM
+  read -r -p "Are you sure you want to completely uninstall Venlix Nodes? (y/N): " CONFIRM
   if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
     log_info "Uninstall aborted."
     return
@@ -408,7 +408,7 @@ do_uninstall() {
     log_info "Preserving database and VM disks."
   fi
 
-  log_ok "vPanel Pro has been uninstalled successfully."
+  log_ok "Venlix Nodes has been uninstalled successfully."
   echo ""
 }
 
@@ -420,7 +420,7 @@ show_menu() {
     safe_clear
     printf "${CYAN}${BOLD}"
     echo "================================================================="
-    echo "                   ⚡ vPanel Pro Management Suite                "
+    echo "                   ⚡ Venlix Nodes Management Suite                "
     echo "            Full Support: Debian 11/12/13 & Ubuntu 20/22/24      "
     echo "================================================================="
     printf "${NC}"
@@ -456,7 +456,7 @@ show_menu() {
         read -r -p "Press Enter to return to menu..." _
         ;;
       0)
-        log_info "Exiting vPanel Pro Installer. Goodbye!"
+        log_info "Exiting Venlix Nodes Installer. Goodbye!"
         exit 0
         ;;
       *)
