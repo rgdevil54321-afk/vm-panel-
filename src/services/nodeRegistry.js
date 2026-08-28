@@ -1,8 +1,8 @@
 'use strict';
 const http = require('http');
 const https = require('https');
-const { db } = require('./db');
-const logger = require('./logger');
+const { db } = require('../lib/db');
+const logger = require('../lib/logger');
 
 // ============================================================
 // Venlix Nodes - panel-side node registry & agent client
