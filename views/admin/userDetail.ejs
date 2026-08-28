@@ -1,0 +1,216 @@
+<%- include('../partials/head', { title: target.username }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px"><%= target.username %></h2>
+    <div class="flex" style="gap:8px">
+      <% if (target.suspended) { %><button class="btn btn-sm btn-green" onclick="setField({suspended:false})">Unsuspend</button><% } else { %><button class="btn btn-sm" onclick="setField({suspended:true})">Suspend</button><% } %>
+      <% if (target.root_admin || target.role === 'admin') { %><button class="btn btn-sm" onclick="setField({role:'user'})">Demote to User</button><% } else { %><button class="btn btn-sm" onclick="setField({role:'admin'})">Promote to Admin</button><% } %>
+      <button class="btn btn-sm btn-danger" onclick="delUser()">Delete User</button>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-title">Edit User Profile</div>
+      <div class="form-group"><label>Username</label><input id="eUser" value="<%= target.username %>"/></div>
+      <div class="form-group"><label>Email</label><input id="eEmail" value="<%= target.email %>"/></div>
+      <div class="form-group"><label>Display Name</label><input id="eName" value="<%= target.name || '' %>"/></div>
+      <div class="form-group"><label>New Password (leave blank to keep)</label><input id="ePass" type="password" placeholder="••••••••"/></div>
+      <div class="check"><input type="checkbox" id="eVerified" <%= target.verified ? 'checked' : '' %>/> Email verified</div>
+      <div class="mt-3"><button class="btn btn-primary" onclick="saveUser()">Save User Settings</button></div>
+    </div>
+
+    <!-- Virtual Machines Owned Card -->
+    <div class="card">
+      <div class="flex-between mb-3" style="flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">Servers Owned (<%= vms.length %>)</div>
+        <div class="flex" style="gap:6px">
+          <% if (typeof otherVms !== 'undefined' && otherVms.length > 0) { %>
+            <button type="button" class="btn btn-sm" onclick="openAssignModal()" title="Assign an existing server to this user">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+              Assign Existing VM
+            </button>
+          <% } %>
+          <a href="/admin/servers/create?owner_id=<%= target.id %>" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 5v14M5 12h14"/></svg>
+            Deploy VM
+          </a>
+        </div>
+      </div>
+
+      <% if (vms.length === 0) { %>
+        <div class="empty" style="padding:24px">
+          <div class="muted">No virtual machines assigned to <%= target.username %> yet.</div>
+          <div class="mt-3 flex" style="justify-content:center;gap:8px">
+            <% if (typeof otherVms !== 'undefined' && otherVms.length > 0) { %>
+              <button type="button" class="btn btn-sm" onclick="openAssignModal()">Assign Existing VM</button>
+            <% } %>
+            <a href="/admin/servers/create?owner_id=<%= target.id %>" class="btn btn-sm btn-primary">Create First VM</a>
+          </div>
+        </div>
+      <% } else { %>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Virtual Machine</th>
+              <th>Hardware</th>
+              <th>SSH Port</th>
+              <th>Status</th>
+              <th class="right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+          <% for (const v of vms) { %>
+            <tr>
+              <td>
+                <a href="/admin/servers/<%= v.id %>" style="color:#fff;font-weight:700"><%= v.name %></a>
+                <div class="muted text-sm mono" style="font-size:11px"><%= v.username %>@<%= v.hostname || 'localhost' %></div>
+              </td>
+              <td><span class="muted text-sm"><%= v.cpus %> vCPU · <%= v.memory %>MB</span></td>
+              <td class="mono font-bold" style="color:var(--accent-2)">Port <%= v.ssh_port %></td>
+              <td><span class="pill <%= v.status === 'running' ? 'pill-green' : 'pill-gray' %>"><%= v.status === 'running' ? '● Online' : 'Stopped' %></span></td>
+              <td class="right">
+                <div class="flex right" style="gap:4px">
+                  <a class="btn btn-sm" href="/servers/<%= v.id %>/console" title="Open SSH Console">Terminal</a>
+                  <a class="btn btn-sm" href="/admin/servers/<%= v.id %>">Manage</a>
+                </div>
+              </td>
+            </tr>
+          <% } %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-title">Login History</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Status</th><th>IP</th><th>When</th></tr></thead>
+        <tbody>
+        <% for (const h of loginHistory) { %>
+          <tr><td><span class="pill <%= h.status === 'success' ? 'pill-green' : 'pill-red' %>"><%= h.status %></span></td><td class="mono"><%= h.ip %></td><td class="muted"><%= new Date(h.created_at).toLocaleString() %></td></tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-title">Activity</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Event</th><th>Details</th><th>IP</th><th>When</th></tr></thead>
+        <tbody>
+        <% for (const a of logs) { %>
+          <tr>
+            <td><span class="pill pill-blue"><%= a.event %></span></td>
+            <td class="muted truncate" style="max-width:320px"><%= a.details ? JSON.stringify(a.details) : '-' %></td>
+            <td class="muted"><%= a.ip || '-' %></td>
+            <td class="muted"><%= new Date(a.created_at).toLocaleString() %></td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Existing VM Modal -->
+<% if (typeof otherVms !== 'undefined' && otherVms.length > 0) { %>
+<div id="assignModal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
+    <div class="card" style="width:min(480px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+      <div class="flex-between mb-3">
+        <h3 style="font-size:18px;font-weight:700;margin:0">Assign Existing VM to <%= target.username %></h3>
+        <button type="button" class="btn btn-sm" onclick="closeAssignModal()">✕</button>
+      </div>
+      <p class="muted text-sm mb-3">Select any existing virtual machine to transfer and assign its ownership to <strong><%= target.username %></strong>.</p>
+      
+      <div class="form-group mb-4">
+        <label>Select Virtual Machine</label>
+        <select id="assignVmSelect" style="width:100%;padding:10px;border-radius:8px">
+          <% for (const ov of otherVms) { %>
+            <option value="<%= ov.id %>"><%= ov.name %> (Current Owner: <%= ov.owner_username %> · Port <%= ov.ssh_port %>)</option>
+          <% } %>
+        </select>
+      </div>
+
+      <div class="flex right" style="gap:8px">
+        <button type="button" class="btn" onclick="closeAssignModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitAssignVm()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 13l4 4L19 7"/></svg>
+          Confirm Assignment
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+
+<script>
+function val(id) { return document.getElementById(id).value; }
+
+function openAssignModal() {
+  const m = document.getElementById('assignModal');
+  if (m) m.style.display = 'block';
+}
+
+function closeAssignModal() {
+  const m = document.getElementById('assignModal');
+  if (m) m.style.display = 'none';
+}
+
+async function submitAssignVm() {
+  const vmSelect = document.getElementById('assignVmSelect');
+  if (!vmSelect || !vmSelect.value) return;
+  const vmId = vmSelect.value;
+  try {
+    const res = await fetch('/admin/users/<%= target.id %>/assign-vm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + vpToken() },
+      body: JSON.stringify({ vm_id: vmId })
+    });
+    const d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Failed to assign VM');
+    VP.toast('VM assigned to <%= target.username %> successfully!', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+  }
+}
+
+async function saveUser() {
+  const body = { username: val('eUser'), email: val('eEmail'), name: val('eName'), verified: document.getElementById('eVerified').checked };
+  if (val('ePass')) body.password = val('ePass');
+  try {
+    await VP.api('/admin/users/<%= target.id %>/update', { method: 'POST', body });
+    VP.toast('User updated', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function setField(body) {
+  try {
+    await VP.api('/admin/users/<%= target.id %>/update', { method: 'POST', body });
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function delUser() {
+  const ok = await VP.confirmDialog('Delete <%= target.username %>? This removes their servers and data.', { title: 'Delete user?' });
+  if (!ok) return;
+  try {
+    await VP.api('/admin/users/<%= target.id %>/delete', { method: 'POST' });
+    VP.toast('User deleted', 'success');
+    setTimeout(() => location.href = '/admin/users', 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

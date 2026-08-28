@@ -1,0 +1,15 @@
+<%- include('../partials/head', { title: 'Email Verification' }) %>
+<%- include('../partials/ambient') %>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h1 class="auth-title">Email verification</h1>
+    <% if (typeof ok !== 'undefined' && ok) { %>
+      <div class="alert alert-success">Your email has been verified successfully! You can now sign in.</div>
+      <a href="/login" class="btn btn-primary btn-block">Go to Login</a>
+    <% } else { %>
+      <div class="alert alert-error"><%= error || 'Verification failed' %></div>
+      <a href="/login" class="btn btn-block">Back to login</a>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,185 @@
+<%- include('../partials/head', { title: 'User Management' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-4">
+    <div>
+      <h2 style="font-size:24px;font-weight:800;letter-spacing:-0.4px">User Management</h2>
+      <div class="muted" style="margin-top:2px">Manage panel users, roles, and security permissions</div>
+    </div>
+    <button class="btn btn-primary" onclick="openCreate()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+      Create User
+    </button>
+  </div>
+
+  <div class="card">
+    <div class="flex-between mb-3">
+      <div class="card-title" style="margin:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        Registered Users (<%= users.length %>)
+      </div>
+      <input type="search" id="userFilter" placeholder="Filter by name or email..." style="width:230px;padding:6px 12px;font-size:13px"/>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>User Profile</th>
+            <th>Role</th>
+            <th>Instances</th>
+            <th>Account Status</th>
+            <th>2FA Security</th>
+            <th>Last Active</th>
+            <th class="right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        <% for (const u of users) { %>
+          <tr class="user-row">
+            <td>
+              <div class="flex" style="gap:11px">
+                <div class="avatar" style="width:34px;height:34px;font-size:13px">
+                  <% if (u.avatar) { %>
+                    <img src="<%= u.avatar %>"/>
+                  <% } else { %>
+                    <%= (u.username[0]||'U').toUpperCase() %>
+                  <% } %>
+                </div>
+                <div>
+                  <a href="/admin/users/<%= u.id %>" style="font-weight:700;color:#fff"><%= u.username %></a>
+                  <div class="muted text-sm"><%= u.email %></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <% if (u.root_admin || u.role === 'admin') { %>
+                <span class="pill pill-yellow font-bold">Admin</span>
+              <% } else { %>
+                <span class="pill pill-blue font-bold">User</span>
+              <% } %>
+            </td>
+            <td>
+              <a href="/admin/users/<%= u.id %>" class="pill <%= u.vm_count > 0 ? 'pill-blue' : 'pill-gray' %> font-bold" style="text-decoration:none" title="View VMs for <%= u.username %>">
+                <%= u.vm_count || 0 %> VMs
+              </a>
+            </td>
+            <td>
+              <span class="pill <%= u.suspended ? 'pill-red' : 'pill-green' %>">
+                <%= u.suspended ? 'Suspended' : 'Active' %>
+              </span>
+            </td>
+            <td>
+              <span class="pill <%= u.tfa_enabled ? 'pill-green' : 'pill-gray' %>">
+                <%= u.tfa_enabled ? 'Enabled' : 'Disabled' %>
+              </span>
+            </td>
+            <td class="muted text-sm"><%= u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never' %></td>
+            <td class="right">
+              <div class="flex right" style="gap:6px">
+                <a class="btn btn-sm btn-primary" href="/admin/servers/create?owner_id=<%= u.id %>" title="Deploy new VM for <%= u.username %>">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" style="vertical-align:-1px;margin-right:2px"><path d="M12 5v14M5 12h14"/></svg>+ VM
+                </a>
+                <a class="btn btn-sm" href="/admin/users/<%= u.id %>">Manage</a>
+                <% if (u.suspended) { %>
+                  <button class="btn btn-sm btn-green" onclick="suspend(<%= u.id %>, false)">Unsuspend</button>
+                <% } else { %>
+                  <button class="btn btn-sm" onclick="suspend(<%= u.id %>, true)">Suspend</button>
+                <% } %>
+                <button class="btn btn-sm btn-danger" onclick="del(<%= u.id %>)">Delete</button>
+              </div>
+            </td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Create User Modal -->
+<div id="userModal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
+    <div class="card" style="width:min(480px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+      <div class="flex-between mb-3">
+        <h3 style="font-size:18px;font-weight:700">Create New User</h3>
+        <button class="icon-btn" style="width:28px;height:28px" onclick="document.getElementById('userModal').style.display='none'">✕</button>
+      </div>
+      <div class="form-group"><label>Username *</label><input id="uName" placeholder="e.g. johndoe" required/></div>
+      <div class="form-group"><label>Email Address *</label><input id="uEmail" type="email" placeholder="john@example.com" required/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Password *</label><input id="uPass" type="password" placeholder="••••••••" required/></div>
+        <div class="form-group"><label>Display Name</label><input id="uDisplay" placeholder="John Doe"/></div>
+      </div>
+      <div class="form-group">
+        <label>Account Role</label>
+        <select id="uRole">
+          <option value="user">User (Standard Access)</option>
+          <option value="admin">Administrator (Full Access)</option>
+        </select>
+      </div>
+      <div class="flex right mt-3" style="gap:8px">
+        <button class="btn" onclick="document.getElementById('userModal').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" onclick="createUser()">Create User</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+
+<script>
+function openCreate() { document.getElementById('userModal').style.display = 'block'; }
+function val(id) { return document.getElementById(id).value; }
+
+async function createUser() {
+  const username = val('uName').trim();
+  const email = val('uEmail').trim();
+  const password = val('uPass');
+  if (!username || !email || !password) {
+    return VP.toast('Please fill in all required fields', 'error');
+  }
+  try {
+    await VP.api('/admin/users/create', {
+      method: 'POST',
+      body: { username, email, password, name: val('uDisplay'), role: val('uRole') },
+    });
+    VP.toast('User created successfully', 'success');
+    location.reload();
+  } catch (e) {
+    VP.toast(e.message, 'error');
+  }
+}
+
+async function suspend(id, on) {
+  try {
+    await VP.api('/admin/users/' + id + '/suspend', { method: 'POST', body: { suspend: on } });
+    VP.toast(on ? 'User suspended' : 'User unsuspended', 'success');
+    location.reload();
+  } catch (e) {
+    VP.toast(e.message, 'error');
+  }
+}
+
+async function del(id) {
+  const ok = await VP.confirmDialog('Delete this user? All their virtual machines will also be removed!', { title: 'Delete user?' });
+  if (!ok) return;
+  try {
+    await VP.api('/admin/users/' + id + '/delete', { method: 'POST' });
+    VP.toast('User deleted', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+  }
+}
+
+document.getElementById('userFilter')?.addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  document.querySelectorAll('.user-row').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+});
+</script>

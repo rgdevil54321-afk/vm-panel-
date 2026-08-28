@@ -1,0 +1,11 @@
+<%- include('../partials/head', { title: title || 'Forbidden' }) %>
+<%- include('../partials/ambient') %>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo"><span style="font-size:52px;font-weight:800;color:var(--red)"><%= code || '403' %></span></div>
+    <h1 class="auth-title"><%= title || 'Forbidden' %></h1>
+    <p class="auth-sub"><%= message || 'You do not have permission to view this page.' %></p>
+    <a href="/dashboard" class="btn btn-primary btn-block">Go to Dashboard</a>
+  </div>
+</div>
+<%- include('../partials/foot') %>

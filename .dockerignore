@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+npm-debug.log*
+data/tmp
+data/*.db-journal
+vms/*
+!vms/.gitkeep
+storage/logs/*
+.env.local
+.DS_Store

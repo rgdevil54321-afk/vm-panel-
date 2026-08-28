@@ -1,0 +1,108 @@
+const express = require('express');
+const authService = require('../services/authService');
+const mailService = require('../services/mailService');
+const { settings } = require('../lib/db');
+const activity = require('../services/activityService');
+const router = express.Router();
+
+function render(res, view, vars = {}) {
+  res.render(`auth/${view}`, {
+    page: view,
+    user: null,
+    settings: settings.all(),
+    ...vars,
+  });
+}
+
+router.get('/login', (req, res) => {
+  if (req.user) return res.redirect('/dashboard');
+  render(res, 'login');
+});
+
+router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
+  const { username, password, code } = req.body;
+  const ip = req.ip || req.socket.remoteAddress;
+  const result = authService.attemptLogin(String(username || '').trim(), String(password || ''), ip);
+  if (!result.ok) {
+    return render(res, 'login', { error: result.error, username });
+  }
+  const { user } = result;
+  if (result.tfaRequired) {
+    if (!code) {
+      return render(res, 'login', { tfa: true, tfaUser: user.username, error: null });
+    }
+    const check = authService.confirmTfa(user, code);
+    if (!check.ok) return render(res, 'login', { tfa: true, tfaUser: user.username, error: check.error });
+  }
+  const { token } = authService.finishLogin(user, ip);
+  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+  res.redirect('/dashboard');
+});
+
+router.get('/register', (req, res) => {
+  if (req.user) return res.redirect('/dashboard');
+  const allowed = settings.get('security.allow_register') !== '0';
+  render(res, 'register', { allowed });
+});
+
+router.post('/register', express.urlencoded({ extended: true }), (req, res) => {
+  if (settings.get('security.allow_register') === '0') {
+    return render(res, 'register', { error: 'Registration is disabled by the administrator', allowed: false });
+  }
+  const { username, email, password, name, password2 } = req.body;
+  if (password !== password2) return render(res, 'register', { error: 'Passwords do not match', username, email, name });
+  const requireVerify = settings.get('security.require_verify') === '1';
+  try {
+    const user = authService.createUser({
+      username: String(username || '').trim(),
+      email: String(email || '').trim().toLowerCase(),
+      password: String(password || ''),
+      name: String(name || '').trim() || username,
+      role: 'user',
+      verified: !requireVerify,
+    });
+    if (requireVerify) {
+      const token = authService.createVerifyToken(user);
+      awaitable(mailService.sendVerifyEmail(user, token));
+    }
+    activity.logActivity({ user_id: user.id, event: 'auth:register', ip: req.ip });
+    return render(res, 'register', { success: 'Account created! You can now login.' });
+  } catch (e) {
+    return render(res, 'register', { error: e.message, username, email, name });
+  }
+});
+
+function awaitable(p) { return Promise.resolve(p).catch(() => {}); }
+
+router.get('/forgot', (req, res) => render(res, 'forgot'));
+router.post('/forgot', express.urlencoded({ extended: true }), (req, res) => {
+  const target = authService.findByUsername(String(req.body.email || '').trim().toLowerCase());
+  if (target) {
+    const token = authService.createResetToken(target);
+    awaitable(mailService.sendResetEmail(target, token));
+  }
+  return render(res, 'forgot', { success: 'If that email exists, a reset link has been sent.' });
+});
+
+router.get('/reset', (req, res) => render(res, 'reset', { token: req.query.token || '' }));
+router.post('/reset', express.urlencoded({ extended: true }), (req, res) => {
+  const { token, password, password2 } = req.body;
+  if (password !== password2) return render(res, 'reset', { token, error: 'Passwords do not match' });
+  const result = authService.resetPassword(token, password);
+  if (!result.ok) return render(res, 'reset', { token, error: result.error });
+  return render(res, 'reset', { token: '', success: 'Password reset! You can now login.' });
+});
+
+router.get('/verify', (req, res) => {
+  const result = authService.verifyEmail(req.query.token || '');
+  return render(res, 'verify', { ok: result.ok, error: result.error });
+});
+
+router.get('/logout', (req, res) => {
+  const user = req.user;
+  if (user) activity.logActivity({ user_id: user.id, event: 'auth:logout', ip: req.ip });
+  res.clearCookie('token');
+  res.redirect('/login');
+});
+
+module.exports = router;

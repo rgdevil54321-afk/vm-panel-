@@ -1,0 +1,88 @@
+<%- include('../../partials/head', { title: vm.name + ' - Schedules' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Schedules · <%= vm.name %></h2>
+    <button class="btn btn-primary" onclick="openAdd()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> New Schedule
+    </button>
+  </div>
+  <%- include('_tabs') %>
+
+  <div class="card">
+    <% if (schedules.length === 0) { %>
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <p>No schedules. Automate start, stop and backups with cron.</p>
+      </div>
+    <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Cron</th><th>Action</th><th>Last Run</th><th>Status</th><th class="right"></th></tr></thead>
+        <tbody>
+        <% for (const s of schedules) { %>
+          <tr>
+            <td><strong><%= s.name %></strong></td>
+            <td class="mono"><%= s.cron %></td>
+            <td><span class="pill pill-blue"><%= s.action %></span></td>
+            <td class="muted"><%= s.last_run_at ? new Date(s.last_run_at).toLocaleString() : 'Never' %></td>
+            <td><span class="pill <%= s.enabled ? 'pill-green' : 'pill-gray' %>"><%= s.enabled ? 'Active' : 'Disabled' %></span></td>
+            <td class="right"><button class="btn btn-sm btn-danger" onclick="delSched(<%= s.id %>)">Delete</button></td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<div id="schedModal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:grid;place-items:center;padding:20px">
+    <div class="card" style="width:min(480px,94vw)">
+      <h3 class="mb-2">New Schedule</h3>
+      <div class="form-group"><label>Name</label><input id="sName" placeholder="e.g. Nightly backup"/></div>
+      <div class="form-group">
+        <label>Cron expression or preset</label>
+        <input id="sCron" placeholder="0 2 * * *"/>
+        <div class="form-hint">Presets: hourly · daily · weekly · monthly</div>
+      </div>
+      <div class="form-group">
+        <label>Action</label>
+        <select id="sAction">
+          <option value="start">Start server</option>
+          <option value="stop">Stop server</option>
+          <option value="restart">Restart server</option>
+          <option value="backup" selected>Create backup</option>
+        </select>
+      </div>
+      <div class="flex right">
+        <button class="btn" onclick="document.getElementById('schedModal').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSched()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+function openAdd() { document.getElementById('schedModal').style.display = 'block'; }
+async function saveSched() {
+  try {
+    await VP.api('/servers/<%= vm.id %>/schedules', {
+      method: 'POST',
+      body: { name: document.getElementById('sName').value || 'schedule', cron: document.getElementById('sCron').value, action: document.getElementById('sAction').value, enabled: true },
+    });
+    VP.toast('Schedule saved', 'success');
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function delSched(id) {
+  try {
+    await VP.api(`/servers/<%= vm.id %>/schedules/${id}/delete`, { method: 'POST' });
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

@@ -1,0 +1,138 @@
+<%- include('../partials/head', { title: detail.node.name + ' - Node Overview' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+
+<div class="main">
+  <div class="flex-between mb-4" style="flex-wrap:wrap;gap:12px">
+    <div>
+      <a href="/admin/nodes" class="muted text-sm" style="display:inline-flex;align-items:center;gap:4px;margin-bottom:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to Cluster Overview
+      </a>
+      <h2 style="font-size:24px;font-weight:800;letter-spacing:-0.4px;margin:0"><%= detail.node.name %> <span style="font-size:14px;color:var(--text-dim)">#<%= detail.node.id %></span></h2>
+      <div class="muted" style="margin-top:4px">
+        <%= detail.node.host %>:<%= detail.node.port %><%= detail.node.location ? ' · ' + detail.node.location : '' %> · <%= detail.stats.hostname %> · <%= detail.stats.cpu.model %>
+      </div>
+    </div>
+    <div class="flex right" style="gap:8px;align-items:center">
+      <span class="pill pill-green font-bold"><span class="pulse-dot"></span> Online</span>
+      <button class="btn btn-sm" onclick="location.reload()">Refresh</button>
+      <% if (detail.node.id !== 1) { %>
+        <a class="btn btn-sm btn-danger" href="/admin/nodes" onclick="if(!confirm('Remove this node?'))return false" style="text-decoration:none">Remove Node</a>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="flex" style="gap:8px;margin-bottom:18px;flex-wrap:wrap">
+    <span class="pill pill-blue font-bold"><%= detail.stats.vms.running %> / <%= detail.stats.vms.total %> VMs Running</span>
+    <span class="pill pill-blue font-bold"><%= detail.stats.vms.allocated_cpus %> vCPU Allocated</span>
+    <span class="pill pill-blue font-bold"><%= detail.stats.vms.allocated_memory_mb %> MB RAM Allocated</span>
+    <span class="pill pill-blue font-bold">Uptime <%= Math.floor((detail.stats.uptime_seconds || 0) / 3600) %>h <%= Math.floor(((detail.stats.uptime_seconds || 0) % 3600) / 60) %>m</span>
+    <span class="pill <%= detail.stats.hypervisor && detail.stats.hypervisor.kvm_support ? 'pill-green' : 'pill-yellow' %> font-bold">KVM <%= detail.stats.hypervisor && detail.stats.hypervisor.kvm_support ? 'Enabled' : 'Software (TCG)' %></span>
+  </div>
+
+  <!-- Resource Overview Cards (mirrors admin dashboard overview) -->
+  <div class="grid grid-4 mb-4">
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(99,102,241,0.15);color:#818cf8">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M3 9h3M18 9h3M9 3v3M15 3v3M9 18v3M15 18v3M3 15h3M18 15h3"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= detail.stats.cpu.percent %><span style="font-size:14px;color:var(--text-dim)">%</span></div>
+        <div class="stat-label">CPU Usage · <%= detail.stats.cpu.cores_count %> Cores</div>
+        <div class="meter" style="margin-top:6px"><div class="meter-fill" style="width:<%= detail.stats.cpu.percent %>%"></div></div>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(16,185,129,0.15);color:#34d399">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="12" rx="2"/><path d="M2 20h20"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= detail.stats.memory.percent %><span style="font-size:14px;color:var(--text-dim)">%</span></div>
+        <div class="stat-label">RAM · <%= (detail.stats.memory.used_mb/1024).toFixed(1) %> / <%= (detail.stats.memory.total_mb/1024).toFixed(1) %> GB</div>
+        <div class="meter" style="margin-top:6px"><div class="meter-fill green" style="width:<%= detail.stats.memory.percent %>%"></div></div>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(245,158,11,0.15);color:#fbbf24">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= detail.stats.disk.percent %><span style="font-size:14px;color:var(--text-dim)">%</span></div>
+        <div class="stat-label">Storage · <%= detail.stats.disk.used_gb %> / <%= detail.stats.disk.total_gb %> GB</div>
+        <div class="meter" style="margin-top:6px"><div class="meter-fill yellow" style="width:<%= detail.stats.disk.percent %>%"></div></div>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(56,189,248,0.15);color:#38bdf8">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/><path d="M4 7l3-3M7 7L4 10M20 7l-3-3M17 7l3 3" opacity="0"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="17" r="1"/><circle cx="19" cy="17" r="1"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= (detail.stats.network.rx_kbps/1024).toFixed(2) %><span style="font-size:13px;color:var(--text-dim)"> MB/s</span></div>
+        <div class="stat-label">Network RX · TX <%= (detail.stats.network.tx_kbps/1024).toFixed(2) %> MB/s</div>
+        <div class="muted text-sm" style="font-size:11px;margin-top:4px">Total RX <%= (detail.stats.network.rx_bytes/1024/1024/1024).toFixed(2) %> GB · TX <%= (detail.stats.network.tx_bytes/1024/1024/1024).toFixed(2) %> GB</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Node VM List -->
+  <div class="card">
+    <div class="flex-between mb-3">
+      <div class="card-title" style="margin:0">Virtual Machines On This Node (<%= detail.vms.length %>)</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Instance</th><th>OS</th><th>Specs</th><th>SSH</th><th>Status</th></tr></thead>
+        <tbody>
+        <% for (const v of detail.vms) { %>
+          <tr>
+            <td>
+              <span style="font-weight:700;color:#fff"><%= v.name %></span>
+              <div class="muted text-sm mono" style="font-size:11.5px"><%= v.hostname || v.name %> · <%= v.id %></div>
+            </td>
+            <td><span class="pill pill-blue font-bold"><%= v.os_type || v.os_name || '-' %></span></td>
+            <td class="muted mono text-sm"><%= v.cpus %> vCPU · <%= v.memory %> MB · <%= v.disk_size %></td>
+            <td class="mono font-bold" style="color:var(--accent-2)">Port <%= v.ssh_port %></td>
+            <td><span class="pill <%= v.status === 'running' ? 'pill-green' : 'pill-gray' %>"><%= v.status %></span></td>
+          </tr>
+        <% } %>
+        <% if (detail.vms.length === 0) { %>
+          <tr><td colspan="5" class="muted">No virtual machines on this node.</td></tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Top Resource Consumers -->
+  <div class="card mt-4">
+    <div class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M16 18l6-6-4-4-6 6-4 4-6 6 4 4 6-6 4-4 6 6-4 4z"/><path d="M17 8l1-1M20 5l1-1"/></svg>
+      Top RAM Consumers
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>VM</th><th>CPU</th><th>RAM (live)</th><th>RAM (alloc)</th></tr></thead>
+        <tbody>
+        <% for (const u of (detail.stats.vms.active_top_vms || [])) { %>
+          <tr>
+            <td style="font-weight:700"><%= u.name %></td>
+            <td><span class="pill mono <%= u.cpu_percent > 80 ? 'pill-red' : 'pill-blue' %>"><%= u.cpu_percent %>%</span></td>
+            <td class="mono"><%= u.memory_mb %> MB</td>
+            <td class="mono"><%= u.memory_alloc || '-' %> MB</td>
+          </tr>
+        <% } %>
+        <% if (!detail.stats.vms.active_top_vms || detail.stats.vms.active_top_vms.length === 0) { %>
+          <tr><td colspan="4" class="muted">No running workloads.</td></tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>

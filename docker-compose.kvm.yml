@@ -1,0 +1,13 @@
+version: '3.8'
+
+# KVM Hardware Acceleration Compose File
+# Usage: docker compose -f docker-compose.yml -f docker-compose.kvm.yml up -d
+
+services:
+  vpanel:
+    environment:
+      - NO_KVM=0
+    devices:
+      - /dev/kvm:/dev/kvm
+      - /dev/net/tun:/dev/net/tun
+

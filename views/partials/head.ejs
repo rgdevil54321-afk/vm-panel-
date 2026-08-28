@@ -1,0 +1,38 @@
+<%
+const panelName = settings['panel.name'] || 'Venlix Nodes';
+const favName = settings['panel.favicon_name'] || panelName;
+let favicon = '';
+if (settings['panel.favicon_mode'] === 'upload' && settings['panel.favicon_file']) favicon = settings['panel.favicon_file'];
+else if (settings['panel.favicon_mode'] === 'url' && settings['panel.favicon_url']) favicon = settings['panel.favicon_url'];
+if (!favicon) {
+  favicon = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%236366f1"/><text x="32" y="44" font-size="34" font-family="Arial" font-weight="bold" fill="#fff" text-anchor="middle">' + (favName[0] || 'V').toUpperCase() + '</text></svg>');
+}
+const accent = settings['panel.accent'] || '#6366f1';
+const theme = settings['panel.theme'] || 'dark';
+const navbarTransparent = settings['panel.navbar_transparent'] === '1' || settings['panel.navbar_transparent'] === true;
+const navbarBlur = settings['panel.navbar_blur'] === '1' || settings['panel.navbar_blur'] === true;
+const navbarStyle = settings['panel.navbar_style'] || 'glass';
+%><!DOCTYPE html>
+<html lang="en" data-theme="<%= theme %>">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="referrer" content="no-referrer"/>
+<title><%= panelName %> - <%= title %></title>
+<link rel="icon" href="<%= favicon %>"/>
+<link rel="stylesheet" href="/css/panel.css"/>
+<% if (typeof styles !== 'undefined') { for (const s of styles) { %><link rel="stylesheet" href="<%= s %>"/><% } } %>
+<% if (typeof scripts !== 'undefined') { for (const s of scripts) { %><script src="<%= s %>"></script><% } } %>
+<style>:root { --accent: <%= accent %>; }</style>
+<script>
+window.VP_CONFIG = { apiPort: 3002 };
+function vpApiBase() {
+  return '';
+}
+function vpToken() {
+  const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+  return m ? m[1] : '';
+}
+</script>
+</head>
+<body class="<%= navbarStyle === 'glass' ? '' : 'nav-' + navbarStyle %> <%= navbarTransparent ? 'nav-transparent' : '' %> <%= navbarBlur ? 'nav-blur' : '' %> <%= settings['panel.bg_mode'] !== 'color' ? 'bg-visible' : '' %>">

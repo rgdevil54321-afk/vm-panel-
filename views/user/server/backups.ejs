@@ -1,0 +1,73 @@
+<%- include('../../partials/head', { title: vm.name + ' - Backups' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Backups · <%= vm.name %></h2>
+    <button class="btn btn-primary" onclick="createBackup()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Create Backup
+    </button>
+  </div>
+  <%- include('_tabs') %>
+
+  <div class="card">
+    <% if (backups.length === 0) { %>
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+        <p>No backups yet. Create your first backup to protect your data.</p>
+      </div>
+    <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Size</th><th>Type</th><th>Created</th><th class="right">Actions</th></tr></thead>
+        <tbody>
+        <% for (const b of backups) { %>
+          <tr>
+            <td class="mono"><%= b.name %></td>
+            <td><%= (b.size / 1024 / 1024).toFixed(1) %> MB</td>
+            <td><span class="pill pill-blue"><%= b.kind %></span></td>
+            <td class="muted"><%= new Date(b.created_at).toLocaleString() %></td>
+            <td class="right">
+              <div class="flex right" style="gap:6px">
+                <form method="post" action="/servers/<%= vm.id %>/backups/<%= b.id %>/download" style="display:inline"><button class="btn btn-sm">Download</button></form>
+                <button class="btn btn-sm btn-primary" onclick="restore(<%= b.id %>)">Restore</button>
+                <button class="btn btn-sm btn-danger" onclick="delBackup(<%= b.id %>)">Delete</button>
+              </div>
+            </td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+async function createBackup() {
+  try {
+    const d = await VP.api('/servers/<%= vm.id %>/backups', { method: 'POST', body: { name: 'manual-' + Date.now() } });
+    VP.toast('Backup created', 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function restore(id) {
+  const ok = await VP.confirmDialog('Restoring will REPLACE the server disk with this backup. The server will be stopped. Continue?', { title: 'Restore backup?' });
+  if (!ok) return;
+  try {
+    await VP.api(`/servers/<%= vm.id %>/backups/${id}/restore`, { method: 'POST' });
+    VP.toast('Backup restored', 'success');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function delBackup(id) {
+  const ok = await VP.confirmDialog('Delete this backup?');
+  if (!ok) return;
+  try {
+    await VP.api(`/servers/<%= vm.id %>/backups/${id}/delete`, { method: 'POST' });
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

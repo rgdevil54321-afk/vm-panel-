@@ -1,0 +1,67 @@
+<%
+const isAdmin = user && (user.role === 'admin' || user.root_admin);
+const hasVm = typeof vm !== 'undefined' && vm;
+function act(page, current) {
+  if (page === current) return 'active';
+  if (page.startsWith('admin-') && current && current.startsWith(page)) return 'active';
+  return '';
+}
+function vmNav(icon, label, slug, current) {
+  if (!hasVm) return '';
+  const href = `/servers/${vm.id}/${slug}`;
+  return `<a href="${href}" class="nav-link ${act(slug, current)}">${icon}<span>${label}</span></a>`;
+}
+const iconOverview = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>';
+const iconConsole = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg>';
+const iconFiles = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+const iconBackups = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>';
+const iconClock = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
+const iconRocket = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2zM9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>';
+const iconSettings = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+const iconUser = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+const iconUsers = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const iconActivity = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>';
+const iconServer = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>';
+const iconPlus = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>';
+const iconHome = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>';
+const iconPalette = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>';
+const iconLogout = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>';
+const iconShield = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+const iconKey = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>';
+%>
+<div class="sidebar">
+  <div class="nav-section-title">Menu</div>
+  <a href="/dashboard" class="nav-link <%= act('dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span>Dashboard</span></a>
+
+  <% if (hasVm) { %>
+  <div class="nav-section-title">Server Management</div>
+  <%- vmNav(iconOverview, 'Overview', 'overview', page) %>
+  <%- vmNav(iconConsole, 'Terminal', 'console', page) %>
+  <%- vmNav(iconFiles, 'File Manager', 'files', page) %>
+  <%- vmNav(iconBackups, 'Backups', 'backups', page) %>
+  <%- vmNav(iconClock, 'Schedules', 'schedules', page) %>
+  <%- vmNav(iconRocket, 'Startup', 'startup', page) %>
+  <%- vmNav(iconSettings, 'Settings', 'settings', page) %>
+  <%- vmNav(iconUsers, 'Subusers', 'subusers', page) %>
+  <%- vmNav(iconActivity, 'Activity', 'activity', page) %>
+  <% } %>
+
+  <div class="nav-section-title">Personalization</div>
+  <a href="/profile" class="nav-link <%= act('profile', page) %>"><span class="v-icon"><%- iconUser %></span><span>Profile</span></a>
+  <a href="/settings" class="nav-link <%= act('userSettings', page) %>"><span class="v-icon"><%- iconSettings %></span><span>Settings</span></a>
+  <a href="/activity" class="nav-link <%= act('activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span>Activity</span></a>
+
+  <% if (isAdmin) { %>
+  <div class="nav-section-title">Admin Dashboard</div>
+  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span>Overview</span></a>
+  <a href="/admin/nodes" class="nav-link <%= act('admin-nodes', page) %>"><span class="v-icon"><%- iconServer %></span><span>Nodes &amp; Live Status</span></a>
+  <a href="/admin/servers" class="nav-link <%= act('admin-servers', page) %>"><span class="v-icon"><%- iconServer %></span><span>Server Management</span></a>
+  <a href="/admin/servers/create" class="nav-link <%= act('admin-create', page) %>"><span class="v-icon"><%- iconPlus %></span><span>Create Server</span></a>
+  <a href="/admin/users" class="nav-link <%= act('admin-users', page) %>"><span class="v-icon"><%- iconUsers %></span><span>User Management</span></a>
+  <a href="/admin/activity" class="nav-link <%= act('admin-activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span>Activity Log</span></a>
+  <a href="/admin/settings" class="nav-link <%= act('admin-settings', page) %>"><span class="v-icon"><%- iconPalette %></span><span>Settings Management</span></a>
+  <% } %>
+
+  <div class="nav-section-title">Session</div>
+  <a href="/logout" class="nav-link"><span class="v-icon"><%- iconLogout %></span><span>Logout</span></a>
+</div>

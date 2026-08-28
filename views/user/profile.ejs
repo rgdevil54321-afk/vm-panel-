@@ -1,0 +1,101 @@
+<%- include('../partials/head', { title: 'Profile' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <h2 style="font-size:22px" class="mb-3">Profile</h2>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-title">Account</div>
+      <% if (typeof error !== 'undefined' && error) { %><div class="alert alert-error"><%= error %></div><% } %>
+      <% if (typeof success !== 'undefined' && success) { %><div class="alert alert-success"><%= success %></div><% } %>
+      <form method="post" action="/profile">
+        <div class="flex mb-2">
+          <div class="avatar" style="width:64px;height:64px;font-size:22px"><% if (user.avatar) { %><img src="<%= user.avatar %>"/><% } else { %><%= user.username[0].toUpperCase() %><% } %></div>
+          <label class="btn btn-sm">
+            Upload avatar
+            <input type="file" id="avatarInput" style="display:none" onchange="uploadAvatar(this.files[0])"/>
+          </label>
+        </div>
+        <div class="form-group"><label>Username</label><input value="<%= user.username %>" disabled/></div>
+        <div class="form-group"><label>Email</label><input name="email" value="<%= user.email %>"/></div>
+        <div class="form-group"><label>Display Name</label><input name="name" value="<%= user.name || '' %>"/></div>
+        <div class="form-group"><label>Language</label>
+          <select name="language">
+            <option value="en" <%= user.language === 'en' ? 'selected' : '' %>>English</option>
+            <option value="hi" <%= user.language === 'hi' ? 'selected' : '' %>>हिन्दी</option>
+            <option value="bn" <%= user.language === 'bn' ? 'selected' : '' %>>বাংলা</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Update Profile</button>
+      </form>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-title">Change Password</div>
+        <div class="form-group"><label>Current Password</label><input type="password" id="pCurrent"/></div>
+        <div class="form-group"><label>New Password</label><input type="password" id="pNew"/></div>
+        <div class="form-group"><label>Confirm New Password</label><input type="password" id="pNew2"/></div>
+        <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+      </div>
+      <div class="card mt-3">
+        <div class="card-title">Two-Factor Authentication</div>
+        <p class="muted mb-2"><%= user.tfa_enabled ? '2FA is enabled on your account.' : 'Add an extra layer of security with a TOTP authenticator app.' %></p>
+        <div class="flex">
+          <a href="/settings/tfa/setup" class="btn <%= user.tfa_enabled ? '' : 'btn-primary' %>">Manage 2FA</a>
+          <% if (user.tfa_enabled) { %><button class="btn btn-danger" onclick="disableTfa()">Disable 2FA</button><% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-title">Login History</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Status</th><th>IP</th><th>When</th></tr></thead>
+        <tbody>
+        <% for (const h of loginHistory) { %>
+          <tr>
+            <td><span class="pill <%= h.status === 'success' ? 'pill-green' : 'pill-red' %>"><%= h.status %></span></td>
+            <td class="mono"><%= h.ip %></td>
+            <td class="muted"><%= new Date(h.created_at).toLocaleString() %></td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+async function uploadAvatar(file) {
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('avatar', file);
+  const r = await fetch('/profile/avatar', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { VP.toast('Avatar updated', 'success'); setTimeout(() => location.reload(), 600); }
+  else VP.toast(d.error || 'Upload failed', 'error');
+}
+async function changePassword() {
+  if (document.getElementById('pNew').value !== document.getElementById('pNew2').value) return VP.toast('Passwords do not match', 'error');
+  try {
+    await VP.api('/profile/password', { method: 'POST', body: { current: document.getElementById('pCurrent').value, password: document.getElementById('pNew').value } });
+    VP.toast('Password updated', 'success');
+    document.querySelectorAll('#pCurrent, #pNew, #pNew2').forEach(i => i.value = '');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function disableTfa() {
+  const code = prompt('Enter your 2FA code to disable:');
+  if (!code) return;
+  try {
+    await VP.api('/settings/tfa/disable', { method: 'POST', body: { code } });
+    VP.toast('2FA disabled', 'success');
+    setTimeout(() => location.reload(), 600);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

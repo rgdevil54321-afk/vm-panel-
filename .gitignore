@@ -1,0 +1,10 @@
+node_modules/
+data/
+vms/
+storage/
+public/uploads/
+public/vendor/novnc/
+.env
+npm-debug.log*
+*.log
+.DS_Store

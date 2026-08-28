@@ -1,0 +1,69 @@
+<%- include('../partials/head', { title: 'Settings' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <h2 style="font-size:22px" class="mb-3">Settings</h2>
+  <% if (typeof error !== 'undefined' && error) { %><div class="alert alert-error"><%= error %></div><% } %>
+  <% if (typeof success !== 'undefined' && success) { %><div class="alert alert-success"><%= success %></div><% } %>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-title">Preferences</div>
+      <form method="post" action="/settings">
+        <div class="form-group"><label>Language</label>
+          <select name="language">
+            <option value="en" <%= user.language === 'en' ? 'selected' : '' %>>English</option>
+            <option value="hi" <%= user.language === 'hi' ? 'selected' : '' %>>हिन्दी</option>
+            <option value="bn" <%= user.language === 'bn' ? 'selected' : '' %>>বাংলা</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Save Preferences</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Two-Factor Authentication (2FA)</div>
+      <% if (typeof tfaSetup !== 'undefined' && tfaSetup) { %>
+        <div class="alert alert-info">
+          Scan the QR code with your authenticator app (Google Authenticator, Authy, etc), then enter the 6-digit code below.
+        </div>
+        <div class="right mb-2"><img id="qrcode" src="/qrcode?data=<%= encodeURIComponent(tfaSetup.otpauth_url) %>" alt="QR code" style="background:#fff;border-radius:10px;padding:8px"/></div>
+        <div class="form-group"><label>Code</label><input id="tfaCode" inputmode="numeric" placeholder="6-digit code"/></div>
+        <div class="flex">
+          <button class="btn btn-primary" onclick="enableTfa()">Enable 2FA</button>
+          <button class="btn" onclick="window.location='/settings'">Cancel</button>
+        </div>
+      <% } else { %>
+        <% if (user.tfa_enabled) { %>
+          <p class="muted mb-2">2FA is currently <strong>enabled</strong>. To disable, enter a current code.</p>
+          <div class="form-group"><label>Code</label><input id="tfaCode2" inputmode="numeric" placeholder="6-digit code"/></div>
+          <button class="btn btn-danger" onclick="disableTfa()">Disable 2FA</button>
+        <% } else { %>
+          <p class="muted mb-2">2FA is disabled. Protect your account with a TOTP authenticator app.</p>
+          <a class="btn btn-primary" href="/settings/tfa/setup">Set up 2FA</a>
+        <% } %>
+      <% } %>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+async function enableTfa() {
+  const code = document.getElementById('tfaCode').value;
+  try {
+    await VP.api('/settings/tfa/enable', { method: 'POST', body: { code } });
+    VP.toast('2FA enabled', 'success');
+    setTimeout(() => location.href = '/settings', 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function disableTfa() {
+  const code = (document.getElementById('tfaCode2') || {}).value;
+  try {
+    await VP.api('/settings/tfa/disable', { method: 'POST', body: { code } });
+    VP.toast('2FA disabled', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

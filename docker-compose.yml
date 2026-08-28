@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  vpanel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vpanel-pro
+    restart: unless-stopped
+    ports:
+      - "3001:3001"          # Web Management Panel
+      - "3002:3002"          # REST API & Socket.IO
+      - "25501-25600:25501-25600" # VM SSH & Port Forwarding Range
+    volumes:
+      - ./data:/app/data
+      - ./vms:/app/vms
+      - ./uploads:/app/uploads
+      - ./storage/logs:/app/storage/logs
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - API_PORT=3002
+      - NO_KVM=1             # Set to 1 for No-KVM TCG software emulation mode
+      - ADMIN_USER=admin
+      - ADMIN_EMAIL=admin@vpanel.local
+      - ADMIN_PASSWORD=admin123
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined

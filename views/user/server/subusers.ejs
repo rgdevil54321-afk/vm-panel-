@@ -1,0 +1,88 @@
+<%- include('../../partials/head', { title: vm.name + ' - Subusers' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Subusers · <%= vm.name %></h2>
+    <button class="btn btn-primary" onclick="openAdd()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Add Subuser
+    </button>
+  </div>
+  <%- include('_tabs') %>
+
+  <div class="card">
+    <div class="alert alert-info">Subusers are users from this panel who get access to this server with chosen permissions.</div>
+    <% if (subs.length === 0) { %>
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <p>No subusers yet.</p>
+      </div>
+    <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>User</th><th>Permissions</th><th>Added</th><th class="right"></th></tr></thead>
+        <tbody>
+        <% for (const s of subs) { %>
+          <tr>
+            <td><strong><%= s.username %></strong> <span class="muted">· <%= s.email %></span></td>
+            <td><% let perms=[]; try { perms=JSON.parse(s.permissions||'[]'); } catch(_){} %><% if (perms.includes('*')) { %><span class="pill pill-green">Full access</span><% } else { %><% for (const p of perms) { %><span class="pill pill-blue"><%= p %></span> <% } %><% } %></td>
+            <td class="muted"><%= new Date(s.created_at).toLocaleDateString() %></td>
+            <td class="right"><button class="btn btn-sm btn-danger" onclick="delSub(<%= s.id %>)">Remove</button></td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<div id="subModal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:grid;place-items:center;padding:20px">
+    <div class="card" style="width:min(440px,94vw)">
+      <h3 class="mb-2">Add Subuser</h3>
+      <div class="form-group"><label>User</label>
+        <select id="subUser">
+          <% for (const u of allUsers) { %><option value="<%= u.id %>"><%= u.username %> · <%= u.email %></option><% } %>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Permissions</label>
+        <div class="check"><input type="checkbox" id="permAll" checked/> Full access</div>
+        <div class="check mt-1"><input type="checkbox" id="permConsole"/> Console</div>
+        <div class="check mt-1"><input type="checkbox" id="permFiles"/> File manager</div>
+        <div class="check mt-1"><input type="checkbox" id="permBackups"/> Backups</div>
+      </div>
+      <div class="flex right">
+        <button class="btn" onclick="document.getElementById('subModal').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSub()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+function openAdd() { document.getElementById('subModal').style.display = 'block'; }
+async function saveSub() {
+  const perms = document.getElementById('permAll').checked
+    ? ['*']
+    : [].concat(
+        document.getElementById('permConsole').checked ? ['console'] : [],
+        document.getElementById('permFiles').checked ? ['files'] : [],
+        document.getElementById('permBackups').checked ? ['backups'] : []
+      );
+  try {
+    await VP.api('/servers/<%= vm.id %>/subusers', { method: 'POST', body: { user_id: document.getElementById('subUser').value, permissions: perms } });
+    VP.toast('Subuser added', 'success');
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function delSub(id) {
+  try {
+    await VP.api(`/servers/<%= vm.id %>/subusers/${id}/delete`, { method: 'POST' });
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

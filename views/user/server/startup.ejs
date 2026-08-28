@@ -1,0 +1,64 @@
+<%- include('../../partials/head', { title: vm.name + ' - Startup' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Startup · <%= vm.name %></h2>
+    <div class="flex" style="gap:8px">
+      <a class="btn btn-sm btn-primary" href="/servers/<%= vm.id %>/console?tab=bootlog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+        View Live Boot Logs
+      </a>
+      <a class="btn btn-sm" href="/servers/<%= vm.id %>">Back</a>
+    </div>
+  </div>
+  <%- include('_tabs') %>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-title">Boot Options</div>
+      <div class="form-group">
+        <label>Start server on panel boot</label>
+        <div class="check">
+          <input type="checkbox" id="bootToggle" <%= vm.start_on_boot ? 'checked' : '' %> onchange="toggleBoot(this.checked)"/>
+          <span>Automatically start this server when the panel starts</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Startup command (executed after boot)</label>
+        <textarea id="startupCmd" placeholder="e.g. systemctl start nginx"><%= vm.startup_command || '' %></textarea>
+        <div class="form-hint">This command will be added to cloud-init on next seed regeneration.</div>
+      </div>
+      <button class="btn btn-primary" onclick="saveStartup()">Save Startup</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Boot Variables</div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td class="muted">OS</td><td><%= vm.os_type %> <%= vm.codename %></td></tr>
+            <tr><td class="muted">Image</td><td class="mono truncate" style="max-width:220px"><%= vm.img_url %></td></tr>
+            <tr><td class="muted">Hostname</td><td><%= vm.hostname %></td></tr>
+            <tr><td class="muted">Boot Order</td><td>Disk (cloud image) → Seed (cloud-init)</td></tr>
+            <tr><td class="muted">Acceleration</td><td>TCG (pure software emulation)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+async function toggleBoot(v) {
+  try { await VP.api('/servers/<%= vm.id %>/settings', { method: 'POST', body: { start_on_boot: v } }); VP.toast('Saved', 'success'); }
+  catch (e) { VP.toast(e.message, 'error'); }
+}
+async function saveStartup() {
+  try {
+    await VP.api('/servers/<%= vm.id %>/settings', { method: 'POST', body: { startup_command: document.getElementById('startupCmd').value } });
+    VP.toast('Startup saved', 'success');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

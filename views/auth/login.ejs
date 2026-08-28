@@ -1,0 +1,69 @@
+<%- include('../partials/head', { title: 'Login' }) %>
+<%- include('../partials/ambient') %>
+<div class="auth-wrap">
+  <div class="auth-card" style="position:relative;overflow:hidden">
+    <!-- Ambient glow behind card -->
+    <div style="position:absolute;top:-50px;left:50%;transform:translateX(-50%);width:200px;height:120px;background:var(--accent);filter:blur(80px);opacity:0.35;pointer-events:none"></div>
+
+    <div class="auth-logo" style="display:flex;flex-direction:column;align-items:center;margin-bottom:18px">
+      <% const pn = settings['panel.name'] || 'Venlix Nodes'; let lg='';
+        if (settings['panel.logo_mode']==='upload' && settings['panel.logo_file']) lg=settings['panel.logo_file'];
+        else if (settings['panel.logo_mode']==='url' && settings['panel.logo_url']) lg=settings['panel.logo_url']; %>
+      <% if (lg) { %>
+        <img src="<%= lg %>" style="height:48px;border-radius:12px;margin-bottom:8px"/>
+      <% } else { %>
+        <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg, var(--accent), var(--accent-2));display:grid;place-items:center;color:#fff;box-shadow:0 0 20px var(--accent-glow);margin-bottom:12px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="24" height="24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+        </div>
+        <span style="font-size:26px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(90deg,#fff 40%,var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent"><%= pn %></span>
+      <% } %>
+    </div>
+
+    <h1 class="auth-title" style="font-size:20px;font-weight:700">Sign in to your account</h1>
+    <p class="auth-sub" style="margin-bottom:22px">Control and manage your virtual cloud instances</p>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <form method="post" action="/login">
+      <div class="form-group">
+        <label for="username">Username or Email</label>
+        <input type="text" id="username" name="username" value="<%= typeof username !== 'undefined' ? username : '' %>" required autofocus placeholder="admin"/>
+      </div>
+      <div class="form-group">
+        <div class="flex-between mb-1">
+          <label for="password" style="margin:0">Password</label>
+        </div>
+        <input type="password" id="password" name="password" required placeholder="••••••••"/>
+      </div>
+      <% if (typeof tfa !== 'undefined' && tfa) { %>
+      <div class="form-group">
+        <label for="code">Two-Factor Authenticator Code</label>
+        <input type="text" id="code" name="code" placeholder="6-digit code" inputmode="numeric" required/>
+      </div>
+      <% } %>
+      <button type="submit" class="btn btn-primary btn-block mt-3" style="padding:12px;font-size:14px;font-weight:700">
+        Sign In
+      </button>
+    </form>
+
+    <div style="position:relative;margin:24px 0 16px 0;text-align:center">
+      <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--border)"></div>
+      <span style="position:relative;background:var(--bg-card);padding:0 12px;font-size:12px;color:var(--text-dim);font-weight:600">Don't have an account?</span>
+    </div>
+
+    <a href="/register" class="btn btn-block" style="padding:12px;font-size:14px;font-weight:700;background:rgba(255,255,255,0.06);border:1px solid var(--border);color:#fff;text-align:center;display:block;border-radius:10px;transition:all 0.2s ease">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+      Create New Account
+    </a>
+
+    <div class="auth-foot" style="margin-top:20px;text-align:center">
+      <a href="/forgot" style="font-size:13px;color:var(--text-dim)">Forgot your password?</a>
+    </div>
+  </div>
+</div>
+<%- include('../partials/foot') %>

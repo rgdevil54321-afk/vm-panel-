@@ -1,0 +1,27 @@
+<%- include('../partials/head', { title: 'Notifications' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <h2 style="font-size:22px" class="mb-3">Notifications</h2>
+  <div class="card">
+    <% if (notifs.length === 0) { %><div class="empty"><p>You're all caught up. No notifications.</p></div><% } else { %>
+    <% for (const n of notifs) { %>
+      <div class="flex-between" style="padding:12px 0;border-bottom:1px solid var(--border)" onclick="markRead(<%= n.id %>)">
+        <div>
+          <div style="font-weight:600"><%= n.title %></div>
+          <div class="muted"><%= n.body %></div>
+        </div>
+        <span class="pill <%= n.read ? 'pill-gray' : 'pill-yellow' %>"><%= n.read ? 'Read' : 'New' %></span>
+      </div>
+    <% } %>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+async function markRead(id) {
+  try { await VP.api('/notifications/' + id + '/read', { method: 'POST' }); } catch (e) {}
+}
+</script>

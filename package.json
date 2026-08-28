@@ -1,0 +1,36 @@
+{
+  "name": "venlix-nodes",
+  "version": "2.2.0",
+  "description": "Venlix Nodes - Multi-Node QEMU/KVM Virtual Machine Management Web Panel",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "build": "node scripts/build.js",
+    "createuser": "node scripts/createuser.js",
+    "lint": "node scripts/build.js --check",
+    "test": "node scripts/test-auto-full.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.3.0",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.14",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.7.5",
+    "speakeasy": "^2.0.0",
+    "ssh2": "^1.15.0",
+    "uuid": "^10.0.0",
+    "ws": "^8.21.3"
+  }
+}

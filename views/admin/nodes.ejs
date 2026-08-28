@@ -1,0 +1,210 @@
+<%- include('../partials/head', { title: 'Nodes & Cluster Overview' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+
+<style>
+.form-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+@media (max-width:720px){ .form-grid{ grid-template-columns:1fr; } }
+.node-card { transition: transform .15s ease, border-color .15s ease; }
+.node-card:hover { transform: translateY(-2px); }
+</style>
+
+<div class="main">
+  <div class="flex-between mb-4" style="flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:24px;font-weight:800;letter-spacing:-0.4px;margin:0">Nodes &amp; Cluster Overview</h2>
+      <div class="muted" style="margin-top:4px">Manage all hypervisor nodes and their live health telemetry</div>
+    </div>
+    <button class="btn btn-primary" onclick="document.getElementById('addNodeCard').classList.toggle('hidden')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
+      Add Node
+    </button>
+  </div>
+
+  <% if (typeof error !== 'undefined' && error) { %>
+    <div class="alert" style="margin-bottom:16px;padding:12px 16px;border:1px solid var(--red);border-radius:12px;color:var(--red)"><%= error %></div>
+  <% } %>
+
+  <!-- Add Node Form -->
+  <div id="addNodeCard" class="card mb-4 hidden" style="padding:22px">
+    <div class="card-title mb-3" style="margin:0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+      Connect a New Hypervisor Node
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Node Name</label>
+        <input id="n_name" placeholder="Node-2-Mumbai" />
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input id="n_location" placeholder="Mumbai, IN" />
+      </div>
+      <div class="form-group">
+        <label>Host (IP or URL)</label>
+        <input id="n_host" placeholder="203.0.113.10" />
+      </div>
+      <div class="form-group">
+        <label>Agent Port</label>
+        <input id="n_port" type="number" value="3005" />
+      </div>
+      <div class="form-group" style="grid-column:1 / -1">
+        <label>Agent Token (shared secret)</label>
+        <input id="n_token" placeholder="paste the token you set in install-node.sh" />
+      </div>
+    </div>
+    <div class="flex right mt-3" style="gap:8px">
+      <button class="btn" onclick="document.getElementById('addNodeCard').classList.add('hidden')">Cancel</button>
+      <button class="btn btn-primary" onclick="addNode()">Connect Node</button>
+    </div>
+  </div>
+
+  <!-- Cluster Stats Grid -->
+  <div class="grid grid-4 mb-4">
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(99,102,241,0.15);color:#818cf8">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= cluster.vms.total %></div>
+        <div class="stat-label">Total Virtual Machines</div>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(16,185,129,0.15);color:#34d399">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <div>
+        <div class="stat-value" style="color:#34d399"><%= cluster.vms.running %></div>
+        <div class="stat-label">Running Online</div>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(56,189,248,0.15);color:#38bdf8">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= cluster.online_nodes %> <span style="font-size:13px;color:var(--text-dim)">/ <%= cluster.node_count %></span></div>
+        <div class="stat-label">Nodes Online</div>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(245,158,11,0.15);color:#fbbf24">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2"/></svg>
+      </div>
+      <div>
+        <div class="stat-value"><%= cluster.capacity.cpu %> <span style="font-size:13px;color:var(--text-dim)">vCPU</span></div>
+        <div class="stat-label">Cluster Capacity</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nodes List -->
+  <div class="card">
+    <div class="flex-between mb-3">
+      <div class="card-title" style="margin:0">Connected Hypervisor Nodes (<%= cluster.nodes.length %>)</div>
+      <button class="btn btn-sm" onclick="refreshCluster()">Refresh</button>
+    </div>
+
+    <% if (cluster.nodes.length === 0) { %>
+      <div class="empty">
+        <p style="font-size:15px;font-weight:600;color:var(--text)">No nodes connected yet</p>
+      </div>
+    <% } else { %>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <% for (const n of cluster.nodes) { %>
+        <% const s = n.stats; %>
+        <div class="node-card card" style="padding:18px;border:1px solid <%= n.status === 'online' ? 'var(--border)' : 'rgba(248,113,113,0.4)' %>">
+          <div class="flex-between" style="flex-wrap:wrap;gap:12px">
+            <div class="flex" style="gap:14px;align-items:center">
+              <div style="width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg, var(--accent), var(--accent-2));display:grid;place-items:center;color:#fff">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+              </div>
+              <div>
+                <div class="flex" style="gap:8px;align-items:center">
+                  <span class="font-bold" style="font-size:16px;color:#fff"><%= n.name %></span>
+                  <span class="pill <%= n.status === 'online' ? 'pill-green' : 'pill-red' %> font-bold"><%= n.status === 'online' ? '● Online' : 'Offline' %></span>
+                  <% if (n.id === 1) { %><span class="pill pill-blue font-bold">Primary / Local</span><% } %>
+                </div>
+                <div class="muted text-sm mono" style="font-size:12px"><%= n.host %>:<%= n.port %><%= n.location ? ' · ' + n.location : '' %></div>
+              </div>
+            </div>
+            <div class="flex right" style="gap:8px;align-items:center">
+              <span class="mono text-sm muted"><%= n.vm_running %> / <%= n.vm_total %> VMs</span>
+              <a class="btn btn-primary btn-sm" href="/admin/nodes/<%= n.id %>">
+                View Overview
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" style="margin-left:4px"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </a>
+              <% if (n.id !== 1) { %>
+                <button class="btn btn-sm btn-danger" onclick="deleteNode(<%= n.id %>)" title="Remove node">Remove</button>
+              <% } %>
+            </div>
+          </div>
+
+          <% if (s) { %>
+          <div class="grid grid-3" style="gap:12px;margin-top:14px">
+            <div class="flex" style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:12px;padding:11px 14px">
+              <span class="pill pill-blue mono font-bold"><%= s.cpu.percent %>%</span>
+              <div style="margin-left:8px">
+                <div class="muted text-sm" style="font-size:10.5px">CPU</div>
+                <div style="font-weight:700;font-size:13px"><%= s.cpu.cores_count %> Cores</div>
+              </div>
+            </div>
+            <div class="flex" style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:12px;padding:11px 14px">
+              <span class="pill pill-green mono font-bold"><%= s.memory.percent %>%</span>
+              <div style="margin-left:8px">
+                <div class="muted text-sm" style="font-size:10.5px">RAM</div>
+                <div style="font-weight:700;font-size:13px"><%= (s.memory.used_mb/1024).toFixed(1) %> / <%= (s.memory.total_mb/1024).toFixed(1) %> GB</div>
+              </div>
+            </div>
+            <div class="flex" style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:12px;padding:11px 14px">
+              <span class="pill pill-yellow mono font-bold"><%= s.disk.percent %>%</span>
+              <div style="margin-left:8px">
+                <div class="muted text-sm" style="font-size:10.5px">Storage</div>
+                <div style="font-weight:700;font-size:13px"><%= s.disk.used_gb %> / <%= s.disk.total_gb %> GB</div>
+              </div>
+            </div>
+          </div>
+          <% } else { %>
+            <div class="muted text-sm mt-3">Node does not have an agent installed or is unreachable. Run <code class="mono">install-node.sh</code> on this host and set the matching token.</div>
+          <% } %>
+        </div>
+      <% } %>
+    </div>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+
+<script>
+function vpToken(){ const m=document.cookie.match(/(?:^|;\s*)token=([^;]+)/); return m?m[1]:''; }
+async function addNode() {
+  const body = {
+    name: document.getElementById('n_name').value,
+    host: document.getElementById('n_host').value,
+    port: parseInt(document.getElementById('n_port').value || '3005', 10),
+    agent_token: document.getElementById('n_token').value,
+    location: document.getElementById('n_location').value
+  };
+  if (!body.name || !body.host || !body.agent_token) return VP.toast('Node name, host and token are required', 'error');
+  try {
+    await VP.api('/admin/nodes', { method: 'POST', body });
+    VP.toast('Node connected', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deleteNode(id) {
+  if (!confirm('Remove this node? This cannot be undone.')) return;
+  try {
+    await VP.api('/admin/nodes/' + id, { method: 'DELETE' });
+    VP.toast('Node removed', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function refreshCluster() {
+  try { await VP.api('/admin/nodes', { method: 'GET' }); setTimeout(() => location.reload(), 400); }
+  catch(e){ VP.toast(e.message,'error'); }
+}
+</script>

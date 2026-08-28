@@ -1,0 +1,420 @@
+<%- include('../../partials/head', { title: vm.name + ' - File Manager' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <div>
+      <div class="muted text-sm" style="margin-bottom:2px">
+        <a href="/dashboard" style="color:var(--text-dim)">Dashboard</a> / <a href="/servers/<%= vm.id %>" style="color:var(--text-dim)"><%= vm.name %></a> / File Manager
+      </div>
+      <h2 style="font-size:24px;font-weight:800;letter-spacing:-0.3px;display:flex;align-items:center;gap:12px">
+        <%= vm.name %>
+        <span class="pill <%= vm.status === 'running' ? 'pill-green' : 'pill-gray' %>"><%= vm.status %></span>
+      </h2>
+    </div>
+    <div class="flex" style="gap:8px">
+      <a class="btn btn-sm" href="/servers/<%= vm.id %>/console">Terminal</a>
+      <a class="btn btn-sm" href="/servers/<%= vm.id %>">Server Overview</a>
+    </div>
+  </div>
+  <%- include('_tabs') %>
+
+  <% if (vm.status !== 'running') { %>
+    <div class="card" style="min-height:360px;display:grid;place-items:center;text-align:center">
+      <div>
+        <div style="width:56px;height:56px;border-radius:16px;background:rgba(245,158,11,0.15);color:#fbbf24;display:grid;place-items:center;margin:0 auto 16px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h3 style="font-size:18px;font-weight:700;margin-bottom:8px">Server is Offline</h3>
+        <p class="muted" style="max-width:420px;margin:0 auto 18px">The virtual machine must be running to access the live filesystem via the guest agent or SSH.</p>
+        <button class="btn btn-green" onclick="VP.api('/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'start' } }).then(() => { VP.toast('Starting server...', 'info'); setTimeout(() => location.reload(), 1500); })">
+          Start Virtual Machine
+        </button>
+      </div>
+    </div>
+  <% } else { %>
+  
+  <div class="card" style="min-height:560px;display:flex;flex-direction:column">
+    <!-- File Manager Toolbar -->
+    <div class="file-toolbar mb-3" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(0,0,0,0.25);padding:10px 14px;border-radius:12px;border:1px solid var(--border)">
+      <button class="btn btn-sm" onclick="goUp()" title="Go to parent directory" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 15l-6-6-6 6"/></svg>
+        Up
+      </button>
+      <button class="btn btn-sm" onclick="refresh()" title="Refresh file listing" style="display:flex;align-items:center;gap:4px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        Refresh
+      </button>
+
+      <!-- Path input bar -->
+      <div style="flex:1;min-width:220px;position:relative;display:flex;align-items:center">
+        <span style="position:absolute;left:10px;color:var(--text-dim);font-family:monospace;font-size:13px">📁</span>
+        <input class="path-input mono" id="pathInput" value="/" spellcheck="false" style="padding-left:32px;padding-right:45px;font-size:13px;height:34px"/>
+        <button class="btn btn-sm btn-primary" onclick="goPath()" style="position:absolute;right:3px;top:3px;bottom:3px;padding:0 10px;height:28px">Go</button>
+      </div>
+
+      <label class="btn btn-sm btn-primary" style="cursor:pointer;display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Upload Files
+        <input type="file" id="fileUpload" style="display:none" multiple onchange="uploadFiles(this.files)"/>
+      </label>
+
+      <button class="btn btn-sm" onclick="newFolder()" style="display:flex;align-items:center;gap:5px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+        New Folder
+      </button>
+
+      <button class="btn btn-sm" onclick="newFile()" style="display:flex;align-items:center;gap:5px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        New File
+      </button>
+    </div>
+
+    <!-- File Directory Table -->
+    <div class="table-wrap" style="flex:1;max-height:64vh;overflow-y:auto">
+      <table class="file-table" style="table-layout:fixed;width:100%">
+        <thead>
+          <tr>
+            <th style="width:auto">File / Folder Name</th>
+            <th style="width:130px">File Size</th>
+            <th style="width:120px">Permissions</th>
+            <th style="width:160px">Date Modified</th>
+            <th class="right" style="width:160px">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="fileBody">
+          <tr><td colspan="5"><div class="empty"><div class="spin mb-2"></div><p class="muted">Loading files...</p></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Directory Summary Footer -->
+    <div class="flex-between mt-3 muted text-sm mono" style="padding-top:10px;border-top:1px solid var(--border);font-size:11.5px">
+      <span id="fileCountBadge">0 items</span>
+      <span id="totalSizeBadge">Total Size: 0 B</span>
+    </div>
+  </div>
+
+  <!-- File Editor Modal -->
+  <div id="editorModal" style="display:none">
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:999;backdrop-filter:blur(10px);display:grid;place-items:center;padding:20px">
+      <div class="card modal-card" style="width:min(1000px, 96vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.75);border:1px solid var(--accent)">
+        
+        <!-- Editor Header -->
+        <div class="flex-between mb-3" style="border-bottom:1px solid var(--border);padding-bottom:12px">
+          <div class="flex" style="gap:10px">
+            <div style="width:34px;height:34px;border-radius:9px;background:rgba(99,102,241,0.15);color:var(--accent-2);display:grid;place-items:center">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div>
+              <h3 id="editorTitle" style="font-size:16px;font-weight:700;color:#fff;margin:0">Editing File</h3>
+              <div id="editorMeta" class="muted text-sm mono" style="font-size:11px">Path: / | Size: -</div>
+            </div>
+          </div>
+          <button class="icon-btn" style="width:30px;height:30px" onclick="document.getElementById('editorModal').style.display='none'">✕</button>
+        </div>
+
+        <!-- Editor Content Area -->
+        <div style="flex:1;position:relative;margin-bottom:16px">
+          <textarea id="editorContent" spellcheck="false" style="width:100%;height:58vh;min-height:380px;font-family:'JetBrains Mono', Consolas, Monaco, monospace;font-size:13.5px;line-height:1.55;background:#050811;color:#f8fafc;padding:16px;border-radius:12px;border:1px solid var(--border);resize:vertical"></textarea>
+        </div>
+
+        <!-- Editor Actions -->
+        <div class="flex-between" style="border-top:1px solid var(--border);padding-top:12px">
+          <span class="muted text-sm mono" id="editorLineCol">UTF-8</span>
+          <div class="flex" style="gap:8px">
+            <button class="btn btn-sm" onclick="document.getElementById('editorModal').style.display='none'">Cancel</button>
+            <button class="btn btn-sm btn-primary" onclick="saveEditor()" style="display:flex;align-items:center;gap:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <% } %>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+
+<script>
+(function () {
+  const API = () => `${vpApiBase()}/api/vms/<%= vm.id %>/files`;
+  const HDR = { Authorization: 'Bearer ' + vpToken() };
+  let currentPath = '/';
+  let editing = null;
+
+  const icons = {
+    dir: '<svg viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" width="18" height="18" style="vertical-align:-3px;flex-shrink:0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+    file: '<svg viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" width="18" height="18" style="vertical-align:-3px;flex-shrink:0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" width="18" height="18" style="vertical-align:-3px;flex-shrink:0"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  };
+
+  window.refresh = async function () {
+    try {
+      const d = await VP.api(API() + '?path=' + encodeURIComponent(currentPath), { headers: HDR });
+      const body = document.getElementById('fileBody');
+      body.innerHTML = '';
+      
+      let totalBytes = 0;
+      let fileCount = 0;
+      let dirCount = 0;
+
+      if (!d.files || d.files.length === 0) {
+        body.innerHTML = '<tr><td colspan="5"><div class="empty"><p class="muted">Empty Directory</p></div></td></tr>';
+        document.getElementById('fileCountBadge').textContent = '0 items';
+        document.getElementById('totalSizeBadge').textContent = 'Total Size: 0 B';
+        return;
+      }
+
+      for (const f of d.files) {
+        const isDir = f.type === 'dir';
+        if (isDir) dirCount++;
+        else {
+          fileCount++;
+          totalBytes += (f.size || 0);
+        }
+
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+
+        // 1. Name Cell
+        const nameTd = document.createElement('td');
+        nameTd.className = 'truncate';
+        nameTd.style.fontWeight = isDir ? '700' : '500';
+        nameTd.style.color = isDir ? '#38bdf8' : '#f8fafc';
+        nameTd.innerHTML = `${icons[f.type] || icons.file} <span style="margin-left:6px">${escapeHtml(f.name)}</span>`;
+        if (isDir) {
+          nameTd.onclick = () => {
+            currentPath = f.path;
+            document.getElementById('pathInput').value = currentPath;
+            refresh();
+          };
+        } else {
+          nameTd.onclick = () => openFile(f);
+        }
+        tr.appendChild(nameTd);
+
+        // 2. Formatted File Size Cell
+        const sizeTd = document.createElement('td');
+        sizeTd.className = 'mono';
+        sizeTd.style.fontSize = '12.5px';
+        if (isDir) {
+          sizeTd.innerHTML = '<span class="muted font-bold" style="font-size:11px;opacity:0.7">FOLDER</span>';
+        } else {
+          sizeTd.innerHTML = `<span class="font-bold" style="color:var(--accent-2)">${formatFileSize(f.size)}</span>`;
+        }
+        tr.appendChild(sizeTd);
+
+        // 3. Permissions Cell
+        const permTd = document.createElement('td');
+        permTd.className = 'mono muted';
+        permTd.style.fontSize = '11.5px';
+        permTd.textContent = f.perms || '-';
+        tr.appendChild(permTd);
+
+        // 4. Date Cell
+        const dateTd = document.createElement('td');
+        dateTd.className = 'muted text-sm';
+        dateTd.textContent = f.date || '-';
+        tr.appendChild(dateTd);
+
+        // 5. Actions Cell
+        const actTd = document.createElement('td');
+        actTd.className = 'right';
+        const actWrap = document.createElement('div');
+        actWrap.className = 'flex right';
+        actWrap.style.gap = '6px';
+
+        if (!isDir) {
+          actWrap.appendChild(iconBtn('Download', '⬇', () => {
+            window.open(API() + '/download?path=' + encodeURIComponent(f.path) + '&token=' + vpToken(), '_blank');
+          }));
+          actWrap.appendChild(iconBtn('Edit', '✏', () => openFile(f)));
+        }
+        actWrap.appendChild(iconBtn('Rename', '✎', () => renameItem(f)));
+        actWrap.appendChild(iconBtn('Delete', '🗑', () => delItem(f), true));
+        actTd.appendChild(actWrap);
+        tr.appendChild(actTd);
+
+        body.appendChild(tr);
+      }
+
+      document.getElementById('fileCountBadge').textContent = `${dirCount} folder(s), ${fileCount} file(s)`;
+      document.getElementById('totalSizeBadge').textContent = `Total Size: ${formatFileSize(totalBytes)}`;
+
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  };
+
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    if (!bytes && bytes !== 0) return '—';
+    const num = typeof bytes === 'string' ? parseFloat(bytes) : bytes;
+    if (isNaN(num)) return '—';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(num) / Math.log(k));
+    return parseFloat((num / Math.pow(k, i)).toFixed(i === 0 ? 0 : 2)) + ' ' + sizes[i];
+  }
+
+  function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function iconBtn(title, text, fn, isDanger = false) {
+    const b = document.createElement('button');
+    b.className = `icon-btn ${isDanger ? 'btn-danger' : ''}`;
+    b.style.width = '28px';
+    b.style.height = '28px';
+    b.style.fontSize = '12px';
+    b.title = title;
+    b.innerHTML = title === 'Delete'
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>'
+      : title === 'Rename'
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>'
+      : title === 'Edit'
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
+    b.onclick = (e) => {
+      e.stopPropagation();
+      fn();
+    };
+    return b;
+  }
+
+  window.goUp = () => {
+    if (currentPath === '/' || !currentPath) return;
+    const parts = currentPath.split('/').filter(Boolean);
+    parts.pop();
+    currentPath = '/' + parts.join('/');
+    document.getElementById('pathInput').value = currentPath;
+    refresh();
+  };
+
+  window.goPath = () => {
+    let p = (document.getElementById('pathInput').value || '/').trim();
+    if (!p.startsWith('/')) p = '/' + p;
+    currentPath = p;
+    document.getElementById('pathInput').value = currentPath;
+    refresh();
+  };
+
+  document.getElementById('pathInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') goPath();
+  });
+
+  async function openFile(f) {
+    try {
+      VP.toast('Opening ' + f.name + '...', 'info');
+      const d = await VP.api(API() + '/read?path=' + encodeURIComponent(f.path), { headers: HDR });
+      editing = f;
+      document.getElementById('editorTitle').textContent = f.name;
+      document.getElementById('editorMeta').textContent = `Path: ${f.path} · Size: ${formatFileSize(f.size || 0)}`;
+      document.getElementById('editorContent').value = d.content || '';
+      document.getElementById('editorModal').style.display = 'grid';
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  }
+
+  window.saveEditor = async () => {
+    if (!editing) return;
+    try {
+      VP.toast('Saving file...', 'info');
+      await VP.api(API() + '/write', {
+        method: 'POST',
+        headers: HDR,
+        body: { path: editing.path, content: document.getElementById('editorContent').value }
+      });
+      VP.toast('File saved successfully!', 'success');
+      document.getElementById('editorModal').style.display = 'none';
+      refresh();
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  };
+
+  async function delItem(f) {
+    const ok = await VP.confirmDialog(`Permanently delete ${f.name}? This action cannot be undone.`, { title: 'Delete ' + f.name });
+    if (!ok) return;
+    try {
+      await VP.api(API() + '/delete', { method: 'POST', headers: HDR, body: { path: f.path, recursive: f.type === 'dir' } });
+      VP.toast('Deleted ' + f.name, 'success');
+      refresh();
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  }
+
+  async function renameItem(f) {
+    const name = prompt('New name for ' + f.name, f.name);
+    if (!name || name.trim() === '' || name === f.name) return;
+    const parent = f.path.slice(0, f.path.lastIndexOf('/') + 1);
+    try {
+      await VP.api(API() + '/rename', { method: 'POST', headers: HDR, body: { from: f.path, to: parent + name.trim() } });
+      VP.toast('Renamed to ' + name.trim(), 'success');
+      refresh();
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  }
+
+  window.newFolder = async () => {
+    const name = prompt('Enter new folder name:');
+    if (!name || !name.trim()) return;
+    const base = currentPath === '/' ? '' : currentPath;
+    try {
+      await VP.api(API() + '/mkdir', { method: 'POST', headers: HDR, body: { path: base + '/' + name.trim() } });
+      VP.toast('Folder created', 'success');
+      refresh();
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  };
+
+  window.newFile = async () => {
+    const name = prompt('Enter new file name:');
+    if (!name || !name.trim()) return;
+    const base = currentPath === '/' ? '' : currentPath;
+    try {
+      await VP.api(API() + '/write', { method: 'POST', headers: HDR, body: { path: base + '/' + name.trim(), content: '' } });
+      VP.toast('File created', 'success');
+      refresh();
+    } catch (e) {
+      VP.toast(e.message, 'error');
+    }
+  };
+
+  window.uploadFiles = async (files) => {
+    if (!files || !files.length) return;
+    const base = currentPath === '/' ? '' : currentPath;
+    VP.toast(`Uploading ${files.length} file(s)...`, 'info');
+    for (const file of files) {
+      const p = (base === '' ? '' : base) + '/' + file.name;
+      try {
+        const r = await fetch(API() + '/upload', {
+          method: 'POST',
+          headers: { ...HDR, 'x-file-path': p, 'Content-Type': 'application/octet-stream' },
+          body: file,
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || 'Upload failed');
+        }
+      } catch (e) {
+        VP.toast(e.message, 'error');
+      }
+    }
+    VP.toast('Upload complete!', 'success');
+    refresh();
+  };
+
+  window.openFile = openFile;
+  if (<%= vm.status === 'running' ? 'true' : 'false' %>) refresh();
+})();
+</script>

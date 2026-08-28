@@ -1,0 +1,16 @@
+{
+  "name": "venlix-node-agent",
+  "version": "1.0.0",
+  "description": "Venlix Nodes - remote hypervisor node agent. Manages QEMU/KVM VMs on a single machine and exposes an authenticated REST API to the Venlix panel.",
+  "main": "agent.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "uuid": "^10.0.0"
+  },
+  "license": "MIT"
+}
