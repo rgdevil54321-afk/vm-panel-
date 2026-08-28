@@ -100,9 +100,9 @@
               </td>
             </tr>
             <tr><td class="muted">OS / Codename</td><td><span class="pill pill-blue font-bold"><%= vm.os_type %> <%= vm.codename %></span></td></tr>
-            <tr><td class="muted">SSH Command</td><td class="mono">ssh -p <%= vm.ssh_port %> <%= vm.username %>@localhost</td></tr>
+            <tr><td class="muted">SSH Command</td><td><span class="mono" id="sshcmd">ssh -p <%= vm.ssh_port %> <%= vm.username %>@localhost</span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshcmd', this)">Copy</button></td></tr>
             <tr><td class="muted">Terminal</td><td><a href="/servers/<%= vm.id %>/console" class="btn btn-sm">Launch Web Terminal</a></td></tr>
-            <tr><td class="muted">SSH Password</td><td class="mono"><%= vm.password %></td></tr>
+            <tr><td class="muted">SSH Password</td><td><span class="mono" id="sshpass"><%= vm.password %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshpass', this)">Copy</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="regenPass(this)">Regenerate</button></td></tr>
             <tr><td class="muted">Disk Image File</td><td class="mono truncate text-sm" style="max-width:240px"><%= vm.img_file %></td></tr>
             <tr><td class="muted">Port Forwards</td><td class="mono"><% if (vm.port_forwards && vm.port_forwards.length) { %><% for (const f of vm.port_forwards) { %><span class="pill pill-gray" style="margin-right:4px"><%= f.host %>:<%= f.guest %></span><% } %><% } else { %>None<% } %></td></tr>
             <tr><td class="muted">Created At</td><td class="muted"><%= new Date(vm.created_at).toLocaleString() %></td></tr>
@@ -216,6 +216,47 @@ async function action(a) {
     setTimeout(() => location.reload(), 700);
   } catch (e) {
     VP.toast(e.message, 'error');
+  }
+}
+
+function copyText(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const text = el.textContent.trim();
+  const old = btn.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied';
+      setTimeout(() => (btn.textContent = old), 1200);
+    }).catch(() => fallbackCopy(text, btn, old));
+  } else {
+    fallbackCopy(text, btn, old);
+  }
+}
+
+function fallbackCopy(text, btn, old) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = old), 1200); }
+  catch (e) { VP.toast('Copy failed: ' + e.message, 'error'); }
+  document.body.removeChild(ta);
+}
+
+async function regenPass(btn) {
+  const ok = await VP.confirmDialog('Regenerate the SSH password for <%= vm.name %>? The new password takes effect after the VM is rebooted.', { title: 'Regenerate password?' });
+  if (!ok) return;
+  try {
+    btn.disabled = true;
+    const r = await VP.api('/admin/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'regenpass' } });
+    VP.toast('Password regenerated', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+    btn.disabled = false;
   }
 }
 

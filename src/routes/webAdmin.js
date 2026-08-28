@@ -109,6 +109,11 @@ router.post('/admin/servers/:id/action', async (req, res) => {
     else if (action === 'kill') res.json({ ok: true, status: (await vmService.stop(vm, { user: req.user, force: true })).status });
     else if (action === 'restart') await vmService.restart(vm, req.user), res.json({ ok: true, status: 'running' });
     else if (action === 'delete') res.json(await vmService.remove(vm, req.user));
+    else if (action === 'regenpass') {
+      const newPass = 'vpn' + Math.random().toString(36).slice(2, 10);
+      const updated = vmService.update(vm, { password: newPass }, req.user);
+      res.json({ ok: true, password: updated.password });
+    }
     else res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
     res.status(500).json({ error: e.message });
