@@ -155,6 +155,16 @@ async function fetchNodeStats(node) {
   const cpuCores = parseInt(stats.cpu && stats.cpu.cores_count, 10) || 0;
   db.prepare('UPDATE nodes SET capacity_cpus = ?, capacity_memory_mb = ?, capacity_disk_gb = ? WHERE id = ?')
     .run(cpuCores, memTotalMb, Math.round(diskTotalGb), node.id);
+  stats.specs = {
+    cpu_model: String(stats.cpu && (stats.cpu.model || 'Unknown')).slice(0, 80),
+    cpu_cores: cpuCores,
+    ram_total_gb: (memTotalMb / 1024).toFixed(0),
+    disk_total_gb: String(diskTotalGb),
+    platform: ((stats.os && (stats.os.platform || stats.os.type)) || 'unknown') + ' ' + ((stats.os && stats.os.arch) || ''),
+    kvm: !!(stats.hypervisor && stats.hypervisor.kvm_support),
+    qemu_installed: !!(stats.hypervisor && stats.hypervisor.qemu_installed),
+    qemu_version: String((stats.hypervisor && stats.hypervisor.qemu_version) || ''),
+  };
   return stats;
 }
 

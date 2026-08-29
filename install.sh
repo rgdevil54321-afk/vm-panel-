@@ -266,6 +266,35 @@ do_create_user() {
 }
 
 # =============================================================================
+# 2.5 INSTALL NODE AGENT (connect this machine to the panel as a node)
+# =============================================================================
+do_install_node() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "         🖥️  Install Node Agent (Connect This Machine to Panel)      "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  if [ ! -f "node-agent/install-node.sh" ]; then
+    log_warn "node-agent/install-node.sh not found in the current directory."
+    read -r -p "Clone the venlix-nodes repo here to get the node installer? [y/N]: " C
+    if [[ "$C" =~ ^[Yy]$ ]]; then
+      git clone --depth 1 https://github.com/rgdevil54321-afk/vm-panel-.git /tmp/venlix-node-install
+      cd /tmp/venlix-node-install
+    else
+      log_err "Cannot install node agent without the repo. Aborting."
+      return 1
+    fi
+  fi
+
+  log_info "Launching the node-agent installer..."
+  echo ""
+  bash node-agent/install-node.sh
+  echo ""
+}
+
+# =============================================================================
 # 3. UPDATE VPANEL PRO
 # =============================================================================
 do_update() {
@@ -430,10 +459,11 @@ show_menu() {
     echo "  [3] 🔄 3. Update (Pull updates, rebuild & zero-downtime reload)"
     echo "  [4] ⚙️  4. PM2 Management (pm2 mang - restart, logs, boot startup)"
     echo "  [5] 🗑️  5. Uninstall (Safe uninstall wizard)"
+    echo "  [6] 🖥️  6. Install Node Agent (connect this machine to the panel)"
     echo "  [0] 🚪 0. Exit"
     echo ""
     printf "${CYAN}=================================================================${NC}\n"
-    read -r -p "Enter choice [0-5]: " CHOICE
+    read -r -p "Enter choice [0-6]: " CHOICE
 
     case "$CHOICE" in
       1)
@@ -455,12 +485,16 @@ show_menu() {
         do_uninstall
         read -r -p "Press Enter to return to menu..." _
         ;;
+      6)
+        do_install_node
+        read -r -p "Press Enter to return to menu..." _
+        ;;
       0)
         log_info "Exiting Venlix Nodes Installer. Goodbye!"
         exit 0
         ;;
       *)
-        log_warn "Invalid option '$CHOICE'. Please choose 1, 2, 3, 4, 5, or 0."
+        log_warn "Invalid option '$CHOICE'. Please choose 1, 2, 3, 4, 5, 6, or 0."
         sleep 1.2
         ;;
     esac
@@ -479,6 +513,7 @@ if [ $# -gt 0 ]; then
     3|--update|update) do_update ;;
     4|--pm2|pm2) do_pm2_menu ;;
     5|--uninstall|uninstall) do_uninstall ;;
+    6|--node|node) do_install_node ;;
     *) show_menu ;;
   esac
 else
