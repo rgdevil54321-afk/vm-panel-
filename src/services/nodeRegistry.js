@@ -246,6 +246,39 @@ async function listVmsOnNode(node) {
   return d.vms || [];
 }
 
+// ---------- Remote node maintenance ----------
+async function syncOsToNode(node) {
+  const osList = require('./vmService').getOsList();
+  if (!Array.isArray(osList)) throw new Error('OS list unavailable');
+  return agentJson(node, { method: 'POST', path: '/os', body: JSON.stringify({ os_list: osList }) });
+}
+
+async function pushUpdateToNode(node) {
+  if (node.id === 1 && node.agent_token === 'local-primary-no-agent') {
+    throw new Error('Primary node is the panel itself and is updated in place (git pull + npm install + restart).');
+  }
+  const data = await agentJson(node, { method: 'POST', path: '/update', body: JSON.stringify({}) });
+  return data;
+}
+
+async function pushUpdateToAll() {
+  const nodes = allNodes();
+  const results = [];
+  for (const node of nodes) {
+    if (node.id === 1 && node.agent_token === 'local-primary-no-agent') {
+      results.push({ node_id: node.id, name: node.name, status: 'skipped', message: 'Primary node is the panel itself' });
+      continue;
+    }
+    try {
+      const r = await pushUpdateToNode(node);
+      results.push({ node_id: node.id, name: node.name, status: 'ok', message: (r && r.message) || 'update started' });
+    } catch (e) {
+      results.push({ node_id: node.id, name: node.name, status: 'error', message: e.message });
+    }
+  }
+  return { results };
+}
+
 // ---------- Aggregate view for the whole cluster ----------
 function getClusterSummary() {
   const nodes = allNodes();
@@ -318,5 +351,6 @@ module.exports = {
   agentRequest, agentJson, fetchNodeStats, probeNode, startHeartbeat, stopHeartbeat,
   createVmOnNode, startVmOnNode, stopVmOnNode, restartVmOnNode, deleteVmOnNode,
   resizeVmOnNode, vmStatsOnNode, vmStatusOnNode, vmBootLogOnNode, listVmsOnNode,
+  syncOsToNode, pushUpdateToNode, pushUpdateToAll,
   getClusterSummary, cachedStats, nodeError, nodeForVm,
 };

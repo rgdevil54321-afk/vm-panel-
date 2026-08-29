@@ -661,9 +661,55 @@ function getPublicIp() {
   return '';
 }
 
+const AGENT_ROOT = path.resolve(__dirname, '..');
+const UPDATE_TMP = path.join(os.tmpdir(), 'venlix-node-update');
+
+// Pull the latest node-agent code from the panel repo, reinstall deps, then
+// restart the systemd service (`venlix-node`) in the background so this HTTP
+// request can return a result before the process is recycled.
+function updateAgent({ repo, branch, log }) {
+  log = log || (() => {});
+  if (!process.getuid || process.getuid() !== 0) {
+    log('update requires root (agent runs as root systemd service)');
+    throw new Error('Agent must be root to self-update');
+  }
+  // 1. Shallow-clone only the file tree we need (cheap GET of the repo head).
+  fs.rmSync(UPDATE_TMP, { recursive: true, force: true });
+  const clone = spawnSync('git', ['clone', '--depth', '1', '--branch', branch, '--single-branch', repo, UPDATE_TMP], { encoding: 'utf8' });
+  if (clone.status !== 0) {
+    const msg = (clone.stderr || '').split('\n').filter(Boolean).pop() || 'git clone failed';
+    log('clone failed: ' + msg);
+    throw new Error('git clone failed: ' + msg);
+  }
+  const srcAgent = path.join(UPDATE_TMP, 'node-agent');
+  if (!fs.existsSync(srcAgent)) {
+    log('node-agent/ folder not found in repo head');
+    fs.rmSync(UPDATE_TMP, { recursive: true, force: true });
+    throw new Error('node-agent folder not found in repo head');
+  }
+  // 2. Copy fresh files over the installed agent (preserve .env and data).
+  const entries = fs.readdirSync(srcAgent);
+  for (const ent of entries) {
+    if (ent === '.env' || ent === 'data') continue;
+    fs.rmSync(path.join(AGENT_ROOT, ent), { recursive: true, force: true });
+    fs.cpSync(path.join(srcAgent, ent), path.join(AGENT_ROOT, ent), { recursive: true });
+  }
+  // 3. Reinstall dependencies.
+  const npm = spawnSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: AGENT_ROOT, encoding: 'utf8' });
+  if (npm.status !== 0) {
+    log('npm install failed: ' + (npm.stderr || '').split('\n').filter(Boolean).pop());
+    throw new Error('npm install failed after update');
+  }
+  // 4. Restart the service in background.
+  const child = spawn('systemctl', ['restart', 'venlix-node'], { detached: true, stdio: 'ignore' });
+  child.unref();
+  log('update complete; restarting venlix-node service');
+  return { ok: true, message: 'Agent updated and restarting' };
+}
+
 module.exports = {
   ensureDirs, VM_DIR, createVm, prepareImage, startVm, stopVm, restartVm, removeVm, updateVm,
   resizeDisk, bootLog, clearBootLog, liveStats, getVm: state.getVm,
-  hostStats, startOnBootAll, usage, hasKvm,
+  hostStats, startOnBootAll, usage, hasKvm, updateAgent,
   isRunning, statusOf, allVms: state.allVms, getHostStatsOnce: getPublicIp,
 };

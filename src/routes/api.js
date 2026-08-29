@@ -449,4 +449,24 @@ router.post('/admin/nodes/:id/probe', apiAdmin, (req, res) => {
   }
 });
 
+router.post('/admin/nodes/:id/update', apiAdmin, async (req, res) => {
+  try {
+    const node = nodeRegistry.getNode(parseInt(req.params.id, 10));
+    if (!node) return res.status(404).json({ ok: false, error: 'Node not found' });
+    const data = await nodeRegistry.pushUpdateToNode(node);
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post('/admin/nodes/update', apiAdmin, async (req, res) => {
+  try {
+    const data = await nodeRegistry.pushUpdateToAll();
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;

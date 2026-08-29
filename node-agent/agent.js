@@ -113,6 +113,14 @@ const server = http.createServer(async (req, res) => {
       const s = state.setNodeMeta({ name: data.name, location: data.location });
       return json(res, 200, { ok: true, node: { id: s.nodeId, name: s.name, location: s.location } });
     }
+    if (method === 'POST' && p === '/update') {
+      const body = await readBody(req, 1 * 1024 * 1024);
+      const data = JSON.parse(body.toString() || '{}');
+      const repo = data.repo || process.env.AGENT_UPDATE_REPO || 'https://github.com/rgdevil54321-afk/vm-panel-.git';
+      const branch = data.branch || process.env.AGENT_UPDATE_BRANCH || 'main';
+      qemu.updateAgent({ repo, branch, log: (m) => process.stderr.write('[venlix-update] ' + m + '\n') });
+      return json(res, 200, { ok: true, message: 'Update started on node' });
+    }
 
     // ---- VM collection ----
     if (method === 'GET' && p === '/vms') {
