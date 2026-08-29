@@ -23,6 +23,9 @@ const state = require('./lib/state');
 if (process.env.AGENT_NODE_NAME) {
   try { state.setNodeMeta({ name: process.env.AGENT_NODE_NAME }); } catch (e) {}
 }
+if (process.env.AGENT_JOIN_CODE && !state.joinCode()) {
+  try { state.setJoinCode(process.env.AGENT_JOIN_CODE); } catch (e) {}
+}
 
 const PORT = parseInt(process.env.AGENT_PORT || '3005', 10);
 const TOKEN = process.env.AGENT_TOKEN || '';
@@ -80,10 +83,50 @@ function auth(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (!auth(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
   const u = url.parse(req.url, true);
   const method = req.method.toUpperCase();
   const p = u.pathname.replace(/\/+$/, '') || '/';
+
+  // ---- pre-auth: node onboarding via join key ----
+  if (method === 'POST' && p === '/join') {
+    try {
+      const body = await readBody(req, 1 * 1024 * 1024);
+      const data = JSON.parse(body.toString() || '{}');
+      const givenCode = String(data.code || '').trim();
+      const currentToken = process.env.AGENT_TOKEN || data.token || '';
+      if (!givenCode) return json(res, 400, { ok: false, error: 'Join code is required' });
+      if (state.joinCode() && givenCode !== state.joinCode()) {
+        return json(res, 401, { ok: false, error: 'Invalid join code' });
+      }
+      // A claimed node (joinCode consumed/empty) may only be re-keyed if the
+      // caller is already an authenticated agent (passed above auth normally).
+      if (!state.joinCode() && !auth(req)) {
+        return json(res, 401, { ok: false, error: 'Node already claimed; use an authenticated token to re-key' });
+      }
+      const tokenToStore = String(data.token || '').trim() || currentToken;
+      if (!tokenToStore) return json(res, 400, { ok: false, error: 'A new agent token is required' });
+      // Persist the new token into .env (preserving all other AGENT_* vars)
+      const envPath = path.join(__dirname, '.env');
+      let env = '';
+      try { env = fs.readFileSync(envPath, 'utf8'); } catch (e) {}
+      env = env.split('\n').filter((l) => !/^AGENT_TOKEN=/.test(l)).join('\n');
+      if (env && !env.endsWith('\n')) env += '\n';
+      env += 'AGENT_TOKEN=' + tokenToStore + '\n';
+      fs.writeFileSync(envPath, env, 'utf8');
+      // Consume the join code so it cannot be used again.
+      state.setJoinCode('');
+      const s = state.get();
+      const reply = { ok: true, node: { name: s.name, location: s.location } };
+      json(res, 200, reply);
+      // Restart so the process picks up the new token (exit 1 -> systemd on-failure restart).
+      setTimeout(() => process.exit(1), 800);
+    } catch (e) {
+      return json(res, 500, { ok: false, error: e.message });
+    }
+    return;
+  }
+
+  if (!auth(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
 
   try {
     // ---- meta / status ----

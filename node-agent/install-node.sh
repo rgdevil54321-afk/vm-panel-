@@ -63,10 +63,13 @@ fi
 # ---------- write env ----------
 AGENT_UPDATE_REPO="${AGENT_UPDATE_REPO:-https://github.com/rgdevil54321-afk/vm-panel-.git}"
 AGENT_UPDATE_BRANCH="${AGENT_UPDATE_BRANCH:-main}"
+# Generate a one-time join key so the panel can onboard this node by pasting a code.
+JOIN_CODE="$(cat /dev/urandom | tr -dc 'A-Z0-9' | head -c 12 | sed 's/.\{4\}/&-/g' | sed 's/-$//')"
 cat > "$AGENT_DIR/.env" <<EOF
 AGENT_PORT=3005
 AGENT_HOST=0.0.0.0
 AGENT_TOKEN=$AGENT_TOKEN
+AGENT_JOIN_CODE=$JOIN_CODE
 AGENT_UPDATE_REPO=$AGENT_UPDATE_REPO
 AGENT_UPDATE_BRANCH=$AGENT_UPDATE_BRANCH
 NO_KVM=
@@ -116,18 +119,31 @@ systemctl daemon-reload
 systemctl enable venlix-node
 systemctl restart venlix-node || true
 
+# Best-effort public IP for the connect key.
+NODE_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -z "$NODE_IP" ]]; then
+  NODE_IP="$(curl -s -m 3 ifconfig.me 2>/dev/null)"
+fi
+if [[ -z "$NODE_IP" ]]; then
+  NODE_IP="<this-server-ip>"
+fi
+
 echo ""
 echo "============================================="
-echo "  Node agent installed."
+echo "  Node agent installed — CONNECT WITH KEY"
+echo "============================================="
 echo ""
-echo "  Name   : $NODE_NAME"
-echo "  Port   : 3005 (open TCP in firewall)"
-echo "  Token  : $AGENT_TOKEN"
+echo "  Node name : $NODE_NAME"
 echo ""
-echo "  Next steps on the panel:"
-echo "    1. Nodes -> Create Node"
-echo "       Host = <this server's IP>, Port = 3005"
-echo "       Agent Token = $AGENT_TOKEN"
-echo "    2. If the node shows 'QEMU missing' it means the"
-echo "       prerequisites failed to install; run them manually."
+echo "  >>> Connect Key <<<"
+echo ""
+echo "      ${JOIN_CODE}@${NODE_IP}:3005"
+echo ""
+echo "  On your panel:"
+echo "    1. Go to Nodes & Cluster Overview"
+echo "    2. Click 'Connect With Node Key'"
+echo "    3. Paste the Connect Key above"
+echo "    -> Your node connects automatically."
+echo ""
+echo "  (Port 3005 must be reachable from the panel via the firewall.)"
 echo "============================================="

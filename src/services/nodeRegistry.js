@@ -279,6 +279,55 @@ async function pushUpdateToAll() {
   return { results };
 }
 
+function randomToken(len) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+// Parse a "connect key" printed by install-node.sh:  CODE@HOST:PORT
+// Returns { code, host, port } or throws.
+function parseJoinKey(key) {
+  const s = String(key || '').trim();
+  const at = s.lastIndexOf('@');
+  if (at <= 0) throw new Error('Invalid connect key. Expected format: CODE@HOST:PORT');
+  const code = s.slice(0, at).trim();
+  const hostPort = s.slice(at + 1).trim();
+  const m = hostPort.match(/^([^:]+):(\d+)$/);
+  if (!m) throw new Error('Invalid connect key. Expected format: CODE@HOST:PORT');
+  return { code, host: m[1], port: parseInt(m[2], 10) };
+}
+
+// Onboard a node using only its printed connect key. The panel generates a
+// fresh token, exchanges it on the node via /join (validated by the join code),
+// then registers the node in the DB and probes it.
+async function onboardNodeByKey(key, { location } = {}) {
+  const { code, host, port } = parseJoinKey(key);
+  let node = getNodeByHost(host);
+  if (node && node.port === port) {
+    throw new Error('A node with this host and port is already registered');
+  }
+  const token = randomToken(32);
+  const temp = { host, port, agent_token: '' };
+  // The /join endpoint is pre-auth; it accepts the join code + new token.
+  const r = await agentJson(temp, {
+    method: 'POST',
+    path: '/join',
+    body: JSON.stringify({ code, token }),
+  });
+  const meta = (r && r.node) || {};
+  node = createNode({
+    name: meta.name || host,
+    host,
+    port,
+    agent_token: token,
+    location: location || meta.location || '',
+  });
+  probeNode(node.id);
+  return node;
+}
+
 // ---------- Aggregate view for the whole cluster ----------
 function getClusterSummary() {
   const nodes = allNodes();
@@ -351,6 +400,6 @@ module.exports = {
   agentRequest, agentJson, fetchNodeStats, probeNode, startHeartbeat, stopHeartbeat,
   createVmOnNode, startVmOnNode, stopVmOnNode, restartVmOnNode, deleteVmOnNode,
   resizeVmOnNode, vmStatsOnNode, vmStatusOnNode, vmBootLogOnNode, listVmsOnNode,
-  syncOsToNode, pushUpdateToNode, pushUpdateToAll,
+  syncOsToNode, pushUpdateToNode, pushUpdateToAll, onboardNodeByKey,
   getClusterSummary, cachedStats, nodeError, nodeForVm,
 };

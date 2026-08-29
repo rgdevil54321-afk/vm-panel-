@@ -16,6 +16,7 @@ function defaultState() {
     nodeId: 1,
     name: 'Primary Node',
     location: 'Primary Datacenter',
+    joinCode: '',
     vms: [],                       // [{ id, uuid, name, os_type, os_name, img_url, hostname, username, password, disk_size, memory, cpus, ssh_port, vnc_port, agent_port, agent_token, port_forwards, gui_mode, start_on_boot, startup_command, notes, img_file, seed_file, created_at, updated_at }]
     nextVmId: 1,
     used_ports: [],                // allocated host ports
@@ -93,6 +94,15 @@ function osList() {
   return get().os_list;
 }
 
+function setJoinCode(code) {
+  get().joinCode = String(code || '');
+  save();
+}
+
+function joinCode() {
+  return get().joinCode;
+}
+
 function nextId() {
   const s = get();
   const id = s.nextVmId++;
@@ -111,6 +121,8 @@ module.exports = {
   setOsList,
   osList,
   setNodeMeta,
+  setJoinCode,
+  joinCode,
   nextId,
   STATE_FILE,
 };

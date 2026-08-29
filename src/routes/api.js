@@ -469,4 +469,13 @@ router.post('/admin/nodes/update', apiAdmin, async (req, res) => {
   }
 });
 
+router.post('/admin/nodes/connect-key', apiAdmin, json, async (req, res) => {
+  try {
+    const node = await nodeRegistry.onboardNodeByKey(req.body.key || '', { location: req.body.location });
+    res.json({ ok: true, node });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
