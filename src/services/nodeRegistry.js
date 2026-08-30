@@ -363,9 +363,11 @@ function getClusterSummary() {
       totalCpu += parseInt(stats.cpu && stats.cpu.cores_count, 10) || 0;
       totalMem += parseInt(stats.memory && stats.memory.total_mb, 10) || 0;
       totalDisk += parseFloat(stats.disk && stats.disk.total_gb) || 0;
-      usedCpu += parseInt(stats.cpu && stats.cpu.cores_count, 10) || 0;
       usedMem += parseInt(stats.memory && stats.memory.used_mb, 10) || 0;
       usedDisk += parseFloat(stats.disk && stats.disk.used_gb) || 0;
+      const cores = parseInt(stats.cpu && stats.cpu.cores_count, 10) || 0;
+      const pct = parseFloat(stats.cpu && stats.cpu.percent) || 0;
+      usedCpu += cores ? (cores * pct) / 100 : 0;
     }
     nodeSummaries.push({
       id: node.id,
@@ -374,6 +376,7 @@ function getClusterSummary() {
       port: node.port,
       location: node.location || '',
       status: node.status,
+      agent: !!(node.agent_token && node.agent_token !== 'local-primary-no-agent'),
       last_seen_at: node.last_seen_at,
       vm_total: vmCount,
       vm_running: runningOnNode,
@@ -390,8 +393,14 @@ function getClusterSummary() {
     capacity: { cpu: totalCpu, memory_mb: totalMem, disk_gb: totalDisk },
     usage: {
       cpu_percent: totalCpu > 0 ? Math.round((usedCpu / totalCpu) * 100) : 0,
+      cpu_used: Math.round(usedCpu),
+      cpu_remaining: Math.max(0, totalCpu - Math.round(usedCpu)),
       memory_percent: totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0,
+      memory_used_mb: usedMem,
+      memory_remaining_mb: Math.max(0, totalMem - usedMem),
       disk_percent: totalDisk > 0 ? Math.round((usedDisk / totalDisk) * 100) : 0,
+      disk_used_gb: Math.round(usedDisk),
+      disk_remaining_gb: Math.max(0, Math.round(totalDisk - usedDisk)),
     },
     updated_at: now(),
   };
