@@ -707,9 +707,132 @@ function updateAgent({ repo, branch, log }) {
   return { ok: true, message: 'Agent updated and restarting' };
 }
 
+// ---------------------------------------------------------------------------
+// In-guest execution via the vpanel guest agent (POST /exec on the VM's agent
+// port, forwarded from host to guest:9090). Requires the VM to be running and
+// the guest agent token.
+// ---------------------------------------------------------------------------
+function execInGuest(vm, cmd, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    if (!vm.agent_port) return reject(new Error('VM has no agent port assigned'));
+    if (!vm.agent_token) return reject(new Error('VM has no guest agent token'));
+    const body = JSON.stringify({ cmd: String(cmd), timeout: Math.max(5, Math.floor(timeoutMs / 1000)) });
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: vm.agent_port,
+        path: '/exec',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          'Authorization': 'Bearer ' + vm.agent_token,
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          let parsed = null;
+          try { parsed = JSON.parse(data); } catch (e) { parsed = null; }
+          if (res.statusCode >= 400) {
+            return reject(new Error((parsed && parsed.error) || ('Guest agent error ' + res.statusCode)));
+          }
+          resolve(parsed || {});
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('Guest agent timed out')));
+    req.on('error', (e) => reject(e));
+    req.end(body);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// tmate: run the tmate installer + a fresh session in the guest, read back the
+// generated "ssh <random>@tmate.io" server address. Requires internet inside
+// the guest (tmate connects out). Stores the address on the vm so the panel can
+// read it later.
+// ---------------------------------------------------------------------------
+async function getTmateSsh(vm) {
+  if (!isRunning(vm)) throw new Error('VM must be running to reach the tmate session');
+  const script = [
+    'export DEBIAN_FRONTEND=noninteractive',
+    'command -v tmux >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq tmux) >/dev/null 2>&1 || true',
+    'command -v tmate >/dev/null 2>&1 || (apt-get install -y -qq tmate) >/dev/null 2>&1 || true',
+    'rm -f /tmp/tmate.sock 2>/dev/null || true',
+    'tmux kill-session -t vpanel-tmate 2>/dev/null || true',
+    'tmate -S /tmp/tmate.sock new-session -d -s vpanel-tmate 2>/dev/null || true',
+    'for i in $(seq 1 45); do [ -S /tmp/tmate.sock ] && break; sleep 1; done',
+    'tmate -S /tmp/tmate.sock wait tmate-ready 2>/dev/null || true',
+    "tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' 2>/dev/null || true",
+    'rm -f /tmp/tmate_addr 2>/dev/null || true',
+    "tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' >/tmp/tmate_addr 2>/dev/null || true",
+    'cat /tmp/tmate_addr 2>/dev/null || true',
+  ].join('\n');
+  const r = await execInGuest(vm, script, 180000);
+  const out = String((r && r.stdout) || '').trim();
+  const m = out.match(/\b([a-z0-9]+)\@tmate\.io\b/i);
+  if (!m) {
+    throw new Error('Could not obtain a tmate SSH address. Is tmate installed and does the VM have internet? Agent output: ' + out.slice(-300));
+  }
+  if (!vm.tmate_ssh || vm.tmate_ssh !== m[1] + '@tmate.io') {
+    vm.tmate_ssh = m[1] + '@tmate.io';
+    state.upsertVm(vm);
+  }
+  return vm.tmate_ssh;
+}
+
+async function regenerateTmate(vm) {
+  await stopVm(vm, true).catch(() => {});
+  await startVm(vm);
+  await new Promise((r) => setTimeout(r, 30000));
+  return getTmateSsh(vm);
+}
+
+// ---------------------------------------------------------------------------
+// Reinstall a VM from an OS template. Optionally switch to a different template
+// (os is the template name, e.g. "Ubuntu 22.04"). Wipes the current disk and
+// reprovisions from the template image, reapplying cloud-init.
+// ---------------------------------------------------------------------------
+async function reinstallVm(vm, { os } = {}) {
+  const osList = state.osList();
+  let entry = null;
+  if (os) {
+    entry = osList.find((o) => o[0] === os);
+    if (!entry) throw new Error('Unknown OS template: ' + os);
+  } else {
+    entry = osList.find((o) => o[0] === vm.os_name) || osList[0] || [];
+  }
+  await stopVm(vm, true).catch(() => {});
+
+  if (vm.img_file && fs.existsSync(vm.img_file)) {
+    try { fs.unlinkSync(vm.img_file); } catch (e) {}
+  }
+  if (vm.seed_file && fs.existsSync(vm.seed_file)) {
+    try { fs.unlinkSync(vm.seed_file); } catch (e) {}
+  }
+
+  vm.os_name = String(entry[0] || vm.os_name);
+  vm.os_type = String(entry[1] || '');
+  vm.codename = String(entry[2] || '');
+  vm.img_url = String(entry[3] || vm.img_url);
+  vm.username = String(vm.username || entry[4] || 'root').toLowerCase();
+  vm.tmate_ssh = '';
+  vm.updated_at = now();
+  state.upsertVm(vm);
+
+  prepareImage(vm);
+  await startVm(vm);
+  return { ok: true, vm };
+}
+
+
 module.exports = {
   ensureDirs, VM_DIR, createVm, prepareImage, startVm, stopVm, restartVm, removeVm, updateVm,
   resizeDisk, bootLog, clearBootLog, liveStats, getVm: state.getVm,
   hostStats, startOnBootAll, usage, hasKvm, updateAgent,
   isRunning, statusOf, allVms: state.allVms, getHostStatsOnce: getPublicIp,
+  reinstallVm, getTmateSsh, regenerateTmate,
 };

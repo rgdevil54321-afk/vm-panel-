@@ -114,6 +114,14 @@ router.post('/admin/servers/:id/action', async (req, res) => {
       const updated = vmService.update(vm, { password: newPass }, req.user);
       res.json({ ok: true, password: updated.password });
     }
+    else if (action === 'reinstall') {
+      const { os } = req.body || {};
+      res.json(await vmService.reinstall(vm, { os }, req.user));
+    }
+    else if (action === 'tmate') {
+      const regen = !!(req.body && req.body.regen);
+      res.json({ ok: true, ssh: await vmService.getTmateSsh(vm, regen) });
+    }
     else res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -140,7 +148,7 @@ router.get('/admin/servers/:id', (req, res) => {
   const schedules = db.prepare('SELECT * FROM schedules WHERE vm_id = ?').all(vm.id);
   const subs = db.prepare('SELECT s.*, u.username FROM subusers s JOIN users u ON u.id = s.user_id WHERE s.vm_id = ?').all(vm.id);
   const allUsers = db.prepare('SELECT id, username, email FROM users ORDER BY username').all();
-  render(res, 'serverDetail', { vm, backups, schedules, subs, allUsers, uptime: vmService.uptimeSeconds(vm), mem: vmService.memUsage(vm) });
+  render(res, 'serverDetail', { vm, backups, schedules, subs, allUsers, uptime: vmService.uptimeSeconds(vm), mem: vmService.memUsage(vm), osList: vmService.getOsList() });
 });
 
 router.get('/admin/users', (req, res) => {

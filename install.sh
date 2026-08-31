@@ -207,6 +207,29 @@ EOF
   echo "  ⚙️  PM2 Process:      pm2 status | pm2 logs vpanel"
   echo "================================================================="
   echo ""
+
+  # --- Node agent prompt (like Pterodactyl Wings) ---
+  printf "${CYAN}${BOLD}  Do you want to install the Node Agent on this VPS as well?${NC}\n"
+  echo "  This allows this machine to also host VMs (act as a hypervisor node)."
+  echo "  You can always install it later via option [6] in the main menu."
+  echo ""
+  read -r -p "  Install Node Agent on this VPS? [Y/n]: " INSTALL_NODE
+  INSTALL_NODE="${INSTALL_NODE:-Y}"
+  if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+    echo ""
+    log_info "Installing Node Agent on this VPS..."
+    if [ -f "$APP_DIR/node-agent/install-node.sh" ]; then
+      cd "$APP_DIR"
+      bash node-agent/install-node.sh
+    else
+      log_warn "node-agent/install-node.sh not found. Skipping node agent install."
+      log_info "You can install it later via the main menu option [6]."
+    fi
+  else
+    echo ""
+    log_info "Skipping Node Agent install. You can install it later via the main menu option [6]."
+  fi
+  echo ""
 }
 
 # =============================================================================

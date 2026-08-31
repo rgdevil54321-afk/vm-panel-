@@ -203,6 +203,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/chmod":
                 os.chmod(body.get("path"), int(str(body.get("mode")), 8))
                 return self._send(200, ok())
+            if u.path == "/exec":
+                cmd = str(body.get("cmd") or "").strip()
+                if not cmd:
+                    return self._send(*bad("cmd required"))
+                timeout = int(body.get("timeout") or 120)
+                import subprocess
+                try:
+                    p = subprocess.Popen(
+                        ["/bin/sh", "-c", cmd],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                    )
+                    try:
+                        out, _ = p.communicate(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
+                        out, _ = p.communicate()
+                        return self._send(200, ok({"stdout": out.decode("utf-8", "replace"), "code": 124, "timed_out": True}))
+                    return self._send(200, ok({"stdout": out.decode("utf-8", "replace"), "code": p.returncode}))
+                except Exception as e:
+                    return self._send(*bad(e))
             return self._send(*bad("Not found", 404))
         except Exception as e:
             return self._send(*bad(e))

@@ -216,6 +216,34 @@ const server = http.createServer(async (req, res) => {
       if (method === 'GET' && sub === '/bootlog') return json(res, 200, { ok: true, log: qemu.bootLog(vm) });
       if (method === 'POST' && sub === '/bootlog/clear') return json(res, 200, qemu.clearBootLog(vm));
 
+      if (method === 'POST' && sub === '/tmate') {
+        try {
+          const ssh = await qemu.getTmateSsh(vm);
+          return json(res, 200, { ok: true, ssh });
+        } catch (e) {
+          return json(res, 502, { ok: false, error: e.message });
+        }
+      }
+      if (method === 'POST' && sub === '/tmate/regen') {
+        try {
+          const ssh = await qemu.regenerateTmate(vm);
+          return json(res, 200, { ok: true, ssh });
+        } catch (e) {
+          return json(res, 502, { ok: false, error: e.message });
+        }
+      }
+      if (method === 'POST' && sub === '/reinstall') {
+        const body = await readBody(req);
+        let data = {};
+        try { data = JSON.parse(body.toString() || '{}'); } catch (e) {}
+        try {
+          const r = await qemu.reinstallVm(vm, data);
+          return json(res, 200, r);
+        } catch (e) {
+          return json(res, 502, { ok: false, error: e.message });
+        }
+      }
+
       return json(res, 404, { ok: false, error: 'Unknown VM endpoint' });
     }
 

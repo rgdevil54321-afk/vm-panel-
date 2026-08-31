@@ -419,6 +419,7 @@ module.exports = {
   agentRequest, agentJson, fetchNodeStats, probeNode, startHeartbeat, stopHeartbeat,
   createVmOnNode, startVmOnNode, stopVmOnNode, restartVmOnNode, deleteVmOnNode,
   resizeVmOnNode, vmStatsOnNode, vmStatusOnNode, vmBootLogOnNode, listVmsOnNode,
+  reinstallVmOnNode, tmateVmOnNode,
   syncOsToNode, pushUpdateToNode, pushUpdateToAll, onboardNodeByKey,
   getClusterSummary, cachedStats, nodeError, nodeForVm,
 };

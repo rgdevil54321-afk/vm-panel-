@@ -720,6 +720,24 @@ async function remove(vm, user) {
   return { ok: true };
 }
 
+async function reinstall(vm, data, user) {
+  const node = remoteNodeFor(vm);
+  if (!node) throw new Error('Node not found for this VM');
+  const r = await nodeRegistry.reinstallVmOnNode(node, vm, data || {});
+  await nodeRegistry.syncOsToNode(node).catch(() => {});
+  setDbStatus(vm.id, data ? 'running' : 'running');
+  logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:reinstall', details: { os: (data && data.os) || vm.os_type } });
+  return r;
+}
+
+async function getTmateSsh(vm, regen) {
+  const node = remoteNodeFor(vm);
+  if (!node) throw new Error('Node not found for this VM');
+  const r = await nodeRegistry.tmateVmOnNode(node, vm, !!regen);
+  if (!r || !r.ssh) throw new Error('No tmate SSH address returned');
+  return r.ssh;
+}
+
 function update(vm, data, user) {
   const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes', 'owner_id'];
   const set = [];
@@ -902,4 +920,5 @@ module.exports = {
   VM_DIR, vmDir, dbVms, getVm, create, start, stop, restart, remove, update,
   resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, allocPort, allocVncPort, allocAgentPort,
   parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner,
+  reinstall, getTmateSsh,
 };

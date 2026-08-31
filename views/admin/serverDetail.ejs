@@ -100,7 +100,7 @@
               </td>
             </tr>
             <tr><td class="muted">OS / Codename</td><td><span class="pill pill-blue font-bold"><%= vm.os_type %> <%= vm.codename %></span></td></tr>
-            <tr><td class="muted">SSH Command</td><td><span class="mono" id="sshcmd">ssh -p <%= vm.ssh_port %> <%= vm.username %>@localhost</span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshcmd', this)">Copy</button></td></tr>
+            <tr><td class="muted">SSH Command</td><td><span class="mono" id="sshcmd">ssh -p <%= vm.ssh_port %> <%= vm.username %>@localhost</span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshcmd', this)">Copy</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="loadTmate(false, this)">Get SSH (tmate)</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="loadTmate(true, this)" title="Start a fresh tmate session and get a new address">Regenerate SSH</button></td></tr>
             <tr><td class="muted">Terminal</td><td><a href="/servers/<%= vm.id %>/console" class="btn btn-sm">Launch Web Terminal</a></td></tr>
             <tr><td class="muted">SSH Password</td><td><span class="mono" id="sshpass"><%= vm.password %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshpass', this)">Copy</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="regenPass(this)">Regenerate</button></td></tr>
             <tr><td class="muted">Disk Image File</td><td class="mono truncate text-sm" style="max-width:240px"><%= vm.img_file %></td></tr>
@@ -269,6 +269,36 @@ async function del() {
     setTimeout(() => location.href = '/admin/servers', 800);
   } catch (e) {
     VP.toast(e.message, 'error');
+  }
+}
+
+async function loadTmate(regen, btn) {
+  if (!btn.disabled) btn.disabled = true;
+  try {
+    const r = await VP.api('/admin/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'tmate', regen: !!regen } });
+    const ssh = r.ssh;
+    const el = document.getElementById('sshcmd');
+    el.textContent = 'ssh ' + ssh;
+    VP.toast(regen ? 'New tmate SSH generated' : 'tmate SSH ready', 'success');
+  } catch (e) {
+    VP.toast('tmate failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function reinstallVm(btn) {
+  const os = document.getElementById('reinstall_os').value || '';
+  const ok = await VP.confirmDialog('Wipe the disk of <%= vm.name %> and reinstall from ' + (os || 'its current OS template') + '? This destroys all data on the disk.', { title: 'Reinstall server?' });
+  if (!ok) return;
+  try {
+    btn.disabled = true;
+    const r = await VP.api('/admin/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'reinstall', os } });
+    VP.toast('Reinstall started: ' + ((r.vm && r.vm.name) || 'OK'), 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+    btn.disabled = false;
   }
 }
 </script>
