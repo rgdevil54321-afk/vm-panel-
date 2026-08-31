@@ -251,6 +251,12 @@ async function vmStatusOnNode(node, vm) {
 async function vmBootLogOnNode(node, vm) {
   return agentJson(node, { method: 'GET', path: `/vms/${vm.id}/bootlog` });
 }
+async function reinstallVmOnNode(node, vm, data) {
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/reinstall`, body: JSON.stringify(data || {}) });
+}
+async function tmateVmOnNode(node, vm, regen) {
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/tmate${regen ? '/regen' : ''}`, body: '{}' });
+}
 async function listVmsOnNode(node) {
   const d = await agentJson(node, { method: 'GET', path: '/vms' });
   return d.vms || [];
