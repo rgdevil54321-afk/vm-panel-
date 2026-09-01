@@ -324,7 +324,7 @@ router.post('/admin/settings/background', uploadBackground.single('file'), (req,
 
 router.post('/admin/settings/music', uploadMusic.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  settings.set('panel.music_mode', 'upload');
+  settings.set('panel.music_mode', 'file');
   settings.set('panel.music_file', `/uploads/music/${req.file.filename}`);
   return res.json({ ok: true, url: `/uploads/music/${req.file.filename}` });
 });

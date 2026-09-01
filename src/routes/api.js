@@ -366,12 +366,21 @@ router.post('/customization/save', json, (req, res) => {
     const fields = [
       'panel.bg_mode', 'panel.bg_color', 'panel.bg_url', 'panel.bg_video_url',
       'panel.bg_overlay', 'panel.bg_cover', 'panel.bg_blur', 'panel.bg_transparency',
-      'panel.theme', 'panel.accent'
+      'panel.theme', 'panel.accent', 'panel.sfx_enabled', 'panel.sfx_volume', 'panel.secret_blur'
     ];
     for (const k of fields) {
       if (req.body[k] !== undefined) settings.set(k, String(req.body[k]));
     }
     res.json({ ok: true, message: 'Customization saved', settings: settings.all() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post('/settings/music-volume', json, (req, res) => {
+  try {
+    if (req.body.volume !== undefined) settings.set('panel.music_volume', String(req.body.volume));
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

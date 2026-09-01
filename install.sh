@@ -217,28 +217,14 @@ EOF
   INSTALL_NODE="${INSTALL_NODE:-Y}"
   if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
     echo ""
-    log_info "Installing Node Agent on this VPS..."
-    if [ -f "$APP_DIR/node-agent/install-node.sh" ]; then
+    log_info "Installing Local Node Agent (same VPS, started via PM2)..."
+    if [ -f "$APP_DIR/node-agent/install-local-node.sh" ]; then
       cd "$APP_DIR"
-      bash node-agent/install-node.sh
+      bash node-agent/install-local-node.sh
     else
-      log_warn "node-agent/install-node.sh not found. Skipping node agent install."
+      log_warn "node-agent/install-local-node.sh not found. Skipping node agent install."
       log_info "You can install it later via the main menu option [6]."
     fi
-    # Create the local primary node so the panel can manage its own VMs.
-    node -e "
-      try {
-        const Database = require('better-sqlite3');
-        const db = new Database('data/vpanel.db');
-        const c = db.prepare('SELECT COUNT(*) c FROM nodes').get().c;
-        if (c === 0) {
-          db.prepare('INSERT INTO nodes (name, host, port, agent_token, location, status, last_seen_at, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('Primary Node', '127.0.0.1', 3005, 'local-primary-no-agent', 'Primary Datacenter', 'online', new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
-          console.log('[✔] Local primary node created.');
-        } else {
-          console.log('[i] Primary node already exists, skipping.');
-        }
-      } catch (e) { console.log('[!] Could not create primary node: ' + e.message); }
-    "
   else
     echo ""
     log_info "Skipping Node Agent install. You can install it later via the main menu option [6]."
@@ -327,7 +313,12 @@ do_install_node() {
 
   log_info "Launching the node-agent installer..."
   echo ""
-  bash node-agent/install-node.sh
+  if [ -f "data/vpanel.db" ] && [ -f "node-agent/install-local-node.sh" ]; then
+    log_info "A local panel database was detected — installing node agent via PM2 (same-host)."
+    bash node-agent/install-local-node.sh
+  else
+    bash node-agent/install-node.sh
+  fi
   echo ""
 }
 

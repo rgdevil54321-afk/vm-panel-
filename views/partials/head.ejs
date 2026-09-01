@@ -21,11 +21,25 @@ const navbarStyle = settings['panel.navbar_style'] || 'glass';
 <title><%= panelName %> - <%= title %></title>
 <link rel="icon" href="<%= favicon %>"/>
 <link rel="stylesheet" href="/css/panel.css"/>
+<script src="/js/audio.js" defer></script>
+<script src="/js/secretblur.js" defer></script>
 <% if (typeof styles !== 'undefined') { for (const s of styles) { %><link rel="stylesheet" href="<%= s %>"/><% } } %>
 <% if (typeof scripts !== 'undefined') { for (const s of scripts) { %><script src="<%= s %>"></script><% } } %>
 <style>:root { --accent: <%= accent %>; }</style>
 <script>
 window.VP_CONFIG = { apiPort: 3002 };
+window.APP_SETTINGS = <%- JSON.stringify({
+  music_mode: settings['panel.music_mode'] || 'none',
+  music_url: settings['panel.music_url'] || '',
+  music_file: settings['panel.music_file'] || '',
+  music_autoplay: String(settings['panel.music_autoplay']) === '1' || settings['panel.music_autoplay'] === true,
+  music_loop: String(settings['panel.music_loop']) !== '0' && settings['panel.music_loop'] !== false,
+  music_volume: parseInt(settings['panel.music_volume'], 10) || 35,
+  music_title: settings['panel.name'] || 'Music',
+  sfx_enabled: String(settings['panel.sfx_enabled']) !== '0' && settings['panel.sfx_enabled'] !== false,
+  sfx_volume: parseInt(settings['panel.sfx_volume'], 10) || 40,
+  secret_blur: String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true
+}) %>;
 function vpApiBase() {
   return '';
 }
