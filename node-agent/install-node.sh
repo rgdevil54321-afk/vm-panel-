@@ -556,14 +556,16 @@ echo "  Done. See the connect key above to attach this node to your panel."
 echo ""
 echo "[+] Verifying the agent is up and the panel-facing port is reachable..."
 sleep 1
-LOCAL_HTTP="$(curl -s -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${AGENT_PORT}/health" 2>/dev/null || echo '000')"
-PUB_HTTP="$(curl -s -m 6 -o /dev/null -w "%{http_code}" "http://${NODE_HOST}:${AGENT_PORT}/health" 2>/dev/null || echo '000')"
+LOCAL_HTTP="$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AGENT_PORT}/health" 2>/dev/null)"
+LOCAL_HTTP="${LOCAL_HTTP:0:3}"
+PUB_HTTP="$(curl -s -m 6 -o /dev/null -w '%{http_code}' "http://${NODE_HOST}:${AGENT_PORT}/health" 2>/dev/null)"
+PUB_HTTP="${PUB_HTTP:0:3}"
 echo "    Local agent  (127.0.0.1:${AGENT_PORT}/health): ${LOCAL_HTTP}"
 echo "    Public reach (${NODE_HOST}:${AGENT_PORT}/health):  ${PUB_HTTP}"
 if [[ "$LOCAL_HTTP" == "000" ]]; then
   echo "    ${RED}[x] Agent is NOT responding locally. Check the service (systemctl status venlix-node / pm2 logs venlix-node).${NC}"
-elif [[ "$PUB_HTTP" == "000" ]]; then
-  echo "    ${YELLOW}[!] Agent is up locally but NOT reachable from outside on ${NODE_HOST}:${AGENT_PORT}.${NC}"
+elif [[ "$PUB_HTTP" != "200" && "$PUB_HTTP" != "401" && "$PUB_HTTP" != "302" ]]; then
+  echo "    ${YELLOW}[!] Agent is up locally but NOT reachable from outside on ${NODE_HOST}:${AGENT_PORT} (curl=$PUB_HTTP).${NC}"
   # Container (LXC/Docker) special case / reverse-tunnel offer
   if [[ "$VIRT" != "host" ]] || [[ "$NODE_HOST" == "<this-server-ip>" ]]; then
     echo ""
@@ -598,7 +600,11 @@ echo "  Node name        : $NODE_NAME"
 echo "  Agent dir        : $AGENT_DIR"
 echo "  Agent port       : $AGENT_PORT"
 echo "  QEMU acceleration: $([ "${NO_KVM}" = "1" ] && echo 'TCG (software, NO_KVM=1)' || echo 'KVM (hardware, NO_KVM=0)')"
-echo "  Prior data kept  : ${STALE_MIGRATE:+yes (migrated)}${STALE_MIGRATE- no (fresh install)}"
+if [[ -n "$STALE_MIGRATE" ]]; then
+  echo "  Prior data kept  : yes (migrated existing node state)"
+else
+  echo "  Prior data kept  : no (fresh install)"
+fi
 echo "  Backup of old data: ${BACKUP_DIR:-none (fresh install)}"
 echo "  Service manager  : $SVC (detected virt: ${VIRT:-host})"
 echo "  Reachability     : local=$LOCAL_HTTP public=$PUB_HTTP"
