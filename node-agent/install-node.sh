@@ -174,13 +174,22 @@ precheck() {
 
 precheck
 
-# ---------- prompt ----------
-read -p "Node name (e.g. Node-2-Mumbai): " NODE_NAME
-NODE_NAME="${NODE_NAME:-Node}"
-read -p "Agent token (from panel -> Nodes -> Create Node): " AGENT_TOKEN
+# ---------- prompt (auto-friendly: defaults accept with Enter) ----------
+# Allow passing values via args/env so one-liners need no typing:
+#   sudo bash install-node.sh "<name>" "<agent-token>"
+#   NODE_NAME=x AGENT_TOKEN=y CLOUDFLARED_TUNNEL_TOKEN=z bash install-node.sh
+if [[ -n "$1" ]]; then NODE_NAME="$1"; fi
+if [[ -n "$2" ]]; then AGENT_TOKEN="$2"; fi
+if [[ -z "$NODE_NAME" ]]; then
+  read -r -p "Node name (default Node): " NODE_NAME
+  NODE_NAME="${NODE_NAME:-Node}"
+fi
 if [[ -z "$AGENT_TOKEN" ]]; then
-  echo "Agent token is required." >&2
-  exit 1
+  read -r -p "Agent token (from panel -> Nodes -> Create Node): " AGENT_TOKEN
+fi
+if [[ -z "$AGENT_TOKEN" ]]; then
+  # No token given: generate a join key instead (panel onboards via Connect With Key)
+  echo "    [!] No agent token given — the connect key printed at the end will onboard this node."
 fi
 
 # ---------- system deps (QEMU stack) ----------
@@ -430,6 +439,11 @@ setup_tunnel() {
   echo "    For a STABLE, persistent node address set env CLOUDFLARED_TUNNEL_TOKEN"
   echo "    (from a Cloudflare named tunnel) before running. Without it we use a"
   echo "    free quick tunnel whose URL rotates across restarts."
+  # Auto-prompt for a token if one is needed and not already provided
+  if [[ -z "$CLOUDFLARED_TUNNEL_TOKEN" ]] && [[ -z "$TUNNEL_TOKEN" ]]; then
+    read -r -p "    Have a Cloudflare named-tunnel token? Paste it (enter = quick tunnel): " TOK
+    CLOUDFLARED_TUNNEL_TOKEN="${CLOUDFLARED_TUNNEL_TOKEN:-$TOK}"
+  fi
   # 1. Named tunnel if credentials are present
   if [[ -n "$CLOUDFLARED_TUNNEL_TOKEN" ]] || [[ -n "$TUNNEL_TOKEN" ]]; then
     local TOKEN="${CLOUDFLARED_TUNNEL_TOKEN:-$TUNNEL_TOKEN}"
