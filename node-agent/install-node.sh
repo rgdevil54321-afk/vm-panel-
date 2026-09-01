@@ -185,6 +185,28 @@ EOF
 # Create state + vm dirs
 mkdir -p "$AGENT_DIR/data" "$AGENT_DIR/vms"
 
+# ---------- backup + migrate existing agent data ----------
+BACKUP_DIR=""
+STALE_MIGRATE=""
+# Preserve prior node-state.json (all VMs, node meta, ports) and .env so a
+# re-install / update never loses a node's running workloads or its join state.
+BACKUP_DIR="$AGENT_DIR/backups/$(date +%Y%m%d-%H%M%S)"
+if [[ -f "$AGENT_DIR/data/node-state.json" ]] || [[ -f "$AGENT_DIR/.env" ]]; then
+  mkdir -p "$BACKUP_DIR"
+  [[ -f "$AGENT_DIR/data/node-state.json" ]] && cp -a "$AGENT_DIR/data/node-state.json" "$BACKUP_DIR/" 2>/dev/null
+  for d in vm logs; do
+    [[ -d "$AGENT_DIR/$d" ]] && cp -a "$AGENT_DIR/$d" "$BACKUP_DIR/" 2>/dev/null
+  done
+  echo "[+] Backed up existing agent data to $BACKUP_DIR"
+  # Migrate: if the node already has a state file, carry it forward so this
+  # install reads the OLD vms instead of starting empty.
+  if [[ -s "$AGENT_DIR/data/node-state.json" ]]; then
+    STALE_MIGRATE=1
+  fi
+else
+  echo "[+] Fresh install (no prior agent data found)."
+fi
+
 echo "[+] Installing Node dependencies (uuid only)..."
 cd "$AGENT_DIR"
 # uuid is the only third-party dependency (no native build)
@@ -202,9 +224,29 @@ AGENT_TOKEN="$AGENT_TOKEN" node -e "require('dotenv')" 2>/dev/null || true
 # simplest: store name via env on first boot; agent reads AGENT_NODE_NAME
 echo "AGENT_NODE_NAME=$NODE_NAME" >> "$AGENT_DIR/.env"
 
-# ---------- systemd unit ----------
-echo "[+] Creating systemd service..."
-cat > /etc/systemd/system/venlix-node.service <<EOF
+# ---------- service manager (systemd preferred, PM2 fallback) ----------
+start_with_pm2() {
+  echo "[+] Setting up agent with PM2 (no systemd on this host)..."
+  if ! command -v pm2 >/dev/null 2>&1; then
+    npm install -g pm2 >/dev/null 2>&1 || true
+  fi
+  if ! command -v pm2 >/dev/null 2>&1; then
+    # pm2 sometimes installs to a node bin dir not on PATH
+    export PATH="$PATH:/usr/local/bin:/usr/bin:/opt/node/bin"
+    command -v pm2 >/dev/null 2>&1 || npm root -g >/dev/null 2>&1
+  fi
+  # load .env values for the PM2 process
+  cd "$AGENT_DIR"
+  pm2 start agent.js --name venlix-node --update-env >/dev/null 2>&1 \
+    || pm2 start agent.js --name venlix-node >/dev/null 2>&1
+  pm2 save >/dev/null 2>&1 || true
+  pm2 startup >/dev/null 2>&1 || true
+  echo "[+] Agent started via PM2 (name: venlix-node). Auto-restarts on failure."
+}
+
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+  echo "[+] Creating systemd service (PID 1 is systemd)..."
+  cat > /etc/systemd/system/venlix-node.service <<EOF
 [Unit]
 Description=Venlix Nodes - Node Agent (QEMU VM Hypervisor)
 After=network.target
@@ -222,9 +264,17 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable venlix-node
-systemctl restart venlix-node || true
+  systemctl daemon-reload
+  systemctl enable venlix-node
+  systemctl restart venlix-node || true
+  if ! systemctl is-active --quiet venlix-node; then
+    echo "    [!] systemd service not active — falling back to PM2."
+    start_with_pm2
+  fi
+else
+  echo "[!] No systemd detected on this host — using PM2 (great for Docker/container VPSs)."
+  start_with_pm2
+fi
 
 # Resolve the address the PANEL must use to reach this node.
 # Prefer the PUBLIC IP (works when the panel is on another VPS / Codesandbox),
@@ -286,4 +336,38 @@ else
 fi
 echo ""
 echo "  Done. See the connect key above to attach this node to your panel."
+
+# ---------- reachability self-test ----------
+echo ""
+echo "[+] Verifying the agent is up and the panel-facing port is reachable..."
+sleep 1
+LOCAL_HTTP="$(curl -s -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${AGENT_PORT}/health" 2>/dev/null || echo '000')"
+PUB_HTTP="$(curl -s -m 6 -o /dev/null -w "%{http_code}" "http://${NODE_HOST}:${AGENT_PORT}/health" 2>/dev/null || echo '000')"
+echo "    Local agent  (127.0.0.1:${AGENT_PORT}/health): ${LOCAL_HTTP}"
+echo "    Public reach (${NODE_HOST}:${AGENT_PORT}/health):  ${PUB_HTTP}"
+if [[ "$LOCAL_HTTP" == "000" ]]; then
+  echo "    ${RED}[x] Agent is NOT responding locally. Check the service (systemctl status venlix-node / pm2 logs venlix-node).${NC}"
+elif [[ "$PUB_HTTP" == "000" ]]; then
+  echo "    ${YELLOW}[!] Agent is up locally but NOT reachable from outside on ${NODE_HOST}:${AGENT_PORT}.${NC}"
+  echo "        Open ${AGENT_PORT}/tcp in your VPS/cloud firewall, or run a reverse tunnel / port-forward to it."
+else
+  echo "    ${GREEN}[OK] Agent reachable locally AND via ${NODE_HOST}:${AGENT_PORT}. Ready to connect to the panel.${NC}"
+fi
+
+# ---------- final summary ----------
+echo ""
+echo "============================================="
+echo "  INSTALL SUMMARY"
+echo "============================================="
+echo "  Node name        : $NODE_NAME"
+echo "  Agent dir        : $AGENT_DIR"
+echo "  Agent port       : $AGENT_PORT"
+echo "  QEMU acceleration: $([ "${NO_KVM}" = "1" ] && echo 'TCG (software, NO_KVM=1)' || echo 'KVM (hardware, NO_KVM=0)')"
+echo "  Prior data kept  : ${STALE_MIGRATE:+yes (migrated)}${STALE_MIGRATE- no (fresh install)}"
+echo "  Backup of old data: ${BACKUP_DIR:-none (fresh install)}"
+echo "  Service manager  : $(command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && echo 'systemd' || echo 'PM2')"
+echo "  Reachability     : local=$LOCAL_HTTP public=$PUB_HTTP"
+echo ""
+echo "  Connect with key: ${JOIN_CODE}@${NODE_HOST}:${AGENT_PORT}"
+echo "============================================="
 echo ""
