@@ -119,14 +119,23 @@ systemctl daemon-reload
 systemctl enable venlix-node
 systemctl restart venlix-node || true
 
-# Best-effort public IP for the connect key.
-NODE_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-if [[ -z "$NODE_IP" ]]; then
-  NODE_IP="$(curl -s -m 3 ifconfig.me 2>/dev/null)"
+# Resolve the address the PANEL must use to reach this node.
+# Prefer the PUBLIC IP (works when the panel is on another VPS / Codesandbox),
+# because `hostname -I` inside containers yields unroutable bridge IPs (172.17.x.x).
+echo "[+] Detecting the public/reachable address for this node..."
+PUB_IP="$(curl -s -m 5 -4 https://api.ipify.org 2>/dev/null || curl -s -m 5 ifconfig.me 2>/dev/null || echo '')"
+if [[ -z "$PUB_IP" ]]; then
+  echo "    [!] Could not auto-detect public IP; falling back to network address."
+  PUB_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 fi
-if [[ -z "$NODE_IP" ]]; then
-  NODE_IP="<this-server-ip>"
+if [[ -z "$PUB_IP" ]]; then
+  PUB_IP="<this-server-ip>"
 fi
+
+echo ""
+echo "  This node is reachable by the panel via:  $PUB_IP"
+read -r -p "  Enter the address the panel should use (or press Enter to keep [$PUB_IP]): " NODE_HOST
+NODE_HOST="${NODE_HOST:-$PUB_IP}"
 
 echo ""
 echo "============================================="
@@ -137,7 +146,7 @@ echo "  Node name : $NODE_NAME"
 echo ""
 echo "  >>> Connect Key <<<"
 echo ""
-echo "      ${JOIN_CODE}@${NODE_IP}:3005"
+echo "      ${JOIN_CODE}@${NODE_HOST}:3005"
 echo ""
 echo "  On your panel:"
 echo "    1. Go to Nodes & Cluster Overview"
