@@ -447,7 +447,53 @@ if [[ "$LOCAL_HTTP" == "000" ]]; then
   echo "    ${RED}[x] Agent is NOT responding locally. Check the service (systemctl status venlix-node / pm2 logs venlix-node).${NC}"
 elif [[ "$PUB_HTTP" == "000" ]]; then
   echo "    ${YELLOW}[!] Agent is up locally but NOT reachable from outside on ${NODE_HOST}:${AGENT_PORT}.${NC}"
-  echo "        Open ${AGENT_PORT}/tcp in your VPS/cloud firewall, or run a reverse tunnel / port-forward to it."
+  # Container (LXC/Docker) special case / reverse-tunnel offer
+  if [[ "$VIRT" != "host" ]] || [[ "$NODE_HOST" == "<this-server-ip>" ]]; then
+    echo ""
+    echo "    This looks like a container (${VIRT}) or a host without a directly-bindable public IP."
+    echo "    A remote panel cannot reach the agent unless:"
+    echo "      (a) the container/parent forwards port ${AGENT_PORT} to this box, OR"
+    echo "      (b) we run a reverse tunnel so the agent is reachable via a public URL."
+    echo ""
+    read -r -p "    Set up a free Cloudflare reverse tunnel to expose the agent? [Y/n]: " TR
+    if [[ ! "$TR" =~ ^[Nn]$ ]]; then
+      TUN_URL=""
+      CLOUDFLARED_BIN="$(command -v cloudflared || echo /usr/local/bin/cloudflared)"
+      if [[ ! -x "$CLOUDFLARED_BIN" ]]; then
+        echo "    Downloading cloudflared (quick tunnel)..."
+        curl -sSL -o /usr/local/bin/cloudflared \
+          https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+          && chmod +x /usr/local/bin/cloudflared || true
+        CLOUDFLARED_BIN="$(command -v cloudflared || [ -x /usr/local/bin/cloudflared ] && echo /usr/local/bin/cloudflared)"
+      fi
+      if [[ -x "$CLOUDFLARED_BIN" ]]; then
+        echo "    Starting cloudflared quick tunnel to http://127.0.0.1:${AGENT_PORT}..."
+        TUN_LOG="/tmp/cloudflared-venlix.log"
+        "$CLOUDFLARED_BIN" tunnel --url "http://127.0.0.1:${AGENT_PORT}" >"$TUN_LOG" 2>&1 &
+        CLOUDFLARED_PID=$!
+        for i in 1 2 3 4 5 6 7 8; do
+          sleep 2
+          TUN_URL="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUN_LOG" | head -1)"
+          [[ -n "$TUN_URL" ]] && break
+        done
+        if [[ -n "$TUN_URL" ]]; then
+          echo ""
+          echo "    ${GREEN}[+] Reverse tunnel ready: $TUN_URL${NC}"
+          echo "    The agent is now reachable from anywhere via that HTTPS URL."
+          echo "    In your panel, "Connect With Node Key" using:"
+          echo "      ${JOIN_CODE}@${TUN_URL#https://}:443"
+          echo "    Then override the node's listening host/port if prompted so the panel talks to $TUN_URL."
+          echo "    Cloudflared runs as PID $CLOUDFLARED_PID (log: $TUN_LOG). It is NOT auto-started on boot in this quick-test mode."
+        else
+          echo "    ${YELLOW}[!] Could not obtain a tunnel URL (check $TUN_LOG). Falling back: forward ${AGENT_PORT} on the parent host, or keep cloudflared running.${NC}"
+        fi
+      else
+        echo "    ${YELLOW}[!] cloudflared install failed. Forward ${AGENT_PORT} on the parent host, or install cloudflared manually.${NC}"
+      fi
+    fi
+  else
+    echo "        Open ${AGENT_PORT}/tcp in your VPS/cloud firewall (or run a reverse tunnel / port-forward)."
+  fi
 else
   echo "    ${GREEN}[OK] Agent reachable locally AND via ${NODE_HOST}:${AGENT_PORT}. Ready to connect to the panel.${NC}"
 fi
