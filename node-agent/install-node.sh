@@ -26,6 +26,34 @@ note_p(){ PRECHECK_PASS=$((PRECHECK_PASS+1)); }
 note_w(){ PRECHECK_WARN=$((PRECHECK_WARN+1)); }
 note_f(){ PRECHECK_FAIL=$((PRECHECK_FAIL+1)); }
 
+# ---------- universal environment detection ----------
+# Sets: SVC (systemd|pm2|launchd|upstart|rc|unknown), VIRT (host|lxc|docker|...)
+detect_env() {
+  VIRT="host"
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    VIRT="$(systemd-detect-virt 2>/dev/null || echo host)"
+  elif [[ -n "$(cat /proc/1/cgroup 2>/dev/null | grep -iE 'docker|lxc|containerd' | head -1)" ]]; then
+    VIRT="container"
+  elif [[ -d /.dockerenv ]]; then
+    VIRT="docker"
+  fi
+  [[ "$VIRT" == "none" || -z "$VIRT" ]] && VIRT="host"
+
+  SVC="unknown"
+  if [[ -d /run/systemd/system ]] || command -v systemctl >/dev/null 2>&1; then
+    SVC="systemd"
+  elif [[ "$(uname -s)" == "Darwin" ]] && command -v launchctl >/dev/null 2>&1; then
+    SVC="launchd"
+  elif command -v pm2 >/dev/null 2>&1 || command -v npm >/dev/null 2>&1; then
+    SVC="pm2"
+  elif [[ -d /etc/init ]] && command -v start >/dev/null 2>&1; then
+    SVC="upstart"
+  elif [[ -d /etc/init.d ]]; then
+    SVC="rc"
+  fi
+  return 0
+}
+
 precheck() {
   echo ""
   echo "============================================="
@@ -37,6 +65,22 @@ precheck() {
 
   # 1. root
   if [[ $EUID -eq 0 ]]; then ok "Run as root"; note_p; else fail "Must run as root (sudo)"; note_f; PRECHECK_FATAL=1; fi
+
+  # 1b. environment / container + service manager detection (universal compat)
+  detect_env
+  case "$SVC" in
+    systemd) ok "Environment: $VIRT (systemd available)"; note_p ;;
+    pm2)    warn "Environment: $VIRT — no systemd, will auto-run via PM2"; note_w ;;
+    launchd) ok "Environment: $VIRT (macOS launchd available)"; note_p ;;
+    upstart) warn "Environment: $VIRT (upstart detected)"; note_w ;;
+    rc)     warn "Environment: $VIRT (sysvinit/rc.d)"; note_w ;;
+    *)      warn "Environment: $VIRT — unknown init, will fall back to PM2"; note_w ;;
+  esac
+  # If we are inside a container (LXC/Docker) and the agent port cannot be
+  # reached from outside, flag it clearly so the user knows to forward the port.
+  if [[ "$VIRT" != "host" ]]; then
+    warn "Detected container/virtualization: $VIRT. The agent binds 0.0.0.0:$AGENT_PORT, but a REMOTE panel can only reach it if the container's port is forwarded on the parent host / cloud firewall."; note_w
+  fi
 
   # 2. architecture
   local arch
@@ -224,28 +268,31 @@ AGENT_TOKEN="$AGENT_TOKEN" node -e "require('dotenv')" 2>/dev/null || true
 # simplest: store name via env on first boot; agent reads AGENT_NODE_NAME
 echo "AGENT_NODE_NAME=$NODE_NAME" >> "$AGENT_DIR/.env"
 
-# ---------- service manager (systemd preferred, PM2 fallback) ----------
+# ---------- service manager (universal: systemd / launchd / upstart / rc / PM2) ----------
 start_with_pm2() {
-  echo "[+] Setting up agent with PM2 (no systemd on this host)..."
+  echo "[+] Setting up agent with PM2..."
   if ! command -v pm2 >/dev/null 2>&1; then
     npm install -g pm2 >/dev/null 2>&1 || true
   fi
   if ! command -v pm2 >/dev/null 2>&1; then
-    # pm2 sometimes installs to a node bin dir not on PATH
     export PATH="$PATH:/usr/local/bin:/usr/bin:/opt/node/bin"
-    command -v pm2 >/dev/null 2>&1 || npm root -g >/dev/null 2>&1
+    command -v pm2 >/dev/null 2>&1 || true
   fi
-  # load .env values for the PM2 process
+  if ! command -v pm2 >/dev/null 2>&1; then
+    echo "[x] Could not install PM2. Install Node.js >= 16 and retry, or run the agent manually: node $AGENT_DIR/agent.js" >&2
+    return 1
+  fi
   cd "$AGENT_DIR"
   pm2 start agent.js --name venlix-node --update-env >/dev/null 2>&1 \
     || pm2 start agent.js --name venlix-node >/dev/null 2>&1
   pm2 save >/dev/null 2>&1 || true
   pm2 startup >/dev/null 2>&1 || true
-  echo "[+] Agent started via PM2 (name: venlix-node). Auto-restarts on failure."
+  echo "[+] Agent running via PM2 (name: venlix-node). Auto-restarts on failure."
 }
 
-if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
-  echo "[+] Creating systemd service (PID 1 is systemd)..."
+NODE_BIN="$(command -v node || echo /usr/bin/node)"
+setup_systemd() {
+  echo "[+] Creating systemd service..."
   cat > /etc/systemd/system/venlix-node.service <<EOF
 [Unit]
 Description=Venlix Nodes - Node Agent (QEMU VM Hypervisor)
@@ -255,7 +302,7 @@ After=network.target
 Type=simple
 WorkingDirectory=$AGENT_DIR
 EnvironmentFile=$AGENT_DIR/.env
-ExecStart=/usr/bin/node $AGENT_DIR/agent.js
+ExecStart=$NODE_BIN $AGENT_DIR/agent.js
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=65536
@@ -263,18 +310,69 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
-
   systemctl daemon-reload
-  systemctl enable venlix-node
+  systemctl enable venlix-node 2>/dev/null || true
   systemctl restart venlix-node || true
-  if ! systemctl is-active --quiet venlix-node; then
-    echo "    [!] systemd service not active — falling back to PM2."
-    start_with_pm2
-  fi
-else
-  echo "[!] No systemd detected on this host — using PM2 (great for Docker/container VPSs)."
-  start_with_pm2
-fi
+  systemctl is-active --quiet venlix-node || start_with_pm2
+}
+
+setup_launchd() {
+  echo "[+] Creating macOS launchd agent..."
+  local plist="$HOME/Library/LaunchAgents/com.venlix.node.plist"
+  cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.venlix.node</string>
+  <key>ProgramArguments</key>
+  <array><string>/usr/bin/env</string><string>node</string><string>$AGENT_DIR/agent.js</string></array>
+  <key>WorkingDirectory</key><string>$AGENT_DIR</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$AGENT_DIR/agent.log</string>
+  <key>StandardErrorPath</key><string>$AGENT_DIR/agent.log</string>
+</dict></plist>
+EOF
+  launchctl unload "$plist" 2>/dev/null || true
+  launchctl load "$plist" 2>/dev/null || start_with_pm2
+}
+
+case "$SVC" in
+  systemd) setup_systemd ;;
+  launchd) setup_launchd ;;
+  upstart)
+    echo "[+] Writing upstart job..."
+    cat > /etc/init/venlix-node.conf <<EOF
+description "Venlix Node Agent"
+start on started networking
+stop on runlevel [016]
+respawn
+env AGENT_DIR=$AGENT_DIR
+exec $NODE_BIN \$AGENT_DIR/agent.js
+EOF
+    start venlix-node 2>/dev/null || true
+    ;;
+  rc)
+    echo "[+] Writing sysvinit script..."
+    cat > /etc/init.d/venlix-node <<EOF
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          venlix-node
+# Required-Start:    $network
+# Required-Stop:     $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+### END INIT INFO
+case "\$1" in
+  start) (cd $AGENT_DIR && nohup $NODE_BIN agent.js >> $AGENT_DIR/agent.log 2>&1 &) ;;
+  stop)  pkill -f "$AGENT_DIR/agent.js" || true ;;
+esac
+EOF
+    chmod +x /etc/init.d/venlix-node
+    /etc/init.d/venlix-node start 2>/dev/null || start_with_pm2
+    ;;
+  *) start_with_pm2 ;;
+esac
 
 # Resolve the address the PANEL must use to reach this node.
 # Prefer the PUBLIC IP (works when the panel is on another VPS / Codesandbox),
@@ -365,7 +463,7 @@ echo "  Agent port       : $AGENT_PORT"
 echo "  QEMU acceleration: $([ "${NO_KVM}" = "1" ] && echo 'TCG (software, NO_KVM=1)' || echo 'KVM (hardware, NO_KVM=0)')"
 echo "  Prior data kept  : ${STALE_MIGRATE:+yes (migrated)}${STALE_MIGRATE- no (fresh install)}"
 echo "  Backup of old data: ${BACKUP_DIR:-none (fresh install)}"
-echo "  Service manager  : $(command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && echo 'systemd' || echo 'PM2')"
+echo "  Service manager  : $SVC (detected virt: ${VIRT:-host})"
 echo "  Reachability     : local=$LOCAL_HTTP public=$PUB_HTTP"
 echo ""
 echo "  Connect with key: ${JOIN_CODE}@${NODE_HOST}:${AGENT_PORT}"
