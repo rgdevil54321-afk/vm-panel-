@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# Venlix Nodes - ONE-LINE node installer
+# Venlix Nodes - ONE-LINE MASTER installer / management suite
 #
 #   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/rgdevil54321-afk/vm-panel-/main/bootstrap.sh)"
 #
@@ -8,25 +8,34 @@
 #   curl -fsSL -o /tmp/vn-bootstrap.sh https://raw.githubusercontent.com/rgdevil54321-afk/vm-panel-/main/bootstrap.sh
 #   sudo bash /tmp/vn-bootstrap.sh
 #
-# Does EVERYTHING automatically:
-#   - installs missing deps (git, curl, node, qemu)
-#   - runs the eligibility precheck
-#   - installs the node agent (systemd or PM2, auto-detected)
-#   - if the node is not publicly reachable (container / LXC / no public IP),
-#     it asks for a Cloudflare token and sets up a persistent tunnel
-#   - prints the connect key for your panel
+# Fetches the repo and launches the full MANAGEMENT SUITE (install.sh),
+# which lets you manage EVERYTHING from one place:
+#   1. Install the full panel (npm deps, admin, PM2)
+#   2. Create / reset admin user
+#   3. Update (git pull + rebuild + reload)
+#   4. PM2 management (status / restart / logs / boot)
+#   5. Uninstall
+#   6. Install node agent (connect this machine to the panel)
+#
+# To go STRAIGHT to one action, pass the option number/name:
+#   sudo bash .../bootstrap.sh --install        # full panel install
+#   sudo bash .../bootstrap.sh --node           # install node agent only
+#   sudo bash .../bootstrap.sh --pm2            # PM2 management menu
+#   sudo bash .../bootstrap.sh --create-admin   # admin setup
+#   sudo bash .../bootstrap.sh --update         # update panel
+#   sudo bash .../bootstrap.sh --uninstall      # uninstall
 # ============================================================
 set -e
 
 REPO_URL="https://github.com/rgdevil54321-afk/vm-panel-.git"
 REPO_BRANCH="main"
-INSTALL_DIR="/opt/venlix-node-installer"
+INSTALL_DIR="/opt/venlix-nodes"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
 
 echo ""
 echo "=============================================="
-echo "  Venlix Nodes - one-line Node installer"
+echo "  Venlix Nodes - MASTER Management Suite"
 echo "=============================================="
 echo ""
 
@@ -41,27 +50,38 @@ for c in curl git; do
   fi
 done
 
-# -------- fetch the installer repo --------
-echo "[+] Fetching installer code..."
+# -------- fetch the repo --------
+echo "[+] Fetching management suite code..."
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   (cd "$INSTALL_DIR" && git fetch --depth 1 origin "$REPO_BRANCH" >/dev/null 2>&1 && git reset --hard "origin/$REPO_BRANCH" >/dev/null 2>&1) || true
 else
   mkdir -p "$INSTALL_DIR"
   git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1 || {
-    echo "${RED}[x] Could not clone the installer repo. Check network / github access.${NC}" >&2
+    echo "${RED}[x] Could not clone the repo. Check network / github access.${NC}" >&2
     exit 1
   }
 fi
 
 cd "$INSTALL_DIR"
 
-# -------- run the real installer (pass through any env the user set) --------
+# -------- launch the master menu (or a specific action) --------
 echo ""
-echo "[+] Starting the node-agent installer..."
-# Forward cloudflare token so the one-liner can be hands-off for tunneled nodes.
+echo "  Code ready at: $INSTALL_DIR"
+echo ""
+# Forward the cloudflare token so tunneled-node installs can be hands-off.
 export CLOUDFLARED_TUNNEL_TOKEN="${CLOUDFLARED_TUNNEL_TOKEN:-}"
-sudo bash node-agent/install-node.sh "$@"
+
+if [ $# -gt 0 ]; then
+  echo "[+] Running action: $*"
+  sudo bash install.sh "$@"
+else
+  echo "[+] Launching the master management menu..."
+  sudo bash install.sh
+fi
 
 echo ""
-echo "${GREEN}== One-line install finished. Use the connect key above in your panel. ==${NC}"
+echo ""
+echo "${GREEN}== Master suite finished. You can reopen it anytime with:${NC}"
+echo "    sudo bash install.sh"
+echo "    (or) sudo bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/rgdevil54321-afk/vm-panel-/main/bootstrap.sh)\""
 echo ""
