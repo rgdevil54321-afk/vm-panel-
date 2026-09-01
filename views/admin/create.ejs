@@ -204,6 +204,11 @@
             </label>
             <div id="imgName" class="mono text-sm mt-2" style="color:var(--accent-2)"></div>
           </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: CPU →</button>
+          </div>
         </div>
       </div>
 
@@ -275,6 +280,11 @@
               <div class="form-hint">0 = unlimited.</div>
             </div>
           </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: RAM →</button>
+          </div>
         </div>
       </div>
 
@@ -323,6 +333,11 @@
             </label>
           </div>
           <div class="form-hint" style="margin-top:10px">Ballooning lets the host reclaim unused guest memory. Hotplug allows adding RAM live up to the Maximum value.</div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Storage →</button>
+          </div>
         </div>
       </div>
 
@@ -379,6 +394,11 @@
           </div>
           <div id="dataDisksList"></div>
           <div id="dataDisksEmpty" class="muted text-sm" style="opacity:0.7">No additional data disks. Add one to attach extra storage.</div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Boot →</button>
+          </div>
         </div>
       </div>
 
@@ -432,6 +452,11 @@
               <input type="checkbox" id="fStartBoot" onchange="updateSummary()"/>
               <span>Auto-Start VM when panel / host boots</span>
             </label>
+          </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Network →</button>
           </div>
         </div>
       </div>
@@ -490,6 +515,11 @@
               <button type="button" class="btn btn-sm" onclick="addFwd('8080:8080')">+ Proxy (8080)</button>
             </div>
             <input type="hidden" id="fFwds" value=""/>
+          </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Auth &amp; Cloud-init →</button>
           </div>
         </div>
       </div>
@@ -555,6 +585,11 @@
             <textarea id="fUserData" rows="4" placeholder="optional — appended verbatim to user-data&#10;#cloud-config&#10;runcmd:&#10;  - echo hello"></textarea>
             <div class="form-hint">Advanced: raw cloud-config (this key prefix is required). Merged after the defaults.</div>
           </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Deployment →</button>
+          </div>
         </div>
       </div>
 
@@ -613,6 +648,11 @@
               <option value="monthly">Monthly</option>
             </select>
           </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="prevStep()">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="goto(9)">Review &amp; Deploy →</button>
+          </div>
         </div>
       </div>
 
@@ -644,6 +684,11 @@
           </button>
           <div id="createProgress" class="muted text-sm text-center mt-2" style="display:none">
             Deploying VM and preparing storage...
+          </div>
+
+          <div class="step-nav">
+            <button type="button" class="btn" onclick="goto(8)">← Back</button>
+            <button class="btn btn-primary" onclick="createVm()">Deploy Virtual Machine →</button>
           </div>
         </div>
       </div>
@@ -784,6 +829,13 @@
 }
 .img-mode-card:hover { border-color: var(--accent); }
 .img-mode-card.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--glass)); }
+
+/* Per-step navigation */
+.step-nav {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap;
+}
+.step-nav .btn { min-width: 130px; justify-content: center; }
 
 /* Switch component */
 .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
