@@ -22,6 +22,7 @@ fail(){ printf "${RED}${BOLD}  [FAIL]${NC} %s\n" "$1"; }
 # ---------- precheck collection (no early exit; report at end) ----------
 PRECHECK_PASS=0; PRECHECK_WARN=0; PRECHECK_FAIL=0; PRECHECK_FATAL=0
 NO_KVM_DETECTED=0
+TUN_URL=""
 note_p(){ PRECHECK_PASS=$((PRECHECK_PASS+1)); }
 note_w(){ PRECHECK_WARN=$((PRECHECK_WARN+1)); }
 note_f(){ PRECHECK_FAIL=$((PRECHECK_FAIL+1)); }
@@ -374,6 +375,104 @@ EOF
   *) start_with_pm2 ;;
 esac
 
+# ---------- persistent Cloudflare tunnel (container / no-public-IP nodes) ----------
+# Installs cloudflared and runs it via the SAME manager (systemd/PM2) so it
+# survives reboots. Two modes:
+#   - NAMED tunnel (best): needs CLOUDFLARED_TUNNEL_TOKEN or a configured
+#     cloudflared login; yields a stable hostname.
+#   - QUICK tunnel (fallback): zero-config, stable only while the process runs.
+TUN_BIN="/usr/local/bin/cloudflared"
+tunnel_ensure_bin() {
+  if [[ -x "$TUN_BIN" ]]; then return 0; fi
+  echo "    Downloading cloudflared..."
+  curl -sSL -o "$TUN_BIN" \
+    https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+    && chmod +x "$TUN_BIN" || { echo "    $RED[x]$NC cloudflared download failed ($(uname -s)/$(uname -m) not prebuilt?)."; return 1; }
+  return 0
+}
+run_tunnel_via_manager() {
+  # $1 = full cloudflared run command string; runs via systemd or PM2.
+  local CMD="$1"
+  case "$SVC" in
+    systemd)
+      cat > /etc/systemd/system/venlix-tunnel.service <<EOF
+[Unit]
+Description=Venlix Node Cloudflare Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$CMD
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+      systemctl daemon-reload
+      systemctl enable venlix-tunnel 2>/dev/null || true
+      systemctl restart venlix-tunnel 2>/dev/null || true
+      ;;
+    *)
+      # PM2 (or any fallback): wrap the command so it survives reboots
+      pm2 delete venlix-tunnel >/dev/null 2>&1 || true
+      pm2 start bash --name venlix-tunnel -- -c "$CMD" >/dev/null 2>&1 || true
+      pm2 save >/dev/null 2>&1 || true
+      pm2 startup >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+setup_tunnel() {
+  echo ""
+  echo "  ${BOLD}-- Cloudflare reverse tunnel --${NC}"
+  echo "    For a STABLE, persistent node address set env CLOUDFLARED_TUNNEL_TOKEN"
+  echo "    (from a Cloudflare named tunnel) before running. Without it we use a"
+  echo "    free quick tunnel whose URL rotates across restarts."
+  # 1. Named tunnel if credentials are present
+  if [[ -n "$CLOUDFLARED_TUNNEL_TOKEN" ]] || [[ -n "$TUNNEL_TOKEN" ]]; then
+    local TOKEN="${CLOUDFLARED_TUNNEL_TOKEN:-$TUNNEL_TOKEN}"
+    tunnel_ensure_bin || return 1
+    echo "    Using NAMED tunnel (stable hostname). Restarting service..."
+    run_tunnel_via_manager "$TUN_BIN tunnel run --token $TOKEN"
+    TUN_URL="https://<your-named-tunnel-hostname>"
+    echo "    ${GREEN}[+] Named tunnel service installed ($(echo "$SVC")).${NC}"
+    echo "    Point Cloudflare DNS at the tunnel, then set the node host in the panel."
+    return 0
+  fi
+  # 2. Quick tunnel fallback (zero-config)
+  echo "    No tunnel token set — using a QUICK tunnel (URL changes on restart)."
+  if command -v cloudflared >/dev/null 2>&1 || tunnel_ensure_bin; then
+    local TUN_LOG="/tmp/cloudflared-venlix.log"
+    local URL=""
+    # probe once to learn the quick URL
+    cloudflared tunnel --url "http://127.0.0.1:${AGENT_PORT}" >"$TUN_LOG" 2>&1 &
+    local PID=$!
+    for i in 1 2 3 4 5 6; do sleep 2; URL="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUN_LOG" | head -1)"; [[ -n "$URL" ]] && break; done
+    if [[ -n "$URL" ]]; then
+      kill "$PID" 2>/dev/null || true
+      echo "    Quick tunnel URL: $URL"
+      # install it persistently; the quick URL may rotate across restarts
+      run_tunnel_via_manager "$TUN_BIN tunnel --url http://127.0.0.1:${AGENT_PORT} --logfile $AGENT_DIR/cloudflared-tunnel.log"
+      TUN_URL="$URL"
+      echo ""
+      echo "    ${GREEN}[+] Tunnel service installed via $SVC (auto-starts on boot).${NC}"
+      echo "    The current tunnel address is: $TUN_URL"
+      echo "    Use the connect key  ${JOIN_CODE}@${TUN_URL#https://}:443  in the panel."
+      echo "    NOTE: quick-tunnel URLs rotate when the service restarts; for a stable address,"
+      echo "          re-run with CLOUDFLARED_TUNNEL_TOKEN=<token> to use a named tunnel."
+    else
+      kill "$PID" 2>/dev/null || true
+      echo "    ${YELLOW}[!] Could not get a quick tunnel URL right now. Check internet, or set CLOUDFLARED_TUNNEL_TOKEN for a named tunnel.${NC}"
+      TUN_URL=""
+    fi
+  else
+    echo "    ${YELLOW}[!] cloudflared unavailable. Install it, or forward ${AGENT_PORT} manually.${NC}"
+    TUN_URL=""
+  fi
+}
+
 # Resolve the address the PANEL must use to reach this node.
 # Prefer the PUBLIC IP (works when the panel is on another VPS / Codesandbox),
 # because `hostname -I` inside containers yields unroutable bridge IPs (172.17.x.x).
@@ -453,42 +552,16 @@ elif [[ "$PUB_HTTP" == "000" ]]; then
     echo "    This looks like a container (${VIRT}) or a host without a directly-bindable public IP."
     echo "    A remote panel cannot reach the agent unless:"
     echo "      (a) the container/parent forwards port ${AGENT_PORT} to this box, OR"
-    echo "      (b) we run a reverse tunnel so the agent is reachable via a public URL."
+    echo "      (b) we run a persistent reverse tunnel so the agent is reachable via a public URL."
     echo ""
-    read -r -p "    Set up a free Cloudflare reverse tunnel to expose the agent? [Y/n]: " TR
+    read -r -p "    Set up a persistent Cloudflare reverse tunnel to expose the agent? [Y/n]: " TR
     if [[ ! "$TR" =~ ^[Nn]$ ]]; then
       TUN_URL=""
-      CLOUDFLARED_BIN="$(command -v cloudflared || echo /usr/local/bin/cloudflared)"
-      if [[ ! -x "$CLOUDFLARED_BIN" ]]; then
-        echo "    Downloading cloudflared (quick tunnel)..."
-        curl -sSL -o /usr/local/bin/cloudflared \
-          https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-          && chmod +x /usr/local/bin/cloudflared || true
-        CLOUDFLARED_BIN="$(command -v cloudflared || [ -x /usr/local/bin/cloudflared ] && echo /usr/local/bin/cloudflared)"
-      fi
-      if [[ -x "$CLOUDFLARED_BIN" ]]; then
-        echo "    Starting cloudflared quick tunnel to http://127.0.0.1:${AGENT_PORT}..."
-        TUN_LOG="/tmp/cloudflared-venlix.log"
-        "$CLOUDFLARED_BIN" tunnel --url "http://127.0.0.1:${AGENT_PORT}" >"$TUN_LOG" 2>&1 &
-        CLOUDFLARED_PID=$!
-        for i in 1 2 3 4 5 6 7 8; do
-          sleep 2
-          TUN_URL="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUN_LOG" | head -1)"
-          [[ -n "$TUN_URL" ]] && break
-        done
-        if [[ -n "$TUN_URL" ]]; then
-          echo ""
-          echo "    ${GREEN}[+] Reverse tunnel ready: $TUN_URL${NC}"
-          echo "    The agent is now reachable from anywhere via that HTTPS URL."
-          echo "    In your panel, "Connect With Node Key" using:"
-          echo "      ${JOIN_CODE}@${TUN_URL#https://}:443"
-          echo "    Then override the node's listening host/port if prompted so the panel talks to $TUN_URL."
-          echo "    Cloudflared runs as PID $CLOUDFLARED_PID (log: $TUN_LOG). It is NOT auto-started on boot in this quick-test mode."
-        else
-          echo "    ${YELLOW}[!] Could not obtain a tunnel URL (check $TUN_LOG). Falling back: forward ${AGENT_PORT} on the parent host, or keep cloudflared running.${NC}"
-        fi
-      else
-        echo "    ${YELLOW}[!] cloudflared install failed. Forward ${AGENT_PORT} on the parent host, or install cloudflared manually.${NC}"
+      setup_tunnel || true
+      if [[ -n "$TUN_URL" ]]; then
+        echo ""
+        echo "    ${GREEN}[+] Tunnel service installed and auto-start on boot is enabled.${NC}"
+        echo "    In your panel, "Connect With Node Key" using the tunnel address given above."
       fi
     fi
   else
@@ -511,6 +584,7 @@ echo "  Prior data kept  : ${STALE_MIGRATE:+yes (migrated)}${STALE_MIGRATE- no (
 echo "  Backup of old data: ${BACKUP_DIR:-none (fresh install)}"
 echo "  Service manager  : $SVC (detected virt: ${VIRT:-host})"
 echo "  Reachability     : local=$LOCAL_HTTP public=$PUB_HTTP"
+[[ -n "$TUN_URL" ]] && echo "  Tunnel           : $TUN_URL (auto-start on boot)"
 echo ""
 echo "  Connect with key: ${JOIN_CODE}@${NODE_HOST}:${AGENT_PORT}"
 echo "============================================="
