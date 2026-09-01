@@ -58,10 +58,7 @@ cd "$INSTALL_DIR"
 # -------- run the real installer (pass through any env the user set) --------
 echo ""
 echo "[+] Starting the node-agent installer..."
-# Forward panel + cloudflare credentials so the one-liner can be fully hands-off.
-export PANEL_URL="${PANEL_URL:-}"
-export PANEL_USER="${PANEL_USER:-}"
-export PANEL_PASS="${PANEL_PASS:-}"
+# Forward cloudflare token so the one-liner can be hands-off for tunneled nodes.
 export CLOUDFLARED_TUNNEL_TOKEN="${CLOUDFLARED_TUNNEL_TOKEN:-}"
 sudo bash node-agent/install-node.sh "$@"
 
