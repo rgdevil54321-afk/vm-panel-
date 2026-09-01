@@ -90,8 +90,10 @@ function nodeVmCount(nodeId) {
 function agentRequest(node, { method = 'GET', path = '/', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
     const isHttps = String(node.host).startsWith('https://');
-    const hostname = String(node.host).replace(/^https?:\/\//, '');
+    let hostname = String(node.host).replace(/^https?:\/\//, '');
     const port = node.port || 3005;
+    // Local primary node: always connect via loopback regardless of stored host
+    if (node.agent_token === 'local-primary-no-agent') hostname = '127.0.0.1';
     const mod = isHttps ? https : http;
     const outHeaders = {
       ...headers,
@@ -186,9 +188,9 @@ function startHeartbeat(intervalMs = 8000) {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   const tick = () => {
     for (const node of allNodes()) {
-      if (node.agent_token && node.agent_token !== 'local-primary-no-agent') {
-        probeNode(node.id);
-      }
+      if (!node.agent_token) continue;
+      // Local primary node: probe via loopback, not the stored (possibly wrong) host
+      probeNode(node.id);
     }
   };
   tick();
