@@ -229,6 +229,7 @@
         <span id="connState" class="pill <%= vm.status === 'running' ? 'pill-yellow' : 'pill-gray' %>">
           <%= vm.status === 'running' ? 'connecting...' : 'offline' %>
         </span>
+        <span id="connStateEta" class="muted text-sm mono" style="font-size:11px;display:<%= vm.status === 'running' ? 'inline' : 'none' %>">booting, ETA ~30-60s</span>
         <button class="btn btn-sm" id="btnReconnect" onclick="sshConnect()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           Reconnect
@@ -332,6 +333,7 @@
   const bootTermEl = document.getElementById('bootTerminal');
   const rawBootEl = document.getElementById('bootRawContent');
   const stateEl = document.getElementById('connState');
+  const stateEtaEl = document.getElementById('connStateEta');
   const bootStateEl = document.getElementById('bootState');
   const sshBootBanner = document.getElementById('sshBootBanner');
   const termSizeBadge = document.getElementById('termSizeBadge');
@@ -351,6 +353,9 @@
     if (stateEl) {
       stateEl.textContent = text;
       stateEl.className = 'pill ' + (cls || 'pill-yellow');
+    }
+    if (stateEtaEl) {
+      stateEtaEl.style.display = cls === 'pill-yellow' ? 'inline' : 'none';
     }
     if (cls === 'pill-red' && text.includes('failed')) {
       if (sshBootBanner) sshBootBanner.style.display = 'flex';

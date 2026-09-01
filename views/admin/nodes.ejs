@@ -290,7 +290,7 @@ async function addNode() {
   };
   if (!body.name || !body.host || !body.agent_token) return VP.toast('Node name, host and token are required', 'error');
   try {
-    await VP.api('/admin/nodes', { method: 'POST', body });
+    await VP.api('/api/admin/nodes', { method: 'POST', body });
     VP.toast('Node connected', 'success');
     setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
@@ -298,7 +298,7 @@ async function addNode() {
 async function deleteNode(id) {
   if (!confirm('Remove this node? This cannot be undone.')) return;
   try {
-    await VP.api('/admin/nodes/' + id, { method: 'DELETE' });
+    await VP.api('/api/admin/nodes/' + id, { method: 'DELETE' });
     VP.toast('Node removed', 'success');
     setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
@@ -308,19 +308,19 @@ async function connectNodeWithKey() {
   if (!key) return VP.toast('Paste the connect key from the node installer', 'error');
   if (!/@.+:\d+/.test(key)) return VP.toast('Key must look like CODE@HOST:PORT', 'error');
   try {
-    const r = await VP.api('/admin/nodes/connect-key', { method: 'POST', body: { key, location: document.getElementById('jk_location').value } });
+    const r = await VP.api('/api/admin/nodes/connect-key', { method: 'POST', body: { key, location: document.getElementById('jk_location').value } });
     VP.toast('Node connected', 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 async function refreshCluster() {
-  try { await VP.api('/admin/nodes', { method: 'GET' }); setTimeout(() => location.reload(), 400); }
+  try { await VP.api('/api/admin/nodes', { method: 'GET' }); setTimeout(() => location.reload(), 400); }
   catch(e){ VP.toast(e.message,'error'); }
 }
 async function updateNode(id) {
   if (!confirm('Pull the latest agent code to this node and restart its service? Running VMs are NOT affected by the agent restart.')) return;
   try {
-    const r = await VP.api('/admin/nodes/' + id + '/update', { method: 'POST', body: {} });
+    const r = await VP.api('/api/admin/nodes/' + id + '/update', { method: 'POST', body: {} });
     VP.toast((r && r.message) || 'Update started on node', 'success');
     setTimeout(() => location.reload(), 1500);
   } catch (e) { VP.toast(e.message, 'error'); }
@@ -328,7 +328,7 @@ async function updateNode(id) {
 async function updateAllNodes() {
   if (!confirm('Pull the latest agent code and restart the service on ALL connected nodes (except the local primary)? Running VMs are NOT affected.')) return;
   try {
-    const r = await VP.api('/admin/nodes/update', { method: 'POST', body: {} });
+    const r = await VP.api('/api/admin/nodes/update', { method: 'POST', body: {} });
     const results = (r && r.results) || [];
     const okCount = results.filter((x) => x.status === 'ok').length;
     const errCount = results.filter((x) => x.status === 'error').length;

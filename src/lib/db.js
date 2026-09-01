@@ -246,28 +246,6 @@ if (!vmsColumns.includes('node_id')) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_vms_node ON vms(node_id)');
 }
 
-// Seed the local primary node if the nodes table is empty.
-const nodeCount = db.prepare('SELECT COUNT(*) c FROM nodes').get().c;
-if (nodeCount === 0) {
-  db.prepare(
-    `INSERT INTO nodes (name, host, port, agent_token, location, status, last_seen_at, added_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    'Primary Node',
-    '127.0.0.1',
-    3005,
-    'local-primary-no-agent',
-    'Primary Datacenter',
-    'online',
-    new Date().toISOString(),
-    new Date().toISOString(),
-    new Date().toISOString()
-  );
-
-  // Mark local VMs (pre-existing, node_id NULL or 1) as owned by the primary local node.
-  db.prepare('UPDATE vms SET node_id = 1 WHERE node_id IS NULL').run();
-}
-
 function seedSettings() {
   const stmt = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(defaultSettings)) stmt.run(k, v);

@@ -779,8 +779,17 @@ function scheduleAutoSave() {
   clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(() => {
     saveCustomizationSettings(false);
-  }, 600);
+  }, 250);
 }
+
+function flushAutoSave() {
+  clearTimeout(saveDebounceTimer);
+  saveCustomizationSettings(false);
+}
+
+window.addEventListener('beforeunload', () => {
+  flushAutoSave();
+});
 
 async function saveCustomizationSettings(showToast = true) {
   const blur = document.getElementById('sliderBlur').value;

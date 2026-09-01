@@ -225,6 +225,20 @@ EOF
       log_warn "node-agent/install-node.sh not found. Skipping node agent install."
       log_info "You can install it later via the main menu option [6]."
     fi
+    # Create the local primary node so the panel can manage its own VMs.
+    node -e "
+      try {
+        const Database = require('better-sqlite3');
+        const db = new Database('data/vpanel.db');
+        const c = db.prepare('SELECT COUNT(*) c FROM nodes').get().c;
+        if (c === 0) {
+          db.prepare('INSERT INTO nodes (name, host, port, agent_token, location, status, last_seen_at, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('Primary Node', '127.0.0.1', 3005, 'local-primary-no-agent', 'Primary Datacenter', 'online', new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
+          console.log('[✔] Local primary node created.');
+        } else {
+          console.log('[i] Primary node already exists, skipping.');
+        }
+      } catch (e) { console.log('[!] Could not create primary node: ' + e.message); }
+    "
   else
     echo ""
     log_info "Skipping Node Agent install. You can install it later via the main menu option [6]."

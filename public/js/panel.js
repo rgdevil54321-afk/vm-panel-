@@ -107,6 +107,9 @@ window.VP = (() => {
 })();
 
 (function () {
-  const m = /(?:^|;\s*)theme=([^;]+)/.exec(document.cookie);
-  if (m) document.documentElement.setAttribute('data-theme', m[1]);
+  const html = document.documentElement;
+  if (!html.hasAttribute('data-theme')) {
+    const m = /(?:^|;\s*)theme=([^;]+)/.exec(document.cookie);
+    if (m) html.setAttribute('data-theme', m[1]);
+  }
 })();
