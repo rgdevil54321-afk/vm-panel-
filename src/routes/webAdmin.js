@@ -84,6 +84,13 @@ router.post('/admin/servers/create', createUpload.fields([{ name: 'image', maxCo
     const data = { ...req.body };
     if (req.body.node_id) data.node_id = parseInt(req.body.node_id, 10);
     try { if (data.port_forwards) data.port_forwards = JSON.parse(data.port_forwards); } catch (_) { data.port_forwards = []; }
+    // Parse wizard JSON list fields (sent as JSON strings via FormData)
+    const jsonListFields = ['additional_disks', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'advanced'];
+    for (const f of jsonListFields) {
+      if (data[f] !== undefined) {
+        try { data[f] = JSON.parse(data[f]); } catch (_) { data[f] = (f === 'advanced') ? {} : []; }
+      }
+    }
     if (files.image && files.image[0]) data.upload_image = files.image[0];
     if (files.image && files.image[0]) {
       try { fs2.mkdirSync(config.root + '/data/tmp', { recursive: true }); } catch (_) {}

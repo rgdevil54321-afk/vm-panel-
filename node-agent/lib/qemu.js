@@ -78,30 +78,76 @@ function buildQemuArgs(vm) {
   const fwds = parseForwards(vm.port_forwards);
   const kvmAvailable = hasKvm();
   const accelMode = kvmAvailable ? 'kvm:tcg' : 'tcg';
-  const cpuType = kvmAvailable ? 'host' : 'qemu64';
+  const userCpuModel = String(vm.cpu_model || 'default');
+  const cpuModel = kvmAvailable && userCpuModel && userCpuModel !== 'default' && userCpuModel !== 'host'
+    ? userCpuModel : (kvmAvailable ? 'host' : 'qemu64');
+  const sockets = Math.max(1, parseInt(vm.cpu_sockets, 10) || 1);
+  const cores = Math.max(1, parseInt(vm.cores_per_socket, 10) || 1);
+  const threads = Math.max(1, parseInt(vm.threads_per_core, 10) || 1);
+  const smp = `sockets=${sockets},cores=${cores},threads=${threads}`;
+  const ballooning = String(vm.ballooning) === '1' || String(vm.ballooning) === 'true';
+
+  let memBase = String(vm.memory || '2048');
+  const memMax = parseInt(vm.mem_max, 10);
+  const memBaseVal = parseInt(memBase, 10);
+  const hotMax = Math.max(memMax || 0, parseInt(vm.memory_hotplug, 10) || 0);
+  if (hotMax > memBaseVal) memBase = `${memBase},maxmem=${hotMax},slots=4`;
 
   const args = [
-    '-m', String(vm.memory),
-    '-smp', String(vm.cpus),
-    '-cpu', cpuType,
-    '-machine', `type=pc,accel=${accelMode}`,
-    '-drive', `file=${img},format=qcow2,if=virtio`,
-    '-drive', `file=${seed},format=raw,if=virtio`,
-    '-boot', 'order=c',
-    '-device', 'virtio-net-pci,netdev=n0',
-    '-netdev', `user,id=n0,hostfwd=tcp::${vm.ssh_port}-:22${vm.agent_port ? `,hostfwd=tcp::${vm.agent_port}-:9090` : ''}`,
-    '-object', 'rng-random,filename=/dev/urandom,id=rng0',
-    '-device', 'virtio-rng-pci,rng=rng0',
-    '-rtc', 'base=utc,clock=host',
-    '-device', 'virtio-balloon-pci',
+    '-m', memBase,
+    '-smp', smp,
+    '-cpu', cpuModel,
+    '-machine', `type=${String(vm.machine_type || 'pc').split(',')[0]},accel=${accelMode}`,
   ];
 
+  const firmware = String(vm.firmware || 'bios');
+  if (firmware === 'uefi' || String(vm.secure_boot || '') === '1') {
+    args.push('-drive', 'if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd');
+    args.push('-drive', `if=pflash,format=raw,file=${path.join(dir, 'efi_vars.fd')}`);
+  }
+  if (String(vm.tpm || '') === '1' && hasBin('swtpm')) {
+    args.push('-chardev', `socket,id=chrtpm,path=${path.join(dir, 'swtpm.sock')}`);
+    args.push('-tpmdev', 'emulator,id=tpm0,chardev=chrtpm');
+    args.push('-object', 'tpm-crb,id=tpm0');
+  }
+
+  args.push('-drive', `file=${img},format=qcow2,if=virtio`);
+
+  let dataDisks = [];
+  try { dataDisks = JSON.parse(vm.additional_disks || '[]'); } catch (_) { dataDisks = []; }
+  let di = 0;
+  for (const d of dataDisks) {
+    if (!d || !d.size) continue;
+    di++;
+    const relName = d.name ? String(d.name).replace(/[^a-zA-Z0-9_\-.]/g, '') : `data-${di}.qcow2`;
+    const dataFile = path.join(dir, relName.endsWith('.qcow2') ? relName : relName + '.qcow2');
+    if (!fs.existsSync(dataFile)) continue;
+    args.push('-drive', `file=${dataFile},format=qcow2,if=${String(d.bus || 'virtio').toLowerCase()}`);
+  }
+  args.push('-drive', `file=${seed},format=raw,if=virtio`);
+
+  const bootOrder = String(vm.boot_order || 'c').replace(/[^a-z]/gi, '');
+  args.push('-boot', `order=${bootOrder || 'c'}`);
+
+  const nicModel = String(vm.nic_model || 'virtio').toLowerCase();
+  const nicCount = Math.max(1, Math.min(6, parseInt(vm.nic_count, 10) || 1));
+  args.push('-device', `${nicModel}-pci,netdev=n0`);
+  args.push('-netdev', `user,id=n0,hostfwd=tcp::${vm.ssh_port}-:22${vm.agent_port ? `,hostfwd=tcp::${vm.agent_port}-:9090` : ''}`);
   let ni = 1;
   for (const f of fwds) {
-    args.push('-device', `virtio-net-pci,netdev=n${ni}`);
+    args.push('-device', `${nicModel}-pci,netdev=n${ni}`);
     args.push('-netdev', `user,id=n${ni},hostfwd=tcp::${f.host}-:${f.guest}`);
     ni++;
   }
+  for (; ni < nicCount; ni++) {
+    args.push('-device', `${nicModel}-pci,netdev=n${ni}`);
+    args.push('-netdev', `user,id=n${ni}`);
+  }
+
+  args.push('-object', 'rng-random,filename=/dev/urandom,id=rng0');
+  args.push('-device', 'virtio-rng-pci,rng=rng0');
+  args.push('-rtc', 'base=utc,clock=host');
+  if (ballooning) args.push('-device', 'virtio-balloon-pci');
 
   if (vm.vnc_port) {
     args.push('-vnc', `127.0.0.1:${vm.vnc_port - 5900}`);
@@ -178,6 +224,44 @@ function agentSeedPayload(vm) {
 function writeSeed(vm) {
   const dir = vmDir(vm);
   const passHash = spawnSync('openssl', ['passwd', '-6', vm.password], { encoding: 'utf8' }).stdout.trim();
+
+  const blocks = [];
+  const tz = String(vm.timezone || '').trim();
+  if (tz) blocks.push(`timezone: ${tz}`);
+  const loc = String(vm.locale || '').trim();
+  if (loc) blocks.push(`locale: ${loc}`);
+  let packages = [];
+  try { packages = JSON.parse(vm.cloudinit_packages || '[]'); } catch (_) { packages = []; }
+  if (packages.length) blocks.push(`packages:\n${packages.map((p) => '  - ' + p).join('\n')}`);
+  const writeFiles = [];
+  try {
+    const cf = JSON.parse(vm.cloudinit_files || '[]');
+    if (Array.isArray(cf)) {
+      for (const f of cf) {
+        if (f && f.path) writeFiles.push({
+          path: String(f.path),
+          permissions: String(f.permissions || '0644'),
+          content: String(f.content || ''),
+        });
+      }
+    }
+  } catch (_) {}
+  if (writeFiles.length) {
+    blocks.push(`write_files:\n${writeFiles.map((f) =>
+      `  - path: ${f.path}\n    owner: root:root\n    permissions: '${f.permissions}'\n    content: |\n${String(f.content).split('\n').map((l) => '      ' + l).join('\n')}`
+    ).join('\n')}`);
+  }
+  const runcmds = [];
+  let commands = [];
+  try { commands = JSON.parse(vm.cloudinit_commands || '[]'); } catch (_) { commands = []; }
+  for (const c of commands) if (c) runcmds.push(String(c));
+  const startupScript = String(vm.startup_script || '').trim();
+  if (startupScript) {
+    const b64 = Buffer.from(startupScript, 'utf8').toString('base64');
+    runcmds.push(`echo '${b64}' | base64 -d > /usr/local/bin/vpanel-firstboot && chmod 755 /usr/local/bin/vpanel-firstboot && /usr/local/bin/vpanel-firstboot`);
+  }
+  const userData = String(vm.cloudinit_userdata || '').trim();
+
   fs.writeFileSync(
     path.join(dir, 'user-data'),
     `#cloud-config
@@ -206,12 +290,15 @@ write_files:
       PermitRootLogin yes
       PasswordAuthentication yes
       KbdInteractiveAuthentication yes
+${blocks.join('\n')}
 runcmd:
   - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || true
   - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
   - sed -i 's/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config || true
   - systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || true
 ${agentSeedPayload(vm).map((c) => '  - ' + c).join('\n')}
+${runcmds.map((c) => '  - ' + c).join('\n')}
+${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + userData : ''}
 `
   );
   fs.writeFileSync(
@@ -289,12 +376,70 @@ async function createVm({ data, osList }) {
     start_on_boot: data.start_on_boot ? 1 : 0,
     startup_command: data.startup_command || '',
     notes: data.notes || '',
+    description: data.description || '',
+    tag: data.tag || '',
+    region: data.region || '',
+    vmid: data.vmid || '',
+    cpu_sockets: parseInt(data.cpu_sockets, 10) || 1,
+    cores_per_socket: parseInt(data.cores_per_socket, 10) || 1,
+    threads_per_core: parseInt(data.threads_per_core, 10) || 1,
+    cpu_model: data.cpu_model || 'default',
+    cpu_units: parseInt(data.cpu_units, 10) || 1024,
+    cpu_limit: String(data.cpu_limit || ''),
+    mem_min: parseInt(data.mem_min, 10) || 0,
+    mem_max: parseInt(data.mem_max, 10) || 0,
+    ballooning: (data.ballooning === true || data.ballooning === 1 || data.ballooning === '1') ? 1 : 0,
+    memory_hotplug: parseInt(data.memory_hotplug, 10) || 0,
+    machine_type: data.machine_type || 'pc',
+    firmware: data.firmware || 'bios',
+    secure_boot: (data.secure_boot === true || data.secure_boot === 1 || data.secure_boot === '1') ? 1 : 0,
+    tpm: (data.tpm === true || data.tpm === 1 || data.tpm === '1') ? 1 : 0,
+    boot_order: data.boot_order || 'c',
+    nic_model: data.nic_model || 'virtio',
+    nic_count: Math.max(1, Math.min(6, parseInt(data.nic_count, 10) || 1)),
+    storage_pool: data.storage_pool || 'default',
+    disk_format: data.disk_format || 'qcow2',
+    additional_disks: JSON.stringify(
+      (Array.isArray(data.additional_disks) ? data.additional_disks : [])
+        .filter((d) => d && d.size)
+        .map((d) => ({ size: String(d.size), name: String(d.name || ''), bus: String(d.bus || 'virtio') }))
+    ),
+    cloudinit_userdata: data.cloudinit_userdata || '',
+    cloudinit_packages: JSON.stringify(Array.isArray(data.cloudinit_packages) ? data.cloudinit_packages : []),
+    cloudinit_commands: JSON.stringify(Array.isArray(data.cloudinit_commands) ? data.cloudinit_commands : []),
+    cloudinit_files: JSON.stringify(Array.isArray(data.cloudinit_files) ? data.cloudinit_files : []),
+    startup_script: data.startup_script || '',
+    install_guest_agent: (data.install_guest_agent === true || data.install_guest_agent === 1 || data.install_guest_agent === '1') ? 1 : 0,
+    enable_monitoring: (data.enable_monitoring === true || data.enable_monitoring === 1 || data.enable_monitoring === '1') ? 1 : 0,
+    enable_backups: (data.enable_backups === true || data.enable_backups === 1 || data.enable_backups === '1') ? 1 : 0,
+    backup_schedule: data.backup_schedule || '',
+    timezone: data.timezone || 'UTC',
+    locale: data.locale || 'en_US.UTF-8',
+    advanced: typeof data.advanced === 'string' ? data.advanced : JSON.stringify(data.advanced || {}),
     created_at: now(),
     updated_at: now(),
   };
   state.upsertVm(vm);
   saveVmFiles(vm, osList, data);
   return vm;
+}
+
+function provisionDataDisks(vm) {
+  const dir = vmDir(vm);
+  let disks = [];
+  try { disks = JSON.parse(vm.additional_disks || '[]'); } catch (_) { disks = []; }
+  let di = 0;
+  for (const d of disks) {
+    if (!d || !d.size) continue;
+    di++;
+    const size = String(d.size || '10G').toUpperCase();
+    if (!/^[0-9]+[GM]$/i.test(size)) continue;
+    const relName = d.name ? String(d.name).replace(/[^a-zA-Z0-9_\-.]/g, '') : `data-${di}.qcow2`;
+    const file = path.join(dir, relName.endsWith('.qcow2') ? relName : relName + '.qcow2');
+    if (!fs.existsSync(file)) {
+      spawnSync('qemu-img', ['create', '-f', 'qcow2', file, size], { encoding: 'utf8' });
+    }
+  }
 }
 
 function saveVmFiles(vm, osList, data) {
@@ -331,6 +476,8 @@ function saveVmFiles(vm, osList, data) {
       }
     }
   }
+  provisionDataDisks(vm);
+  writeSeed(vm);
 }
 
 function prepareImage(vm) {
@@ -422,17 +569,31 @@ function removeVm(vm, force = false) {
 }
 
 function updateVm(vm, data) {
-  const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes'];
+  const booleans = ['start_on_boot', 'gui_mode', 'ballooning', 'secure_boot', 'tpm', 'install_guest_agent', 'enable_monitoring', 'enable_backups'];
+  const jsons = {
+    port_forwards: (v) => (Array.isArray(v) ? JSON.stringify(v) : v),
+    additional_disks: (v) => (Array.isArray(v) ? JSON.stringify(v) : v),
+    cloudinit_packages: (v) => (Array.isArray(v) ? JSON.stringify(v) : v),
+    cloudinit_commands: (v) => (Array.isArray(v) ? JSON.stringify(v) : v),
+    cloudinit_files: (v) => (Array.isArray(v) ? JSON.stringify(v) : v),
+  };
+  const ints = ['memory', 'cpus', 'cpu_sockets', 'cores_per_socket', 'threads_per_core', 'cpu_units', 'cpu_limit', 'mem_min', 'mem_max', 'memory_hotplug', 'nic_count'];
+  const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes',
+    'description', 'tag', 'region', 'vmid', 'cpu_sockets', 'cores_per_socket', 'threads_per_core', 'cpu_model', 'cpu_units', 'cpu_limit', 'mem_min', 'mem_max',
+    'ballooning', 'memory_hotplug', 'machine_type', 'firmware', 'secure_boot', 'tpm', 'boot_order', 'nic_model', 'nic_count', 'storage_pool', 'disk_format',
+    'additional_disks', 'cloudinit_userdata', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'startup_script', 'install_guest_agent',
+    'enable_monitoring', 'enable_backups', 'backup_schedule', 'timezone', 'locale', 'advanced'];
   for (const f of fields) {
     if (data[f] !== undefined) {
-      if (f === 'port_forwards' && Array.isArray(data[f])) vm[f] = JSON.stringify(data[f]);
-      else if (f === 'gui_mode' || f === 'start_on_boot') vm[f] = data[f] ? 1 : 0;
+      if (jsons[f]) vm[f] = jsons[f](data[f]);
+      else if (booleans.includes(f)) vm[f] = data[f] ? 1 : 0;
+      else if (ints.includes(f)) vm[f] = parseInt(data[f], 10) || vm[f];
       else vm[f] = data[f];
     }
   }
   vm.updated_at = now();
   state.upsertVm(vm);
-  const needSeed = ['hostname', 'username', 'password'].some((f) => data[f] !== undefined);
+  const needSeed = ['hostname', 'username', 'password', 'timezone', 'locale', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'cloudinit_userdata', 'startup_script'].some((f) => data[f] !== undefined);
   if (needSeed) writeSeed(vm);
   return vm;
 }

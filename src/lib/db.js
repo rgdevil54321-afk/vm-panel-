@@ -232,6 +232,11 @@ const defaultSettings = {
     ['AlmaLinux 9', 'almalinux', '9', 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2', 'almalinux', 'root'],
     ['Rocky Linux 9', 'rockylinux', '9', 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2', 'rocky', 'root']
   ]),
+  'vm.default_cpu_model': 'default',
+  'vm.default_nic_model': 'virtio',
+  'vm.default_machine_type': 'pc',
+  'vm.default_firmware': 'bios',
+  'vm.data_disk_default': '10G',
 };
 
 const vmsColumns = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
@@ -247,6 +252,51 @@ if (!vmsColumns.includes('agent_token')) {
 if (!vmsColumns.includes('node_id')) {
   db.exec('ALTER TABLE vms ADD COLUMN node_id INTEGER');
   db.exec('CREATE INDEX IF NOT EXISTS idx_vms_node ON vms(node_id)');
+}
+// ---- Venlix hKVM-style VM creator advanced columns ----
+const vmAdvColumns = {
+  description: 'TEXT',
+  tag: 'TEXT',
+  region: 'TEXT',
+  vmid: 'TEXT',
+  cpu_sockets: 'INTEGER',
+  cores_per_socket: 'INTEGER',
+  threads_per_core: 'INTEGER',
+  cpu_model: 'TEXT',
+  cpu_type: 'TEXT',
+  cpu_units: 'INTEGER',
+  cpu_limit: 'INTEGER',
+  mem_min: 'INTEGER',
+  mem_max: 'INTEGER',
+  ballooning: 'INTEGER',
+  memory_hotplug: 'INTEGER',
+  machine_type: 'TEXT',
+  firmware: 'TEXT',
+  secure_boot: 'INTEGER',
+  tpm: 'INTEGER',
+  boot_order: 'TEXT',
+  nic_model: 'TEXT',
+  nic_count: 'INTEGER',
+  storage_pool: 'TEXT',
+  disk_format: 'TEXT',
+  additional_disks: 'TEXT',
+  cloudinit_userdata: 'TEXT',
+  cloudinit_packages: 'TEXT',
+  cloudinit_commands: 'TEXT',
+  cloudinit_files: 'TEXT',
+  startup_script: 'TEXT',
+  install_guest_agent: 'INTEGER',
+  enable_monitoring: 'INTEGER',
+  enable_backups: 'INTEGER',
+  backup_schedule: 'TEXT',
+  timezone: 'TEXT',
+  locale: 'TEXT',
+  advanced: 'TEXT',
+};
+for (const [col, type] of Object.entries(vmAdvColumns)) {
+  if (!vmsColumns.includes(col)) {
+    db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
+  }
 }
 
 function seedSettings() {
