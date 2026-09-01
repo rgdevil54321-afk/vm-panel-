@@ -12,6 +12,10 @@ set -e
 
 AGENT_DIR="/opt/venlix-node"
 
+# On any error, report exactly which line failed (helps one-liner debugging).
+trap 'rc=$?; echo ""; echo "${RED}[x] Stopped at line $LINENO (exit $rc) in install-node.sh.${NC}" >&2; exit $rc' ERR
+trap 'echo ""' EXIT
+
 # ---------- colors --------------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; NC='\033[0m'
