@@ -16,11 +16,20 @@
 #   4. PM2 management (status / restart / logs / boot)
 #   5. Uninstall
 #   6. Install node agent (connect this machine to the panel)
+#   7. System status (health, nodes, pm2, resources)
+#   8. Backup / Restore (DB + VMs + uploads)
+#   9. Firewall wizard (open panel/node/VM ports)
+#  10. Node management (status, tunnel, connect key)
+#  11. SSL / HTTPS via Caddy
+#  12. Change ports (panel / api / agent)
 #
 # To go STRAIGHT to one action, pass the option number/name:
 #   sudo bash .../bootstrap.sh --install        # full panel install
 #   sudo bash .../bootstrap.sh --node           # install node agent only
 #   sudo bash .../bootstrap.sh --pm2            # PM2 management menu
+#   sudo bash .../bootstrap.sh --status         # system status overview
+#   sudo bash .../bootstrap.sh --backup         # backup / restore
+#   sudo bash .../bootstrap.sh --firewall       # firewall wizard
 #   sudo bash .../bootstrap.sh --create-admin   # admin setup
 #   sudo bash .../bootstrap.sh --update         # update panel
 #   sudo bash .../bootstrap.sh --uninstall      # uninstall
