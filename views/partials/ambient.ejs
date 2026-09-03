@@ -32,3 +32,58 @@ const vid = settings['panel.bg_video_file'] || settings['panel.bg_video_url'] ||
 </div>
 
 <div id="bgOverlay" class="bg-overlay" style="background:rgba(5,8,18,var(--bg-overlay-val));<%= bgMode === 'color' ? 'display:none;' : '' %>"></div>
+
+<% const discordUrl = settings['panel.discord_url'] || 'https://discord.gg/venlixnodes';
+   const discordOn = settings['panel.discord_enabled'] !== '0';
+   const discordCode = settings['panel.discord_code'] !== undefined ? settings['panel.discord_code'] : '.gg/venlixnodes'; %>
+
+<% if (discordOn) { %>
+<style>
+  @keyframes vxDiscordPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(88, 101, 242, 0.55); }
+    50% { box-shadow: 0 0 0 10px rgba(88, 101, 242, 0); }
+  }
+  .vx-discord-fab {
+    position: fixed; bottom: 22px; right: 22px; z-index: 9999;
+    width: 50px; height: 50px; border-radius: 50%;
+    background: linear-gradient(135deg, #5865F2, #7289DA);
+    color: #fff; display: grid; place-items: center;
+    border: 2px solid rgba(255,255,255,0.18);
+    box-shadow: 0 6px 20px rgba(88, 101, 242, 0.45);
+    transition: transform .2s ease, box-shadow .2s ease;
+    animation: vxDiscordPulse 2.6s ease-out infinite;
+    text-decoration: none;
+  }
+  .vx-discord-fab:hover { transform: scale(1.1) rotate(6deg); animation: none; box-shadow: 0 8px 26px rgba(88, 101, 242, 0.65); }
+  .vx-discord-fab .vx-fab-tip {
+    position: absolute; right: 62px; top: 50%; transform: translateY(-50%) translateX(6px);
+    background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(88, 101, 242, 0.4);
+    color: #fff; font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 10px;
+    white-space: nowrap; opacity: 0; pointer-events: none; transition: all .2s ease;
+  }
+  .vx-discord-fab:hover .vx-fab-tip { opacity: 1; transform: translateY(-50%) translateX(0); }
+</style>
+<a href="<%= discordUrl %>" target="_blank" rel="noopener noreferrer" class="vx-discord-fab" title="Join our Discord" aria-label="Join our Discord">
+  <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4862 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0821.0821 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8917.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6554a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z"/></svg>
+  <span class="vx-fab-tip">Join our Discord &nbsp;→</span>
+</a>
+<% } %>
+
+<% if (discordCode) { %>
+<style>
+  .vx-watermark {
+    position: fixed; bottom: 26px; left: 30px; z-index: 1;
+    font-size: 26px; font-weight: 900; letter-spacing: -0.5px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2, #38bdf8) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    opacity: 0.55; text-decoration: none;
+    filter: drop-shadow(0 0 14px rgba(99, 102, 241, 0.45));
+    transition: opacity .25s ease, transform .25s ease;
+    user-select: none;
+  }
+  .vx-watermark:hover { opacity: 1; transform: translateY(-2px); }
+  @media (max-width: 720px) { .vx-watermark { font-size: 17px; bottom: 20px; left: 18px; opacity: 0.4; } }
+</style>
+<a href="<%= discordUrl %>" target="_blank" rel="noopener noreferrer" class="vx-watermark" title="Join our Discord"><%= discordCode %></a>
+<% } %>

@@ -149,9 +149,35 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 2. Panel Logo -->
+        <!-- 2. Discord Community -->
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">2. Discord Community</label>
+          <div class="muted text-sm mb-2">Show a floating Discord button and a background watermark. People click it and get invited to your server.</div>
+          <div class="form-group mb-3">
+            <label>Discord Invite Link</label>
+            <input name="panel.discord_url" id="panelDiscordUrl" value="<%= all['panel.discord_url'] || 'https://discord.gg/venlixnodes' %>" placeholder="https://discord.gg/your-invite" style="max-width:500px"/>
+            <div class="form-hint mt-1">Any invite link works: discord.gg/xxxx, discord.com/invite/xxxx, or a full invite URL. Change it anytime — the button updates everywhere.</div>
+          </div>
+          <div class="grid grid-2" style="gap:24px">
+            <div class="form-group">
+              <label>Show Floating Discord Button</label>
+              <select name="panel.discord_enabled">
+                <option value="1" <%= all['panel.discord_enabled'] !== '0' ? 'selected' : '' %>>Enabled (show round Discord button)</option>
+                <option value="0" <%= all['panel.discord_enabled'] === '0' ? 'selected' : '' %>>Disabled (hide button)</option>
+              </select>
+              <div class="form-hint mt-1">Round button appears bottom-right on every page.</div>
+            </div>
+            <div class="form-group">
+              <label>Background Watermark Text</label>
+              <input name="panel.discord_code" value="<%= all['panel.discord_code'] || '.gg/venlixnodes' %>" placeholder=".gg/venlixnodes" style="max-width:100%"/>
+              <div class="form-hint mt-1">Bold highlighted text shown on the panel background. Leave empty to hide.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Panel Logo -->
         <div class="mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">2. Panel Logo</label>
+          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">3. Panel Logo</label>
           <div class="muted text-sm mb-3">Upload custom logo image or specify a direct image URL with live preview.</div>
           
           <div class="grid grid-2" style="gap:24px;align-items:start">
@@ -204,18 +230,18 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 3. Panel Favicon Name -->
+        <!-- 4. Panel Favicon Name -->
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">3. Panel Favicon Name</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">4. Panel Favicon Name</label>
           <div class="muted text-sm mb-2">Set the favicon title/name. Used as fallback letter badge (first letter) when no icon is uploaded.</div>
           <input name="panel.favicon_name" id="panelFaviconName" value="<%= all['panel.favicon_name'] || '' %>" placeholder="V" oninput="updateFaviconNamePreview(this.value)" style="max-width:500px"/>
         </div>
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 4. Panel Favicon -->
+        <!-- 5. Panel Favicon -->
         <div class="mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">4. Panel Favicon</label>
+          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">5. Panel Favicon</label>
           <div class="muted text-sm mb-3">Upload custom favicon icon (.ico, .png, .svg) or specify a direct Favicon URL with live preview.</div>
           
           <div class="grid grid-2" style="gap:24px;align-items:start">

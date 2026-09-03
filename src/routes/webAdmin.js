@@ -289,6 +289,7 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
     'panel.music_mode', 'panel.music_url', 'panel.music_youtube', 'panel.music_autoplay',
     'panel.music_loop', 'panel.music_volume', 'panel.navbar_style', 'panel.navbar_transparent',
     'panel.navbar_blur', 'panel.accent', 'panel.theme',
+    'panel.discord_url', 'panel.discord_enabled', 'panel.discord_code',
   ]) save(key);
   save('panel.wallpapers_api_key');
   for (const key of ['mail.host', 'mail.port', 'mail.secure', 'mail.user', 'mail.pass', 'mail.from']) save(key);
