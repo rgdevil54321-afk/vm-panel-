@@ -1183,9 +1183,6 @@ const targetOwner = urlParams.get('owner_id');
 if (targetOwner && document.getElementById('fOwner')) document.getElementById('fOwner').value = targetOwner;
 // Seed one data disk template
 genPassword();
-// Fill the Review & Deploy / live summary with the current default values
-// (CPU, RAM, disk, OS, node, etc.) so the final step is never blank.
-updateSummary();
 renderSteps();
 </script>
 <%- include('../partials/foot') %>
