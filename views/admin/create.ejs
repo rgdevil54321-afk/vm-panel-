@@ -24,18 +24,18 @@
   <!-- Quick Template Presets -->
   <div class="card mb-4" style="background:var(--glass);border:1px solid var(--border);padding:18px">
     <div class="flex-between mb-2">
-      <div style="font-weight:600;font-size:14px">⚡ Quick Sizing Presets</div>
+      <div style="font-weight:600;font-size:14px"> Quick Sizing Presets</div>
       <span class="muted text-sm">Click a preset to auto-configure hardware resources</span>
     </div>
     <div class="grid grid-4" style="gap:12px">
       <button type="button" class="preset-card" onclick="applyPreset(1, 1024, '10G', this)">
-        <div class="preset-name">⚡ Starter</div>
+        <div class="preset-name"> Starter</div>
         <div class="preset-spec">1 vCPU · 1024 MB RAM</div>
         <div class="preset-disk">10 GB SSD</div>
       </button>
       <button type="button" class="preset-card active" onclick="applyPreset(2, 2048, '20G', this)">
         <div class="preset-badge">Popular</div>
-        <div class="preset-name">🚀 Standard</div>
+        <div class="preset-name">Standard</div>
         <div class="preset-spec">2 vCPUs · 2048 MB RAM</div>
         <div class="preset-disk">20 GB SSD</div>
       </button>
@@ -262,7 +262,7 @@
         <div class="grid grid-2 mb-3" style="gap:10px">
           <label class="img-mode-card active" id="modeDownloadLabel" onclick="setImgMode('download')">
             <input type="radio" name="imgSrc" value="download" checked style="display:none"/>
-            <div style="font-size:20px">☁️</div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="26" height="26" style="opacity:0.85"><path d="M7 18a4.5 4.5 0 0 1 0-9 6 6 0 0 1 11.6-1.6A4 4 0 0 1 18 18H7z"/></svg>
             <div>
               <div style="font-weight:600">Official Cloud Image</div>
               <div class="muted text-sm" style="font-size:11px">Auto-downloaded &amp; verified (Recommended)</div>
@@ -270,7 +270,7 @@
           </label>
           <label class="img-mode-card" id="modeUploadLabel" onclick="setImgMode('upload')">
             <input type="radio" name="imgSrc" value="upload" style="display:none"/>
-            <div style="font-size:20px">📦</div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="26" height="26" style="opacity:0.85"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v13"/></svg>
             <div>
               <div style="font-weight:600">Custom Image Upload</div>
               <div class="muted text-sm" style="font-size:11px">Upload local .qcow2 or .img disk</div>

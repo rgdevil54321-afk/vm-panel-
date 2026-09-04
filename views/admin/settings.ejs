@@ -126,6 +126,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
       Email (SMTP)
     </button>
+    <button class="tab" data-tab="music" onclick="showTab('music')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+      Sound &amp; Privacy
+    </button>
   </div>
 
   <!-- ============ GENERAL SETTINGS ============ -->
@@ -534,7 +538,7 @@
 
   </div>
 
-  <!-- ============ SECRET BLUR ============ -->
+  <!-- ============ SOUND & PRIVACY ============ -->
   <div class="tab-pane" id="tab-music" style="display:none">
     <div class="card mb-4" style="padding:22px">
       <div class="card-title mb-1" style="font-size:18px">Secret Blur</div>
@@ -542,10 +546,10 @@
       <div class="flex-between" style="align-items:center;flex-wrap:wrap;gap:12px">
         <div>
           <div style="font-weight:700;color:#fff">Enable Secret Blur by default</div>
-          <div class="muted text-sm">A toggle button is always available in the bottom-left corner of the panel.</div>
+          <div class="muted text-sm">Blurs passwords, tokens and API keys across the panel until revealed here.</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="secretBlurEnabled" <%= String(all['panel.secret_blur']) === '1' || all['panel.secret_blur'] === true ? 'checked' : '' %> />
+          <input type="checkbox" id="secretBlurEnabled" data-sb-toggle <%= String(all['panel.secret_blur']) === '1' || all['panel.secret_blur'] === true ? 'checked' : '' %> />
           <span class="switch-slider"></span>
         </label>
       </div>

@@ -938,12 +938,10 @@ tr:hover td { background: rgba(255, 255, 255, 0.028); }
 .music-playbtn { width:32px; height:32px; background:var(--accent); border-color:var(--accent); }
 .music-vol { width:70px; accent-color:var(--accent); }
 
-/* Secret blur - protects sensitive on-screen info */
+/* Secret blur - protects sensitive on-screen info
+   (toggle lives in admin Settings > Music & Sound, no floating button) */
 .secret-blur { filter: blur(6px); transition: filter .25s ease; cursor: pointer; user-select: none; }
 .secret-blur:hover, .secret-blur.revealed { filter: none; }
-
-/* Secret blur toggle button */
-.sb-toggle { position: fixed; bottom: 24px; left: 24px; z-index: 70; }
 
 /* Toggle switch */
 .switch { position: relative; display: inline-block; width: 46px; height: 24px; flex-shrink: 0; }

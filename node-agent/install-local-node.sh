@@ -82,7 +82,7 @@ if [ -f data/vpanel.db ]; then
       const db = new Database('data/vpanel.db');
       const row = db.prepare('SELECT id FROM nodes WHERE host = ? AND port = ?').get('127.0.0.1', $AGENT_PORT);
       if (!row) {
-        db.prepare('INSERT INTO nodes (name, host, port, agent_token, location, status, last_seen_at, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('$NODE_NAME', '127.0.0.1', $AGENT_PORT, 'local-primary-no-agent', 'Primary Datacenter', 'offline', NULL, new Date().toISOString(), new Date().toISOString());
+        db.prepare('INSERT INTO nodes (name, host, port, agent_token, location, status, last_seen_at, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('$NODE_NAME', '127.0.0.1', $AGENT_PORT, 'local-primary-no-agent', 'Primary Datacenter', 'offline', null, new Date().toISOString(), new Date().toISOString());
         console.log('[✔] Local primary node created (127.0.0.1:' + $AGENT_PORT + ').');
       } else {
         console.log('[i] Local primary node already exists.');
