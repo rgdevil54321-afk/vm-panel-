@@ -51,6 +51,15 @@
     </div>
 
     <div class="card">
+      <div class="card-title">Privacy</div>
+      <p class="muted mb-2 text-sm">Blur sensitive information (passwords, tokens, API keys) on screen to protect against screen sharing. Hover a blurred value to briefly reveal it.</p>
+      <div class="flex-between" style="gap:10px">
+        <span class="text-sm" style="font-weight:600">Secret Blur</span>
+        <label class="switch"><input type="checkbox" id="secretBlurToggle" data-sb-toggle <%= (user.secret_blur === 1 || user.secret_blur === '1' || user.secret_blur === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-title">Two-Factor Authentication (2FA)</div>
       <% if (typeof tfaSetup !== 'undefined' && tfaSetup) { %>
         <div class="alert alert-info">

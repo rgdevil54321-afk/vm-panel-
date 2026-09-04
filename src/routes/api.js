@@ -118,6 +118,15 @@ router.post('/user/sfx', json, (req, res) => {
   res.json({ ok: true, enabled: !!enabled, volume });
 });
 
+// Per-user secret blur preference
+router.post('/user/secret-blur', json, (req, res) => {
+  const enabled = req.body.enabled ? 1 : 0;
+  const { db } = require('../lib/db');
+  db.prepare('UPDATE users SET secret_blur = ?, updated_at = ? WHERE id = ?')
+    .run(enabled, new Date().toISOString(), req.user.id);
+  res.json({ ok: true, enabled: !!enabled });
+});
+
 router.post('/user/avatar', uploadAvatar.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const url = `/uploads/avatar/${req.file.filename}`;

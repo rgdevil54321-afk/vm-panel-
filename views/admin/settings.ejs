@@ -128,7 +128,7 @@
     </button>
     <button class="tab" data-tab="music" onclick="showTab('music')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
-      Sound &amp; Privacy
+      Sound
     </button>
   </div>
 
@@ -538,30 +538,15 @@
 
   </div>
 
-  <!-- ============ SOUND & PRIVACY ============ -->
+  <!-- ============ SOUND ============ -->
   <div class="tab-pane" id="tab-music" style="display:none">
-    <div class="card mb-4" style="padding:22px">
-      <div class="card-title mb-1" style="font-size:18px">Secret Blur</div>
-      <p class="muted text-sm mb-3">Blur sensitive on-screen information (passwords, tokens, API keys) to protect against privacy leaks / screen sharing.</p>
-      <div class="flex-between" style="align-items:center;flex-wrap:wrap;gap:12px">
-        <div>
-          <div style="font-weight:700;color:#fff">Enable Secret Blur by default</div>
-          <div class="muted text-sm">Blurs passwords, tokens and API keys across the panel until revealed here.</div>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="secretBlurEnabled" data-sb-toggle <%= String(all['panel.secret_blur']) === '1' || all['panel.secret_blur'] === true ? 'checked' : '' %> />
-          <span class="switch-slider"></span>
-        </label>
-      </div>
-    </div>
-
     <div class="card mb-4" style="padding:22px">
       <div class="card-title mb-1" style="font-size:18px">Sound Effects Volume (panel-wide default)</div>
       <div class="flex" style="gap:10px;align-items:center">
         <input type="range" id="sfxVolume" min="0" max="100" step="1" value="<%= all['panel.sfx_volume'] || '40' %>" style="flex:1"/>
         <span class="pill pill-blue mono" id="sfxVolBadge"><%= all['panel.sfx_volume'] || '40' %>%</span>
       </div>
-      <div class="form-hint mt-2">Individual users can turn sounds and music on/off from their own Settings page.</div>
+      <div class="form-hint mt-2">Individual users control music, sounds and secret blur from their own Settings page.</div>
     </div>
 
     <button class="btn btn-primary" onclick="saveMusicSfx()">Save Settings</button>
@@ -907,7 +892,6 @@ function resetCustomizationDefaults() {
 async function saveMusicSfx() {
   const body = {
     'panel.sfx_volume': document.getElementById('sfxVolume').value,
-    'panel.secret_blur': document.getElementById('secretBlurEnabled').checked ? '1' : '0',
   };
   try {
     const res = await fetch('/api/customization/save', {
@@ -919,7 +903,6 @@ async function saveMusicSfx() {
     if (!res.ok || !d.ok) throw new Error(d.error || 'Failed to save');
     if (window.APP_SETTINGS) {
       window.APP_SETTINGS.sfx_volume = parseInt(body['panel.sfx_volume'], 10);
-      window.APP_SETTINGS.secret_blur = body['panel.secret_blur'] === '1';
     }
     if (window.SFX) window.SFX.play('success');
     VP.toast('Settings saved!', 'success');

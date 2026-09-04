@@ -35,7 +35,7 @@ window.APP_SETTINGS = <%- JSON.stringify({
   ambient_user_volume: (typeof user !== 'undefined' && user && user.music_volume !== undefined && user.music_volume !== null) ? Number(user.music_volume) : 35,
   sfx_user_enabled: typeof user !== 'undefined' && user ? (user.sfx_enabled === undefined ? true : (user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true)) : true,
   sfx_user_volume: (typeof user !== 'undefined' && user && user.sfx_volume !== undefined && user.sfx_volume !== null) ? Number(user.sfx_volume) : 40,
-  secret_blur: String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true
+  secret_blur: (typeof user !== 'undefined' && user && user.secret_blur !== undefined && user.secret_blur !== null) ? (user.secret_blur === 1 || user.secret_blur === '1' || user.secret_blur === true) : (String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true)
 }) %>;
 function vpApiBase() {
   return '';

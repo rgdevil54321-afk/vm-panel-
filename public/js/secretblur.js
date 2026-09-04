@@ -17,7 +17,6 @@
     targets().forEach((el) => {
       el.classList.toggle('secret-blur', enabled);
     });
-    // Sync any toggle rendered by the settings page (no floating button)
     document.querySelectorAll('[data-sb-toggle]').forEach((el) => {
       if (el.type === 'checkbox') el.checked = enabled;
       else el.classList.toggle('active', enabled);
@@ -26,13 +25,10 @@
 
   function persist() {
     try {
-      fetch('/api/customization/save', {
+      fetch('/api/user/secret-blur', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + (typeof vpToken === 'function' ? vpToken() : ''),
-        },
-        body: JSON.stringify({ 'panel.secret_blur': enabled ? '1' : '0' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
       }).catch(() => {});
     } catch (_) {}
   }
@@ -41,10 +37,10 @@
     enabled = typeof next === 'boolean' ? next : !enabled;
     applyState();
     persist();
+    S.secret_blur = enabled;
     if (window.SFX) window.SFX.play('toggle');
     if (window.VP && VP.toast) {
       VP.toast(enabled ? 'Secret blur enabled' : 'Secret blur disabled', 'success');
-      S.secret_blur = enabled;
     }
   }
 
