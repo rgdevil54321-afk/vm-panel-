@@ -17,8 +17,8 @@ trap 'rc=$?; echo ""; echo "${RED}[x] Stopped at line $LINENO (exit $rc) in inst
 trap 'echo ""' EXIT
 
 # ---------- colors --------------
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
-BOLD='\033[1m'; NC='\033[0m'
+  RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; CYAN=$'\033[0;36m'
+  BOLD=$'\033[1m'; NC=$'\033[0m'
 ok()  { printf "${GREEN}${BOLD}  [PASS]${NC} %s\n" "$1"; }
 warn(){ printf "${YELLOW}${BOLD}  [WARN]${NC} %s\n" "$1"; }
 fail(){ printf "${RED}${BOLD}  [FAIL]${NC} %s\n" "$1"; }

@@ -40,7 +40,7 @@ REPO_URL="https://github.com/rgdevil54321-afk/vm-panel-.git"
 REPO_BRANCH="main"
 INSTALL_DIR="/opt/venlix-nodes"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
+  RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; BOLD=$'\033[1m'; NC=$'\033[0m'
 
 echo ""
 echo "=============================================="
