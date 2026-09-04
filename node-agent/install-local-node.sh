@@ -29,6 +29,10 @@ fi
 # ---------- copy agent ----------
 echo "[+] Installing agent to $AGENT_DIR"
 mkdir -p "$AGENT_DIR"
+# Remove stale agent code first so an old install (e.g. with removed deps) can never linger.
+find "$AGENT_DIR" -maxdepth 1 -mindepth 1 \
+  ! -name data ! -name vms ! -name .env ! -name node_modules \
+  -exec rm -rf {} + 2>/dev/null || true
 if [[ -d ./node-agent ]]; then
   cp -r ./node-agent/. "$AGENT_DIR/"
 elif [[ -f agent.js ]]; then
@@ -71,6 +75,20 @@ pm2 delete venlix-node >/dev/null 2>&1 || true
 pm2 start "$AGENT_DIR/agent.js" --name venlix-node
 pm2 save >/dev/null 2>&1 || true
 pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
+
+# ---------- verify the agent actually boots and responds ----------
+sleep 2
+if pm2 info venlix-node 2>/dev/null | grep -q "errored\|stopped"; then
+  echo "[!] Agent failed to stay online. Last logs:"
+  pm2 logs venlix-node --lines 15 --nostream 2>/dev/null | sed 's/^/    /'
+  exit 1
+fi
+HEALTH="$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AGENT_PORT}/health" 2>/dev/null || true)"
+if [ "$HEALTH" != "200" ]; then
+  echo "[!] Agent health check returned '$HEALTH' (expected 200). Check: pm2 logs venlix-node"
+  exit 1
+fi
+echo "[+] Agent is online and healthy (HTTP $HEALTH on port $AGENT_PORT)."
 
 # ---------- create local primary node in the panel DB ----------
 echo "[+] Ensuring local primary node in panel DB..."

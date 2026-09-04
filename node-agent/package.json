@@ -9,8 +9,5 @@
   "scripts": {
     "start": "node agent.js"
   },
-  "dependencies": {
-    "uuid": "^10.0.0"
-  },
   "license": "MIT"
 }

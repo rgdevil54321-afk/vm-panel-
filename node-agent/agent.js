@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const qemu = require('./lib/qemu');
 const state = require('./lib/state');
 
-// minimal .env loader (no external deps; agent must run with only 'uuid')
+// minimal .env loader (zero external deps - built-in modules only)
 (function loadEnv() {
   const envPath = path.resolve(__dirname, '.env');
   if (!fs.existsSync(envPath)) return;
@@ -86,6 +86,11 @@ const server = http.createServer(async (req, res) => {
   const u = url.parse(req.url, true);
   const method = req.method.toUpperCase();
   const p = u.pathname.replace(/\/+$/, '') || '/';
+
+  // ---- pre-auth: health probe (no secrets exposed) ----
+  if (method === 'GET' && p === '/health') {
+    return json(res, 200, { ok: true, agent: 'venlix-node', vms: state.get().vms.length, ts: Date.now() });
+  }
 
   // ---- pre-auth: node onboarding via join key ----
   if (method === 'POST' && p === '/join') {
