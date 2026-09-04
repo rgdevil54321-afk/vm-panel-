@@ -218,7 +218,9 @@ function buildQemuArgs(vm) {
   args.push('-boot', `order=${bootOrder || 'c'}`);
 
   // Network: NIC model + count (slirp user net per NIC)
-  const nicModel = String(vm.nic_model || 'virtio').toLowerCase();
+  // 'virtio' is a shorthand for the full QEMU device name 'virtio-net-pci'.
+  const rawNic = String(vm.nic_model || 'virtio').toLowerCase();
+  const nicModel = rawNic === 'virtio' ? 'virtio-net' : rawNic;
   const nicCount = Math.max(1, Math.min(6, parseInt(vm.nic_count, 10) || 1));
   args.push('-device', `${nicModel}-pci,netdev=n0`);
   args.push('-netdev', `user,id=n0,hostfwd=tcp::${vm.ssh_port}-:22${vm.agent_port ? `,hostfwd=tcp::${vm.agent_port}-:9090` : ''}`);
