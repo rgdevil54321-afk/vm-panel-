@@ -854,29 +854,44 @@ do_change_ports() {
 show_menu() {
   while true; do
     safe_clear
+    printf "${MAGENTA}${BOLD}"
+    cat <<'VNBANNER'
+ __      __                _ _       _
+ \ \    / /_ _  __ _ _  __(_|)_ __  | |__  _   _
+  \ \/\/ / _` |/ _` | || \ / | '  \ | '_ \| | | |
+   \_/\_/\__,_|\__, |\_,_/_|_|_|_|_||_| |_|\__, |
+               |___/                        |___/
+VNBANNER
+    printf "${NC}"
     printf "${CYAN}${BOLD}"
-    echo "================================================================="
-    echo "                   ⚡ Venlix Nodes Management Suite                "
-    echo "            Full Support: Debian 11/12/13 & Ubuntu 20/22/24      "
-    echo "================================================================="
+    echo "  ╭───────────────────────────────────────────────────────────╮"
+    echo "  │          ⚡  Venlix Nodes Management Suite  ⚡            │"
+    echo "  │      Debian 11/12/13 & Ubuntu 20.04/22.04/24.04         │"
+    echo "  ╰───────────────────────────────────────────────────────────╯"
     printf "${NC}"
     echo ""
-    echo "  [1] 🚀 1. Install (Full automated install for Debian/Ubuntu)"
-    echo "  [2] 👤 2. User Create Admin (usercrate admin)"
-    echo "  [3] 🔄 3. Update (Pull updates, rebuild & zero-downtime reload)"
-    echo "  [4] ⚙️  4. PM2 Management (pm2 mang - restart, logs, boot startup)"
-    echo "  [5] 🗑️  5. Uninstall (Safe uninstall wizard)"
-    echo "  [6] 🖥️  6. Install Node Agent (connect this machine to the panel)"
-    echo "  [7] 📊 7. System Status (health, nodes, pm2, resources)"
-    echo "  [8] 💾 8. Backup / Restore (DB + VMs + uploads)"
-    echo "  [9] 🔥 9. Firewall Wizard (open panel/node/VM ports)"
-    echo " [10] 🖥️  10. Node Management (status, tunnel, connect key)"
-    echo " [11] 🔐 11. SSL / HTTPS via Caddy"
-    echo " [12] 🔧 12. Change Ports (panel / api / agent)"
-    echo "  [0] 🚪 0. Exit"
+    echo "  ${BOLD}DEPLOY${NC}"
+    echo "   ${CYAN}[1]${NC} 🚀 Install Panel         Full automated install"
+    echo "   ${CYAN}[2]${NC} 👤 Create Admin         New administrator account"
+    echo "   ${CYAN}[3]${NC} 🔄 Update Panel         Pull + rebuild + reload"
     echo ""
-    printf "${CYAN}=================================================================${NC}\n"
-    read -r -p "Enter choice [0-12]: " CHOICE
+    echo "  ${BOLD}MANAGE${NC}"
+    echo "   ${CYAN}[4]${NC} ⚙️  PM2 Manager         Status · restart · logs · boot"
+    echo "   ${CYAN}[5]${NC} 🗑️  Uninstall            Safe removal wizard"
+    echo "   ${CYAN}[6]${NC} 🖥️  Install Node Agent   Connect machine → panel"
+    echo ""
+    echo "  ${BOLD}TOOLS${NC}"
+    echo "   ${CYAN}[7]${NC} 📊 System Status       Health · nodes · resources"
+    echo "   ${CYAN}[8]${NC} 💾 Backup / Restore    DB · VMs · uploads"
+    echo "   ${CYAN}[9]${NC} 🔥 Firewall Wizard     Open panel/node/VM ports"
+    echo "   ${CYAN}[10]${NC} 🖥️ Node Management    Status · tunnel · key"
+    echo "   ${CYAN}[11]${NC} 🔐 SSL / HTTPS        Free auto-SSL via Caddy"
+    echo "   ${CYAN}[12]${NC} 🔧 Change Ports       Panel / API / agent"
+    echo ""
+    echo "   ${RED}[0]${NC} 🚪 Exit"
+    echo ""
+    printf "${CYAN}─────────────────────────────────────────────────────────────${NC}\n"
+    read -r -p "  Select option ${BOLD}[0-12]${NC} › " CHOICE
 
     case "$CHOICE" in
       1)

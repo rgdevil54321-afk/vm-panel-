@@ -21,24 +21,11 @@
     </a>
   </div>
 
-  <!-- Wizard Stepper -->
-  <div class="wizard-steps" id="wizardSteps">
-    <button type="button" class="wstep active" data-step="1" onclick="goto(1)"><span class="ws-num">1</span><span class="ws-label">Basics</span></button>
-    <button type="button" class="wstep" data-step="2" onclick="goto(2)"><span class="ws-num">2</span><span class="ws-label">CPU</span></button>
-    <button type="button" class="wstep" data-step="3" onclick="goto(3)"><span class="ws-num">3</span><span class="ws-label">RAM</span></button>
-    <button type="button" class="wstep" data-step="4" onclick="goto(4)"><span class="ws-num">4</span><span class="ws-label">Storage</span></button>
-    <button type="button" class="wstep" data-step="5" onclick="goto(5)"><span class="ws-num">5</span><span class="ws-label">Boot</span></button>
-    <button type="button" class="wstep" data-step="6" onclick="goto(6)"><span class="ws-num">6</span><span class="ws-label">Network</span></button>
-    <button type="button" class="wstep" data-step="7" onclick="goto(7)"><span class="ws-num">7</span><span class="ws-label">Auth</span></button>
-    <button type="button" class="wstep" data-step="8" onclick="goto(8)"><span class="ws-num">8</span><span class="ws-label">Options</span></button>
-    <button type="button" class="wstep" data-step="9" onclick="goto(9)"><span class="ws-num">9</span><span class="ws-label">Review</span></button>
-  </div>
-
   <!-- Quick Template Presets -->
   <div class="card mb-4" style="background:var(--glass);border:1px solid var(--border);padding:18px">
     <div class="flex-between mb-2">
       <div style="font-weight:600;font-size:14px">⚡ Quick Sizing Presets</div>
-      <span class="muted text-sm">Click a preset to auto-configure the Basics + CPU + RAM + Storage steps</span>
+      <span class="muted text-sm">Click a preset to auto-configure hardware resources</span>
     </div>
     <div class="grid grid-4" style="gap:12px">
       <button type="button" class="preset-card" onclick="applyPreset(1, 1024, '10G', this)">
@@ -66,719 +53,308 @@
   </div>
 
   <div class="grid" style="grid-template-columns: 1fr 340px; gap: 24px; align-items: start;">
-    <!-- Wizard Steps Container -->
-    <div style="display:flex;flex-direction:column;gap:0">
-
-      <!-- ============ STEP 1 · BASICS ============ -->
-      <div class="wizard-step" id="step-1">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">1 · Basics &amp; Operating System</div>
-
-          <div class="form-group">
-            <label>Hypervisor Node *</label>
-            <select id="fNode" onchange="updateSummary()">
-              <% for (const n of nodes) { %>
-                <option value="<%= n.id %>" <%= n.id === 1 ? 'selected' : '' %>>
-                  <%= n.name %> (<%= n.host %>:<%= n.port %>)<%= n.status === 'online' ? ' — Online' : ' — Offline' %>
-                </option>
-              <% } %>
-            </select>
-            <div class="form-hint">Choose which node will provision and run this machine. Pick the local Primary Node or any connected remote node.</div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>Virtual Machine Name *</label>
-              <input id="fName" placeholder="e.g. web-server-01" required oninput="nameChanged(this.value)"/>
-              <div class="form-hint">Alphanumeric, hyphens and underscores</div>
-            </div>
-            <div class="form-group">
-              <label>Hostname</label>
-              <input id="fHost" placeholder="auto from name" oninput="updateSummary()"/>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>VM ID (custom)</label>
-              <input id="fVmid" placeholder="optional custom ID" oninput="updateSummary()"/>
-              <div class="form-hint">Custom identifier if you want to pin one, otherwise auto-assigned.</div>
-            </div>
-            <div class="form-group">
-              <label>Region / Location</label>
-              <input id="fRegion" placeholder="e.g. us-east · DFT · STH01" oninput="updateSummary()"/>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>Tags</label>
-              <input id="fTag" placeholder="e.g. web, prod, eu (comma separated)" oninput="updateSummary()"/>
-            </div>
-            <div class="form-group">
-              <label>Server Owner</label>
-              <select id="fOwner" onchange="updateSummary()">
-                <option value="<%= user.id %>"><%= user.username %> (you - Administrator)</option>
-                <% for (const u of users) { %>
-                  <% if (u.id !== user.id) { %>
-                    <option value="<%= u.id %>"><%= u.username %> · <%= u.email %></option>
-                  <% } %>
-                <% } %>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>Description</label>
-            <textarea id="fDesc" rows="2" placeholder="Optional notes about this server" oninput="updateSummary()"></textarea>
-            <div class="form-hint">Shown on the server detail page.</div>
-          </div>
-
-          <div style="height:1px;background:var(--border);margin:20px 0"/>
-
-          <div class="flex-between mb-3">
-            <div class="card-title" style="margin:0;font-size:15px">Operating System</div>
-            <div class="os-filters">
-              <button type="button" class="os-filter-btn active" onclick="filterOs('all', this)">All</button>
-              <button type="button" class="os-filter-btn" onclick="filterOs('ubuntu', this)">Ubuntu</button>
-              <button type="button" class="os-filter-btn" onclick="filterOs('debian', this)">Debian</button>
-              <button type="button" class="os-filter-btn" onclick="filterOs('fedora', this)">Fedora</button>
-              <button type="button" class="os-filter-btn" onclick="filterOs('rhel', this)">RHEL/Enterprise</button>
-            </div>
-          </div>
-
-          <div class="grid grid-3" id="osGrid" style="gap:12px">
-            <% for (let i = 0; i < osList.length; i++) {
-               const o = osList[i];
-               const distro = (o[1] || '').toLowerCase();
-               const name = o[0];
-               let color = 'var(--accent)';
-               let icon = '🐧';
-               if (distro.includes('ubuntu')) { color = '#e95420'; icon = '🟠'; }
-               else if (distro.includes('debian')) { color = '#d70a53'; icon = '🔴'; }
-               else if (distro.includes('fedora')) { color = '#294172'; icon = '🔵'; }
-               else if (distro.includes('centos')) { color = '#93227f'; icon = '🟣'; }
-               else if (distro.includes('alma')) { color = '#0ea5e9'; icon = '🌐'; }
-               else if (distro.includes('rocky')) { color = '#10b981'; icon = '🟢'; }
-            %>
-              <label class="os-select-card <%= i === 0 ? 'selected' : '' %>" data-distro="<%= distro %>" style="cursor:pointer;position:relative;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all 0.18s ease">
-                <input type="radio" name="os" value="<%= o[0] %>" data-username="<%= o[4] || 'root' %>" <%= i === 0 ? 'checked' : '' %> style="display:none" onchange="selectOsCard(this)"/>
-                <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0"><%= icon %></div>
-                <div style="flex:1;min-width:0">
-                  <div style="font-weight:700;font-size:14px;color:var(--text)"><%= o[0] %></div>
-                  <div class="muted text-sm mono" style="font-size:11px"><%= o[2] || 'standard' %> · x86_64</div>
-                </div>
-                <div class="os-check" style="width:18px;height:18px;border-radius:50%;background:<%= i === 0 ? 'var(--accent)' : 'transparent' %>;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;display:grid;place-items:center">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="10" height="10" style="display:<%= i === 0 ? 'block' : 'none' %>"><path d="M20 6L9 17l-5-5"/></svg>
-                </div>
-              </label>
+    <!-- Main Configuration Form -->
+    <div style="display:flex;flex-direction:column;gap:22px">
+      
+      <!-- 0. Deploy Target Node -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:16px;font-size:16px">0 · Deploy Target Node</div>
+        <div class="form-group">
+          <label>Hypervisor Node *</label>
+          <select id="fNode" onchange="updateSummary()">
+            <% for (const n of nodes) { %>
+              <option value="<%= n.id %>" <%= n.id === 1 ? 'selected' : '' %>>
+                <%= n.name %> (<%= n.host %>:<%= n.port %>)<%= n.status === 'online' ? ' — Online' : ' — Offline' %>
+              </option>
             <% } %>
-          </div>
-
-          <div class="grid grid-2 mt-3" style="gap:10px">
-            <label class="img-mode-card active" id="modeDownloadLabel" onclick="setImgMode('download')">
-              <input type="radio" name="imgSrc" value="download" checked style="display:none"/>
-              <div style="font-size:20px">☁️</div>
-              <div>
-                <div style="font-weight:600">Official Cloud Image</div>
-                <div class="muted text-sm" style="font-size:11px">Auto-downloaded &amp; verified (Recommended)</div>
-              </div>
-            </label>
-            <label class="img-mode-card" id="modeUploadLabel" onclick="setImgMode('upload')">
-              <input type="radio" name="imgSrc" value="upload" style="display:none"/>
-              <div style="font-size:20px">📦</div>
-              <div>
-                <div style="font-weight:600">Custom Image Upload</div>
-                <div class="muted text-sm" style="font-size:11px">Upload local .qcow2 or .img disk</div>
-              </div>
-            </label>
-          </div>
-
-          <div id="uploadBox" style="display:none;border:2px dashed var(--border);border-radius:14px;padding:24px;text-align:center;background:rgba(0,0,0,0.2);margin-top:10px">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="38" height="38" style="opacity:0.6;margin-bottom:8px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            <div style="font-weight:600;margin-bottom:4px">Select your QCOW2 / RAW image file</div>
-            <div class="muted text-sm mb-3">Supported formats: .qcow2, .img, .qcow (Max: 10GB)</div>
-            <label class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
-              <span>Browse Files</span>
-              <input type="file" id="fImg" accept=".qcow2,.img,.qcow" style="display:none" onchange="fileSelected(this)"/>
-            </label>
-            <div id="imgName" class="mono text-sm mt-2" style="color:var(--accent-2)"></div>
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: CPU →</button>
-          </div>
+          </select>
+          <div class="form-hint">Choose which node will provision and run this virtual machine. Pick the local Primary Node or any connected remote node.</div>
         </div>
       </div>
 
-      <!-- ============ STEP 2 · CPU ============ -->
-      <div class="wizard-step" id="step-2" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">2 · CPU &amp; Compute</div>
-
-          <div class="form-group mb-4">
-            <div class="flex-between mb-1">
-              <label style="font-weight:600;font-size:13px">Virtual CPUs (total cores)</label>
-              <span id="cpuValBadge" class="pill pill-blue mono font-bold">2 Cores</span>
-            </div>
-            <div class="flex" style="gap:14px;align-items:center">
-              <input type="range" min="1" max="16" step="1" value="<%= settings['vm.default_cpus'] || '2' %>" id="fCpusRange" style="flex:1" oninput="syncCpu(this.value)"/>
-              <input type="number" min="1" max="32" value="<%= settings['vm.default_cpus'] || '2' %>" id="fCpus" style="width:75px" oninput="syncCpu(this.value)"/>
-            </div>
-          </div>
-
-          <div class="grid grid-3 mb-3" style="gap:14px">
-            <div class="form-group">
-              <label>CPU Sockets</label>
-              <input type="number" min="1" max="8" value="1" id="fSockets" oninput="syncTopology()"/>
-            </div>
-            <div class="form-group">
-              <label>Cores per Socket</label>
-              <input type="number" min="1" max="32" value="<%= settings['vm.default_cpus'] || '2' %>" id="fCoresPerSocket" oninput="syncTopology()"/>
-            </div>
-            <div class="form-group">
-              <label>Threads per Core</label>
-              <select id="fThreads" onchange="syncTopology()">
-                <option value="1" selected>1 thread</option>
-                <option value="2">2 threads (SMT)</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-hint" style="margin-top:-16px;margin-bottom:16px">Topology shapes the CPU layout QEMU advertises. Sockets × Cores × Threads stays in sync with the total vCPU slider.</div>
-
-          <div class="form-group mb-4">
-            <label>CPU Model / Type</label>
-            <div class="flex" style="gap:10px">
-              <select id="fCpuModel" onchange="updateSummary()" style="flex:1">
-                <option value="default" selected>Default (auto)</option>
-                <option value="host">host (passthrough, KVM only)</option>
-                <option value="max">max</option>
-                <option value="qemu64">qemu64</option>
-                <option value="Nehalem">Intel Nehalem</option>
-                <option value="SandyBridge">Intel SandyBridge</option>
-                <option value="IvyBridge">Intel IvyBridge</option>
-                <option value="Haswell">Intel Haswell</option>
-                <option value="Skylake-Client">Intel Skylake</option>
-                <option value="Cascadelake-Server">Intel Cascadelake</option>
-                <option value="EPYC">AMD EPYC</option>
-                <option value="EPYC-v3">AMD EPYC Milan</option>
-              </select>
-            </div>
-            <div class="form-hint">On Docker/TCG nodes the model is auto-forced to <code>qemu64</code> for compatibility.</div>
-          </div>
-
-          <div class="grid grid-2" style="gap:14px">
-            <div class="form-group">
-              <label>CPU Units / Weight</label>
-              <input type="number" min="8" max="262144" value="1024" id="fCpuUnits" oninput="updateSummary()"/>
-              <div class="form-hint">Proportional share scheduler weight.</div>
-            </div>
-            <div class="form-group">
-              <label>CPU Limit (%)</label>
-              <input type="number" min="0" max="100" value="0" id="fCpuLimit" oninput="updateSummary()"/>
-              <div class="form-hint">0 = unlimited.</div>
-            </div>
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: RAM →</button>
+      <!-- 1. Operating System Selection -->
+      <div class="card" style="padding:22px">
+        <div class="flex-between mb-3">
+          <div class="card-title" style="margin:0;font-size:16px">1 · Operating System</div>
+          <div class="os-filters">
+            <button type="button" class="os-filter-btn active" onclick="filterOs('all', this)">All</button>
+            <button type="button" class="os-filter-btn" onclick="filterOs('ubuntu', this)">Ubuntu</button>
+            <button type="button" class="os-filter-btn" onclick="filterOs('debian', this)">Debian</button>
+            <button type="button" class="os-filter-btn" onclick="filterOs('fedora', this)">Fedora</button>
+            <button type="button" class="os-filter-btn" onclick="filterOs('rhel', this)">RHEL/Enterprise</button>
           </div>
         </div>
-      </div>
 
-      <!-- ============ STEP 3 · RAM ============ -->
-      <div class="wizard-step" id="step-3" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">3 · Memory (RAM)</div>
-
-          <div class="form-group mb-4">
-            <div class="flex-between mb-1">
-              <label style="font-weight:600;font-size:13px">Memory (RAM)</label>
-              <span id="memValBadge" class="pill pill-green mono font-bold">2048 MB (2.0 GB)</span>
-            </div>
-            <div class="flex" style="gap:14px;align-items:center">
-              <input type="range" min="512" max="16384" step="256" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMemRange" style="flex:1" oninput="syncMem(this.value)"/>
-              <input type="number" min="256" max="65536" step="128" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMem" style="width:90px" oninput="syncMem(this.value)"/>
-            </div>
-            <div class="flex mt-2" style="gap:6px">
-              <button type="button" class="btn btn-sm" onclick="syncMem(1024)">1 GB</button>
-              <button type="button" class="btn btn-sm" onclick="syncMem(2048)">2 GB</button>
-              <button type="button" class="btn btn-sm" onclick="syncMem(4096)">4 GB</button>
-              <button type="button" class="btn btn-sm" onclick="syncMem(8192)">8 GB</button>
-              <button type="button" class="btn btn-sm" onclick="syncMem(16384)">16 GB</button>
-            </div>
-          </div>
-
-          <div class="grid grid-2 mb-3" style="gap:14px">
-            <div class="form-group">
-              <label>Minimum RAM (MB)</label>
-              <input type="number" min="256" value="0" id="fMemMin" placeholder="0 (disabled)" oninput="updateSummary()"/>
-            </div>
-            <div class="form-group">
-              <label>Maximum RAM (MB)</label>
-              <input type="number" min="256" value="0" id="fMemMax" placeholder="0 (disabled, hotplug)" oninput="updateSummary()"/>
-            </div>
-          </div>
-
-          <div class="form-row mt-1">
-            <label class="check" style="cursor:pointer">
-              <input type="checkbox" id="fBalloon" checked onchange="updateSummary()"/>
-              <span>Dynamic Memory / Ballooning</span>
-            </label>
-            <label class="check" style="cursor:pointer">
-              <input type="checkbox" id="fMemHotplug" onchange="updateSummary()"/>
-              <span>Memory Hotplug (uses Maximum RAM)</span>
-            </label>
-          </div>
-          <div class="form-hint" style="margin-top:10px">Ballooning lets the host reclaim unused guest memory. Hotplug allows adding RAM live up to the Maximum value.</div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Storage →</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ STEP 4 · STORAGE ============ -->
-      <div class="wizard-step" id="step-4" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">4 · Storage &amp; Disks</div>
-
-          <div class="form-group mb-4">
-            <div class="flex-between mb-1">
-              <label style="font-weight:600;font-size:13px">Primary Disk Size</label>
-              <span id="diskValBadge" class="pill pill-yellow mono font-bold"><%= settings['vm.default_disk'] || '20G' %></span>
-            </div>
-            <div class="flex" style="gap:10px;align-items:center">
-              <input id="fDisk" value="<%= settings['vm.default_disk'] || '20G' %>" placeholder="20G" oninput="updateSummary()"/>
-              <div class="flex" style="gap:6px">
-                <button type="button" class="btn btn-sm" onclick="setDisk('10G')">10G</button>
-                <button type="button" class="btn btn-sm" onclick="setDisk('20G')">20G</button>
-                <button type="button" class="btn btn-sm" onclick="setDisk('40G')">40G</button>
-                <button type="button" class="btn btn-sm" onclick="setDisk('80G')">80G</button>
+        <div class="grid grid-3" id="osGrid" style="gap:12px">
+          <% for (let i = 0; i < osList.length; i++) { 
+             const o = osList[i]; 
+             const distro = (o[1] || '').toLowerCase();
+             const name = o[0];
+             let color = 'var(--accent)';
+             let icon = '🐧';
+             if (distro.includes('ubuntu')) { color = '#e95420'; icon = '🟠'; }
+             else if (distro.includes('debian')) { color = '#d70a53'; icon = '🔴'; }
+             else if (distro.includes('fedora')) { color = '#294172'; icon = '🔵'; }
+             else if (distro.includes('centos')) { color = '#93227f'; icon = '🟣'; }
+             else if (distro.includes('alma')) { color = '#0ea5e9'; icon = '🌐'; }
+             else if (distro.includes('rocky')) { color = '#10b981'; icon = '🟢'; }
+          %>
+            <label class="os-select-card <%= i === 0 ? 'selected' : '' %>" data-distro="<%= distro %>" style="cursor:pointer;position:relative;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all 0.18s ease">
+              <input type="radio" name="os" value="<%= o[0] %>" data-username="<%= o[4] || 'root' %>" <%= i === 0 ? 'checked' : '' %> style="display:none" onchange="selectOsCard(this)"/>
+              <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0"><%= icon %></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:14px;color:var(--text)"><%= o[0] %></div>
+                <div class="muted text-sm mono" style="font-size:11px"><%= o[2] || 'standard' %> · x86_64</div>
               </div>
-            </div>
-            <div class="form-hint">Format: 20G, 50G, 100G (QEMU QCOW2 dynamic storage)</div>
+              <div class="os-check" style="width:18px;height:18px;border-radius:50%;background:<%= i === 0 ? 'var(--accent)' : 'transparent' %>;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;display:grid;place-items:center">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="10" height="10" style="display:<%= i === 0 ? 'block' : 'none' %>"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+            </label>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- 2. Hardware Resources -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:18px;font-size:16px">2 · Hardware Sizing &amp; Resources</div>
+        
+        <!-- vCPUs -->
+        <div class="form-group mb-4">
+          <div class="flex-between mb-1">
+            <label style="font-weight:600;font-size:13px">Virtual CPUs (Cores)</label>
+            <span id="cpuValBadge" class="pill pill-blue mono font-bold">2 Cores</span>
           </div>
+          <div class="flex" style="gap:14px;align-items:center">
+            <input type="range" min="1" max="16" step="1" value="<%= settings['vm.default_cpus'] || '2' %>" id="fCpusRange" style="flex:1" oninput="syncCpu(this.value)"/>
+            <input type="number" min="1" max="32" value="<%= settings['vm.default_cpus'] || '2' %>" id="fCpus" style="width:75px" oninput="syncCpu(this.value)"/>
+          </div>
+        </div>
 
-          <div class="grid grid-2 mb-3" style="gap:14px">
-            <div class="form-group">
-              <label>Storage Pool</label>
-              <select id="fPool" onchange="updateSummary()">
-                <option value="default" selected>default (primary node disk)</option>
-                <option value="local" disabled>local (requires storage-pool support)</option>
-                <option value="lvm" disabled>lvm (requires storage-pool support)</option>
-              </select>
-              <div class="form-hint">Pool selection is best-effort; single local disk is used on Docker/TCG nodes.</div>
-            </div>
-            <div class="form-group">
-              <label>Disk Format</label>
-              <select id="fFormat" onchange="updateSummary()">
-                <option value="qcow2" selected>qcow2 (recommended)</option>
-                <option value="raw">raw</option>
-                <option value="vmdk">vmdk</option>
-              </select>
+        <!-- RAM -->
+        <div class="form-group mb-4">
+          <div class="flex-between mb-1">
+            <label style="font-weight:600;font-size:13px">Memory (RAM)</label>
+            <span id="memValBadge" class="pill pill-green mono font-bold">2048 MB (2.0 GB)</span>
+          </div>
+          <div class="flex" style="gap:14px;align-items:center">
+            <input type="range" min="512" max="16384" step="256" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMemRange" style="flex:1" oninput="syncMem(this.value)"/>
+            <input type="number" min="256" max="65536" step="128" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMem" style="width:90px" oninput="syncMem(this.value)"/>
+          </div>
+          <div class="flex mt-2" style="gap:6px">
+            <button type="button" class="btn btn-sm" onclick="syncMem(1024)">1 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(2048)">2 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(4096)">4 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(8192)">8 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(16384)">16 GB</button>
+          </div>
+        </div>
+
+        <!-- Storage Disk -->
+        <div class="form-group">
+          <div class="flex-between mb-1">
+            <label style="font-weight:600;font-size:13px">Disk Storage</label>
+            <span id="diskValBadge" class="pill pill-yellow mono font-bold"><%= settings['vm.default_disk'] || '20G' %></span>
+          </div>
+          <div class="flex" style="gap:10px;align-items:center">
+            <input id="fDisk" value="<%= settings['vm.default_disk'] || '20G' %>" placeholder="20G" oninput="updateSummary()"/>
+            <div class="flex" style="gap:6px">
+              <button type="button" class="btn btn-sm" onclick="setDisk('10G')">10G</button>
+              <button type="button" class="btn btn-sm" onclick="setDisk('20G')">20G</button>
+              <button type="button" class="btn btn-sm" onclick="setDisk('40G')">40G</button>
+              <button type="button" class="btn btn-sm" onclick="setDisk('80G')">80G</button>
             </div>
           </div>
+          <div class="form-hint">Format: 20G, 50G, 100G (QEMU QCOW2 dynamic storage)</div>
+        </div>
+      </div>
 
-          <div style="height:1px;background:var(--border);margin:16px 0"/>
+      <!-- 3. Identity & Credentials -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:18px;font-size:16px">3 · Identity &amp; Credentials</div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Virtual Machine Name *</label>
+            <input id="fName" placeholder="e.g. web-server-01" required oninput="nameChanged(this.value)"/>
+            <div class="form-hint">Alphanumeric, hyphens and underscores</div>
+          </div>
+          <div class="form-group">
+            <label>Hostname</label>
+            <input id="fHost" placeholder="auto from name" oninput="updateSummary()"/>
+          </div>
+        </div>
 
-          <div class="flex-between mb-2">
+        <div class="form-row">
+          <div class="form-group">
+            <label>SSH Username</label>
+            <div class="flex" style="gap:6px">
+              <input id="fUser" value="root" placeholder="root" oninput="updateSummary()"/>
+              <button type="button" class="btn btn-sm" onclick="setUser('root')">root</button>
+              <button type="button" class="btn btn-sm" id="btnDistroUser" onclick="setDistroUser()">ubuntu</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>SSH Password</label>
+            <div class="flex" style="gap:6px">
+              <input type="text" id="fPass" placeholder="Enter or generate password" oninput="updateSummary()"/>
+              <button type="button" class="btn btn-sm btn-primary" onclick="genPassword()" title="Generate strong password">🎲 Gen</button>
+              <button type="button" class="btn btn-sm" onclick="copyPassword()" title="Copy password">📋</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group mt-2">
+          <label>Server Owner</label>
+          <select id="fOwner" onchange="updateSummary()">
+            <option value="<%= user.id %>"><%= user.username %> (you - Administrator)</option>
+            <% for (const u of users) { %>
+              <% if (u.id !== user.id) { %>
+                <option value="<%= u.id %>"><%= u.username %> · <%= u.email %></option>
+              <% } %>
+            <% } %>
+          </select>
+        </div>
+      </div>
+
+      <!-- 4. Networking & Ports -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:18px;font-size:16px">4 · Networking &amp; Port Forwarding</div>
+        
+        <div class="form-group">
+          <div class="flex-between mb-1">
+            <label>SSH Port Mapping</label>
+            <span class="muted text-sm">Auto-allocated from pool: <%= settings['vm.auto_port_min'] || '25501' %>-<%= settings['vm.auto_port_max'] || '25600' %></span>
+          </div>
+          <input id="fPort" placeholder="auto (leave blank for automatic port allocation)" oninput="updateSummary()"/>
+        </div>
+
+        <div class="form-group">
+          <label>Additional Port Forwards</label>
+          <div class="flex mb-2" style="gap:8px">
+            <input id="fFwdCustom" placeholder="e.g. 8080:80, 8443:443" oninput="customFwdsChanged(this.value)"/>
+          </div>
+          <div class="flex flex-wrap" style="gap:6px">
+            <span class="muted text-sm" style="margin-right:4px">Quick Add:</span>
+            <button type="button" class="btn btn-sm" onclick="addFwd('80:80')">+ HTTP (80)</button>
+            <button type="button" class="btn btn-sm" onclick="addFwd('443:443')">+ HTTPS (443)</button>
+            <button type="button" class="btn btn-sm" onclick="addFwd('3000:3000')">+ Node/Web (3000)</button>
+            <button type="button" class="btn btn-sm" onclick="addFwd('8080:8080')">+ Proxy (8080)</button>
+          </div>
+          <input type="hidden" id="fFwds" value=""/>
+        </div>
+
+        <div class="form-row mt-3">
+          <label class="check" style="cursor:pointer">
+            <input type="checkbox" id="fStartBoot" onchange="updateSummary()"/>
+            <span>Start VM automatically when panel boots</span>
+          </label>
+          <label class="check" style="cursor:pointer">
+            <input type="checkbox" id="fGui"/>
+            <span>GUI Window Display (host display)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 5. Image Source -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:14px;font-size:16px">5 · Image Source</div>
+        
+        <div class="grid grid-2 mb-3" style="gap:10px">
+          <label class="img-mode-card active" id="modeDownloadLabel" onclick="setImgMode('download')">
+            <input type="radio" name="imgSrc" value="download" checked style="display:none"/>
+            <div style="font-size:20px">☁️</div>
             <div>
-              <div style="font-weight:600;font-size:14px">Additional Data Disks</div>
-              <div class="muted text-sm">Attach extra block devices beyond the boot disk.</div>
+              <div style="font-weight:600">Official Cloud Image</div>
+              <div class="muted text-sm" style="font-size:11px">Auto-downloaded &amp; verified (Recommended)</div>
             </div>
-            <button type="button" class="btn btn-sm btn-primary" onclick="addDataDisk()">+ Add Disk</button>
-          </div>
-          <div id="dataDisksList"></div>
-          <div id="dataDisksEmpty" class="muted text-sm" style="opacity:0.7">No additional data disks. Add one to attach extra storage.</div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Boot →</button>
-          </div>
+          </label>
+          <label class="img-mode-card" id="modeUploadLabel" onclick="setImgMode('upload')">
+            <input type="radio" name="imgSrc" value="upload" style="display:none"/>
+            <div style="font-size:20px">📦</div>
+            <div>
+              <div style="font-weight:600">Custom Image Upload</div>
+              <div class="muted text-sm" style="font-size:11px">Upload local .qcow2 or .img disk</div>
+            </div>
+          </label>
         </div>
-      </div>
 
-      <!-- ============ STEP 5 · BOOT ============ -->
-      <div class="wizard-step" id="step-5" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">5 · Boot &amp; Firmware</div>
-
-          <div class="form-group mb-4">
-            <label>Boot Order</label>
-            <select id="fBootOrder" onchange="updateSummary()">
-              <option value="c" selected>Hard Disk only</option>
-              <option value="dc">Disk, then CD/DVD</option>
-              <option value="cd">CD/DVD, then Disk</option>
-              <option value="n">Network / PXE</option>
-            </select>
-            <div class="form-hint">Cloud images boot from the seed ISO then the disk. Order 'c' (disk first) is safest for cloud-init VMs.</div>
-          </div>
-
-          <div class="grid grid-2 mb-3" style="gap:14px">
-            <div class="form-group">
-              <label>Firmware</label>
-              <select id="fFirmware" onchange="updateSummary()">
-                <option value="bios" selected>BIOS (SeaBIOS)</option>
-                <option value="uefi">UEFI</option>
-              </select>
-              <div class="form-hint">UEFI requires OVMF firmware on the node (best-effort: falls back to BIOS if unavailable).</div>
-            </div>
-            <div class="form-group">
-              <label>Machine Type</label>
-              <select id="fMachine" onchange="updateSummary()">
-                <option value="pc" selected>pc (i440fx / default)</option>
-                <option value="q35">q35 (modern)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-row mt-1">
-            <label class="check" style="cursor:pointer">
-              <input type="checkbox" id="fSecureBoot" onchange="updateSummary()"/>
-              <span>Secure Boot (requires UEFI)</span>
-            </label>
-            <label class="check" style="cursor:pointer">
-              <input type="checkbox" id="fTpm" onchange="updateSummary()"/>
-              <span>TPM (vTPM, requires swtpm)</span>
-            </label>
-          </div>
-
-          <div class="form-group mt-3">
-            <label class="check" style="cursor:pointer">
-              <input type="checkbox" id="fStartBoot" onchange="updateSummary()"/>
-              <span>Auto-Start VM when panel / host boots</span>
-            </label>
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Network →</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ STEP 6 · NETWORK ============ -->
-      <div class="wizard-step" id="step-6" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">6 · Networking &amp; Ports</div>
-
-          <div class="card mb-3" style="padding:14px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.25)">
-            <div style="font-weight:600;font-size:13px">🌐 Automatic IP (slirp user networking)</div>
-            <div class="muted text-sm" style="margin-top:4px">
-              IP addressing is automatic via QEMU's built-in user network (NAT). IPv4 <code>10.0.2.x</code> and IPv6 are assigned automatically —
-              no manual IP configuration needed. Ports are forwarded from the host to the guest below.
-            </div>
-          </div>
-
-          <div class="form-group mb-3">
-            <div class="flex-between mb-1">
-              <label>SSH Port Mapping</label>
-              <span class="muted text-sm">Auto-allocated from pool: <%= settings['vm.auto_port_min'] || '25501' %>-<%= settings['vm.auto_port_max'] || '25600' %></span>
-            </div>
-            <input id="fPort" placeholder="auto (leave blank for automatic port allocation)" oninput="updateSummary()"/>
-          </div>
-
-          <div class="grid grid-2 mb-3" style="gap:14px">
-            <div class="form-group">
-              <label>NIC Model</label>
-              <select id="fNicModel" onchange="updateSummary()">
-                <option value="virtio" selected>virtio (recommended)</option>
-                <option value="e1000">e1000</option>
-                <option value="rtl8139">rtl8139</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Number of NICs</label>
-              <select id="fNicCount" onchange="updateSummary()">
-                <option value="1" selected>1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>Additional Port Forwards</label>
-            <div class="flex mb-2" style="gap:8px">
-              <input id="fFwdCustom" placeholder="e.g. 8080:80, 8443:443" oninput="customFwdsChanged(this.value)"/>
-            </div>
-            <div class="flex flex-wrap" style="gap:6px">
-              <span class="muted text-sm" style="margin-right:4px">Quick Add:</span>
-              <button type="button" class="btn btn-sm" onclick="addFwd('80:80')">+ HTTP (80)</button>
-              <button type="button" class="btn btn-sm" onclick="addFwd('443:443')">+ HTTPS (443)</button>
-              <button type="button" class="btn btn-sm" onclick="addFwd('3000:3000')">+ Node/Web (3000)</button>
-              <button type="button" class="btn btn-sm" onclick="addFwd('8080:8080')">+ Proxy (8080)</button>
-            </div>
-            <input type="hidden" id="fFwds" value=""/>
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Auth &amp; Cloud-init →</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ STEP 7 · AUTH & CLOUD-INIT ============ -->
-      <div class="wizard-step" id="step-7" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">7 · Authentication &amp; Cloud-init</div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>SSH Username</label>
-              <div class="flex" style="gap:6px">
-                <input id="fUser" value="root" placeholder="root" oninput="updateSummary()"/>
-                <button type="button" class="btn btn-sm" onclick="setUser('root')">root</button>
-                <button type="button" class="btn btn-sm" id="btnDistroUser" onclick="setDistroUser()">ubuntu</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>SSH Password</label>
-              <div class="flex" style="gap:6px">
-                <input type="text" id="fPass" placeholder="Enter or generate password" oninput="updateSummary()"/>
-                <button type="button" class="btn btn-sm btn-primary" onclick="genPassword()" title="Generate strong password">🎲 Gen</button>
-                <button type="button" class="btn btn-sm" onclick="copyPassword()" title="Copy password">📋</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>SSH Public Keys (one per line)</label>
-            <textarea id="fSshKeys" rows="3" placeholder="ssh-rsa AAAA... (optional)"></textarea>
-            <div class="form-hint">Optional. Keys are injected via cloud-init for passwordless login.</div>
-          </div>
-
-          <div style="height:1px;background:var(--border);margin:16px 0"/>
-
-          <div class="grid grid-2 mb-3" style="gap:14px">
-            <div class="form-group">
-              <label>Timezone</label>
-              <input id="fTimezone" value="UTC" oninput="updateSummary()"/>
-              <div class="form-hint">e.g. UTC, America/New_York, Europe/Stockholm</div>
-            </div>
-            <div class="form-group">
-              <label>Locale</label>
-              <input id="fLocale" value="en_US.UTF-8" oninput="updateSummary()"/>
-            </div>
-          </div>
-
-          <div class="form-group mb-3">
-            <label>Packages to install (one per line)</label>
-            <textarea id="fPackages" rows="2" placeholder="nginx&#10;curl&#10;htop"></textarea>
-            <div class="form-hint">Installed via cloud-init on first boot.</div>
-          </div>
-
-          <div class="form-group mb-3">
-            <label>First-boot commands (one per line)</label>
-            <textarea id="fCommands" rows="3" placeholder="apt-get update -y&#10;systemctl enable --now nginx"></textarea>
-            <div class="form-hint">Run as root on first boot (cloud-init runcmd).</div>
-          </div>
-
-          <div class="form-group">
-            <label>Custom cloud-init user-data (YAML)</label>
-            <textarea id="fUserData" rows="4" placeholder="optional — appended verbatim to user-data&#10;#cloud-config&#10;runcmd:&#10;  - echo hello"></textarea>
-            <div class="form-hint">Advanced: raw cloud-config (this key prefix is required). Merged after the defaults.</div>
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="nextStep()">Next: Deployment →</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ STEP 8 · DEPLOYMENT OPTIONS ============ -->
-      <div class="wizard-step" id="step-8" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">8 · Deployment Options</div>
-
-          <div class="card" style="padding:16px;margin-bottom:16px;background:var(--glass-strong);border:1px solid var(--border)">
-            <label class="check" style="cursor:pointer;display:flex;gap:10px;align-items:flex-start">
-              <input type="checkbox" id="fGui"/>
-              <span>
-                <span style="font-weight:600">GUI Window Display (host display)</span>
-                <div class="muted text-sm">Launch a graphical QEMU window on the node's display (requires a display server).</div>
-              </span>
-            </label>
-          </div>
-
-          <div class="card" style="padding:16px;margin-bottom:16px;background:var(--glass-strong);border:1px solid var(--border)">
-            <label class="check" style="cursor:pointer;display:flex;gap:10px;align-items:flex-start">
-              <input type="checkbox" id="fGuestAgent" checked/>
-              <span>
-                <span style="font-weight:600">Install guest agent</span>
-                <div class="muted text-sm">Deploys the Venlix node agent inside the guest for monitoring and management.</div>
-              </span>
-            </label>
-          </div>
-
-          <div class="grid grid-2 mb-3" style="gap:14px">
-            <div class="card" style="padding:16px">
-              <div class="flex-between" style="gap:10px">
-                <div>
-                  <div style="font-weight:600;font-size:13px">Enable Monitoring</div>
-                  <div class="muted text-sm">Collect CPU/RAM/network metrics.</div>
-                </div>
-                <label class="switch"><input type="checkbox" id="fMonitoring" checked onchange="updateSummary()"/><span class="slider"></span></label>
-              </div>
-            </div>
-            <div class="card" style="padding:16px">
-              <div class="flex-between" style="gap:10px">
-                <div>
-                  <div style="font-weight:600;font-size:13px">Enable Backups</div>
-                  <div class="muted text-sm">Scheduled disk snapshots.</div>
-                </div>
-                <label class="switch"><input type="checkbox" id="fBackups" onchange="updateSummary()"/><span class="slider"></span></label>
-              </div>
-            </div>
-          </div>
-
-          <div class="card" style="padding:16px;background:var(--glass-strong);border:1px solid var(--border)" id="backupOpts">
-            <label for="fBackupSched">Backup Schedule</label>
-            <select id="fBackupSched" class="mt-1" onchange="updateSummary()">
-              <option value="">No recurring schedule</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="prevStep()">← Back</button>
-            <button type="button" class="btn btn-primary" onclick="goto(9)">Review &amp; Deploy →</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ STEP 9 · REVIEW ============ -->
-      <div class="wizard-step" id="step-9" style="display:none">
-        <div class="card" style="padding:22px">
-          <div class="card-title mb-3" style="font-size:16px">9 · Review &amp; Deploy</div>
-
-          <div class="grid grid-2" style="gap:12px">
-            <div class="rv-card"><div class="rv-lbl">Name</div><div class="rv-val mono" id="sumName">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Node</div><div class="rv-val" id="sumNode">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Operating System</div><div class="rv-val" id="sumOs">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Region</div><div class="rv-val" id="sumRegion">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">vCPUs</div><div class="rv-val" id="sumCpu">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Memory</div><div class="rv-val" id="sumMem">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Primary Disk</div><div class="rv-val" id="sumDisk">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Firmware</div><div class="rv-val" id="sumFirmware">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">SSH User</div><div class="rv-val mono" id="sumUser">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">SSH Port</div><div class="rv-val" id="sumPort">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Owner</div><div class="rv-val" id="sumOwner">—</div></div>
-            <div class="rv-card"><div class="rv-lbl">Cloud-init Pkgs</div><div class="rv-val" id="sumPkgs">—</div></div>
-          </div>
-
-          <div style="height:1px;background:var(--border);margin:18px 0"/>
-
-          <button class="btn btn-primary btn-block" style="padding:14px;font-size:15px;font-weight:700;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:8px" id="btnCreate" onclick="createVm()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Deploy Virtual Machine
-          </button>
-          <div id="createProgress" class="muted text-sm text-center mt-2" style="display:none">
-            Deploying VM and preparing storage...
-          </div>
-
-          <div class="step-nav">
-            <button type="button" class="btn" onclick="goto(8)">← Back</button>
-            <button class="btn btn-primary" onclick="createVm()">Deploy Virtual Machine →</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Nav Footer -->
-      <div class="wizard-nav">
-        <button type="button" class="btn" id="btnPrev" onclick="prevStep()">← Back</button>
-        <div class="flex" style="gap:8px">
-          <span id="stepErr" class="muted text-sm" style="align-self:center"></span>
-          <button type="button" class="btn btn-primary" id="btnNext" onclick="nextStep()">Continue →</button>
+        <div id="uploadBox" style="display:none;border:2px dashed var(--border);border-radius:14px;padding:24px;text-align:center;background:rgba(0,0,0,0.2)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="38" height="38" style="opacity:0.6;margin-bottom:8px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          <div style="font-weight:600;margin-bottom:4px">Select your QCOW2 / RAW image file</div>
+          <div class="muted text-sm mb-3">Supported formats: .qcow2, .img, .qcow (Max: 10GB)</div>
+          <label class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+            <span>Browse Files</span>
+            <input type="file" id="fImg" accept=".qcow2,.img,.qcow" style="display:none" onchange="fileSelected(this)"/>
+          </label>
+          <div id="imgName" class="mono text-sm mt-2" style="color:var(--accent-2)"></div>
         </div>
       </div>
     </div>
 
-    <!-- Live Inspector Sidebar -->
+    <!-- Live Inspector Sidebar & Launch Card -->
     <div style="position:sticky;top:calc(var(--topbar-h) + 20px);display:flex;flex-direction:column;gap:16px">
       <div class="card" style="padding:22px;border:1px solid var(--accent);background:color-mix(in srgb, var(--accent) 6%, var(--glass-strong));box-shadow:0 12px 30px rgba(0,0,0,0.3)">
         <div class="flex-between mb-3" style="border-bottom:1px solid var(--border);padding-bottom:12px">
           <div style="font-weight:700;font-size:16px">Deployment Summary</div>
           <span class="pill pill-green" id="summaryStatus">Ready</span>
         </div>
+
         <div style="display:flex;flex-direction:column;gap:12px;font-size:13px">
-          <div class="flex-between"><span class="muted">OS &amp; Distro</span><span class="font-bold" id="liveOs">Ubuntu 24.04</span></div>
-          <div class="flex-between"><span class="muted">Target Node</span><span class="mono font-bold" id="liveNode">Primary Node</span></div>
-          <div class="flex-between"><span class="muted">VM Name</span><span class="mono font-bold" id="liveName">my-vm</span></div>
-          <div class="flex-between"><span class="muted">vCPUs</span><span class="mono" id="liveCpu">2 Cores</span></div>
-          <div class="flex-between"><span class="muted">Memory</span><span class="mono" id="liveMem">2048 MB</span></div>
-          <div class="flex-between"><span class="muted">Disk Size</span><span class="mono" id="liveDisk">20G</span></div>
-          <div class="flex-between"><span class="muted">SSH User</span><span class="mono" id="liveUser">root</span></div>
-          <div class="flex-between"><span class="muted">SSH Port</span><span class="mono" id="livePort">Auto</span></div>
-          <div class="flex-between"><span class="muted">Owner</span><span id="liveOwner"><%= user.username %></span></div>
+          <div class="flex-between">
+            <span class="muted">OS &amp; Distro</span>
+            <span class="font-bold" id="sumOs">Ubuntu 24.04</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">Target Node</span>
+            <span class="mono font-bold" id="sumNode">Primary Node</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">VM Name</span>
+            <span class="mono font-bold" id="sumName">my-vm</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">vCPUs</span>
+            <span class="mono" id="sumCpu">2 Cores</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">Memory</span>
+            <span class="mono" id="sumMem">2048 MB</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">Disk Size</span>
+            <span class="mono" id="sumDisk">20G</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">SSH User</span>
+            <span class="mono" id="sumUser">root</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">SSH Port</span>
+            <span class="mono" id="sumPort">Auto (25501-25600)</span>
+          </div>
+          <div class="flex-between">
+            <span class="muted">Owner</span>
+            <span id="sumOwner"><%= user.username %></span>
+          </div>
+        </div>
+
+        <hr class="hr" style="margin:16px 0"/>
+
+        <button class="btn btn-primary btn-block" style="padding:14px;font-size:15px;font-weight:700;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:8px" id="btnCreate" onclick="createVm()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Deploy Virtual Machine
+        </button>
+        <div id="createProgress" class="muted text-sm text-center mt-2" style="display:none">
+          Deploying VM and preparing storage...
         </div>
       </div>
     </div>
   </div>
 </div>
 <%- include('../partials/music') %>
+<%- include('../partials/foot') %>
 
 <style>
-.wizard-steps {
-  display: flex; gap: 6px; flex-wrap: wrap;
-  margin-bottom: 18px; padding: 10px;
-  background: var(--glass); border: 1px solid var(--border);
-  border-radius: 14px;
-}
-.wstep {
-  display: flex; align-items: center; gap: 8px;
-  background: transparent; border: none; cursor: pointer;
-  padding: 8px 12px; border-radius: 10px; color: var(--text-dim);
-  font-size: 13px; font-weight: 600; transition: 0.15s;
-}
-.wstep:hover { background: rgba(255,255,255,0.05); color: var(--text); }
-.wstep.active {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset;
-}
-.wstep.done { color: var(--accent); }
-.wstep.done .ws-num { background: var(--accent); color: #fff; }
-.ws-num {
-  width: 22px; height: 22px; border-radius: 50%;
-  display: grid; place-items: center; font-size: 12px; font-weight: 700;
-  background: rgba(255,255,255,0.08);
-}
-.ws-label { display: inline-block; }
-@media (max-width: 720px) { .ws-label { display: none; } }
-
-.wizard-step { animation: fadeIn 0.2s ease; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-
-.step-nav {
-  display: flex; justify-content: space-between; align-items: center; gap: 10px;
-  margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap;
-}
-.step-nav .btn { min-width: 130px; justify-content: center; }
-
-.rv-card {
-  background: var(--glass); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 14px;
-}
-.rv-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 4px; }
-.rv-val { font-size: 13px; font-weight: 600; color: var(--text); }
-
-.data-disk-row {
-  display: grid; grid-template-columns: 1fr 130px 110px 34px; gap: 10px;
-  align-items: center; margin-bottom: 10px;
-}
-.data-disk-row input, .data-disk-row select {
-  padding: 8px 10px; font-size: 13px;
-}
-
 .preset-card {
   background: var(--glass);
   border: 1px solid var(--border);
@@ -810,274 +386,236 @@
   border-radius: 10px; text-transform: uppercase;
 }
 
-.os-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.os-filters { display: flex; gap: 6px; }
 .os-filter-btn {
   background: transparent; border: 1px solid var(--border);
   color: var(--text-dim); padding: 4px 10px; border-radius: 8px;
   font-size: 12px; cursor: pointer; transition: 0.15s;
 }
 .os-filter-btn:hover { color: var(--text); }
-.os-filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.os-filter-btn.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
 
-.os-select-card:hover { border-color: color-mix(in srgb, var(--accent) 60%, transparent); transform: translateY(-1px); }
-.os-select-card.selected { border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 14%, var(--glass)) !important; box-shadow: 0 0 16px rgba(99, 102, 241, 0.25); }
+.os-select-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  transform: translateY(-1px);
+}
+.os-select-card.selected {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 14%, var(--glass)) !important;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.25);
+}
 
 .img-mode-card {
-  border: 1px solid var(--border); border-radius: 12px; padding: 14px;
-  display: flex; align-items: center; gap: 12px;
-  background: var(--glass); cursor: pointer; transition: all 0.15s;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--glass);
+  cursor: pointer;
+  transition: all 0.15s;
 }
 .img-mode-card:hover { border-color: var(--accent); }
-.img-mode-card.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--glass)); }
-
-.cpu-model-card {
-  border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
-  background: var(--glass); cursor: pointer; transition: all 0.15s;
-  display: flex; align-items: center; gap: 10px; position: relative;
+.img-mode-card.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--glass));
 }
-.cpu-model-card:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--glass)); }
-.cpu-model-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--glass)); box-shadow: 0 0 12px rgba(99, 102, 241, 0.2); }
-.cpu-model-card .cpu-check {
-  width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border);
-  display: grid; place-items: center; flex-shrink: 0; transition: 0.15s;
-}
-.cpu-model-card.selected .cpu-check { border-color: var(--accent); background: var(--accent); }
-
-.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.slider {
-  position: absolute; cursor: pointer; inset: 0;
-  background: rgba(255,255,255,0.12); border-radius: 22px; transition: 0.2s;
-}
-.slider:before {
-  position: absolute; content: ""; height: 16px; width: 16px; left: 3px; top: 3px;
-  background: #fff; border-radius: 50%; transition: 0.2s;
-}
-.switch input:checked + .slider { background: var(--accent); }
-.switch input:checked + .slider:before { transform: translateX(18px); }
-
-textarea { resize: vertical; }
 </style>
 
 <script>
 let currentDistroUser = 'ubuntu';
-let TOTAL_STEPS = 9;
-let currentStep = 1;
-let dataDiskSeq = 0;
 
-/* ---------- Step navigation ---------- */
-function goto(step, force) {
-  if (!force) {
-    if (step < currentStep) { currentStep = step; renderSteps(); return; }
-    const valid = validateStep(currentStep);
-    if (!valid) { document.getElementById('stepErr').textContent = 'Complete the required fields first.'; return; }
-  }
-  document.getElementById('stepErr').textContent = '';
-  currentStep = step;
-  renderSteps();
-}
-function renderSteps() {
-  document.querySelectorAll('.wizard-step').forEach((el) => { el.style.display = 'none'; });
-  const active = document.getElementById('step-' + currentStep);
-  if (active) active.style.display = 'block';
-  document.querySelectorAll('.wstep').forEach((b) => {
-    const n = parseInt(b.dataset.step, 10);
-    b.classList.toggle('active', n === currentStep);
-    b.classList.toggle('done', n < currentStep);
-  });
-  document.getElementById('btnPrev').style.visibility = currentStep === 1 ? 'hidden' : 'visible';
-  document.getElementById('btnNext').textContent = currentStep === TOTAL_STEPS ? '' : 'Continue →';
-  document.getElementById('btnNext').style.display = currentStep === TOTAL_STEPS ? 'none' : 'inline-flex';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  updateSummary();
-}
-function nextStep() {
-  if (!validateStep(currentStep)) { document.getElementById('stepErr').textContent = 'Complete the required fields first.'; return; }
-  document.getElementById('stepErr').textContent = '';
-  if (currentStep < TOTAL_STEPS) { currentStep++; renderSteps(); }
-}
-function prevStep() { if (currentStep > 1) { currentStep--; renderSteps(); } }
-function validateStep(step) {
-  if (step === 1) {
-    const slug = slugify(document.getElementById('fName').value || '');
-    if (!slug) return false;
-  }
-  if (step === 4) {
-    // every data disk must have a valid size
-    const rows = document.querySelectorAll('#dataDisksList .data-disk-row');
-    for (const r of rows) {
-      if (!/^[0-9]+[GM]$/i.test(r.querySelector('.dd-size').value)) return false;
-    }
-  }
-  return true;
-}
-
-/* ---------- Data disks ---------- */
-function addDataDisk() {
-  dataDiskSeq++;
-  document.getElementById('dataDisksEmpty').style.display = 'none';
-  const row = document.createElement('div');
-  row.className = 'data-disk-row';
-  row.innerHTML = `
-    <input class="dd-name" placeholder="label (e.g. data)" oninput="updateSummary()"/>
-    <select class="dd-size" onchange="updateSummary()">
-      ${['10G','20G','40G','80G','100G'].map((s) => `<option value="${s}">${s}</option>`).join('')}
-    </select>
-    <select class="dd-bus" onchange="updateSummary()">
-      <option value="virtio" selected>virtio</option>
-      <option value="sata">sata</option>
-      <option value="scsi">scsi</option>
-    </select>
-    <button type="button" class="btn btn-sm" style="color:#f87171" title="Remove" onclick="this.closest('.data-disk-row').remove();collectDataDisks();updateSummary();">✕</button>
-  `;
-  document.getElementById('dataDisksList').appendChild(row);
-  updateSummary();
-}
-function collectDataDisks() {
-  const out = [];
-  document.querySelectorAll('#dataDisksList .data-disk-row').forEach((r) => {
-    out.push({ size: r.querySelector('.dd-size').value, name: r.querySelector('.dd-name').value, bus: r.querySelector('.dd-bus').value });
-  });
-  return out;
-}
-
-/* ---------- Existing helpers ---------- */
 function slugify(text) {
-  return String(text || '').toLowerCase().trim()
-    .replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
+
 function nameChanged(val) {
   const slug = slugify(val);
   const host = document.getElementById('fHost');
-  if (!host.dataset.manual) host.value = slug;
+  if (!host.dataset.manual) {
+    host.value = slug;
+  }
   updateSummary();
 }
-document.getElementById('fHost').addEventListener('input', function(){ this.dataset.manual = 'true'; });
+document.getElementById('fHost').addEventListener('input', function() {
+  this.dataset.manual = 'true';
+});
+
 function genPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
-  let pass = ''; for (let i = 0; i < 14; i++) pass += chars.charAt(Math.floor(Math.random()*chars.length));
+  let pass = '';
+  for (let i = 0; i < 14; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
   document.getElementById('fPass').value = pass;
-  VP.toast('Generated strong password', 'info'); updateSummary();
+  VP.toast('Generated strong password', 'info');
+  updateSummary();
 }
+
 function copyPassword() {
   const p = document.getElementById('fPass').value;
   if (!p) return VP.toast('No password to copy', 'error');
-  navigator.clipboard.writeText(p).then(()=>VP.toast('Password copied!','success')).catch(()=>VP.toast('Failed to copy','error'));
+  navigator.clipboard.writeText(p)
+    .then(() => VP.toast('Password copied!', 'success'))
+    .catch(() => VP.toast('Failed to copy', 'error'));
 }
-function setUser(u){ document.getElementById('fUser').value = u; updateSummary(); }
-function setDistroUser(){ setUser(currentDistroUser); }
+
+function setUser(u) {
+  document.getElementById('fUser').value = u;
+  updateSummary();
+}
+
+function setDistroUser() {
+  setUser(currentDistroUser);
+}
+
 function selectOsCard(input) {
   document.querySelectorAll('.os-select-card').forEach((c) => {
     c.classList.remove('selected');
     const check = c.querySelector('.os-check');
-    if (check) { check.style.background='transparent'; check.style.borderColor='var(--border)'; const svg=check.querySelector('svg'); if(svg) svg.style.display='none'; }
+    if (check) {
+      check.style.background = 'transparent';
+      check.style.borderColor = 'var(--border)';
+      const svg = check.querySelector('svg');
+      if (svg) svg.style.display = 'none';
+    }
   });
   const label = input.closest('label');
   label.classList.add('selected');
   const check = label.querySelector('.os-check');
-  if (check) { check.style.background='var(--accent)'; check.style.borderColor='var(--accent)'; const svg=check.querySelector('svg'); if(svg) svg.style.display='block'; }
+  if (check) {
+    check.style.background = 'var(--accent)';
+    check.style.borderColor = 'var(--accent)';
+    const svg = check.querySelector('svg');
+    if (svg) svg.style.display = 'block';
+  }
+
   currentDistroUser = input.dataset.username || 'ubuntu';
   document.getElementById('btnDistroUser').textContent = currentDistroUser;
   updateSummary();
 }
+
 function filterOs(category, btn) {
-  document.querySelectorAll('.os-filter-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.os-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  document.querySelectorAll('.os-select-card').forEach(card => {
+  const cards = document.querySelectorAll('.os-select-card');
+  cards.forEach(card => {
     const d = card.dataset.distro || '';
-    if (category === 'all') card.style.display = 'flex';
-    else if (category === 'rhel') card.style.display = (d.includes('centos')||d.includes('alma')||d.includes('rocky')||d.includes('fedora'))?'flex':'none';
-    else card.style.display = d.includes(category)?'flex':'none';
+    if (category === 'all') {
+      card.style.display = 'flex';
+    } else if (category === 'rhel') {
+      card.style.display = (d.includes('centos') || d.includes('alma') || d.includes('rocky') || d.includes('fedora')) ? 'flex' : 'none';
+    } else {
+      card.style.display = d.includes(category) ? 'flex' : 'none';
+    }
   });
 }
-function syncCpu(v){
-  v = Math.max(1, Math.min(32, parseInt(v,10)||1));
+
+function syncCpu(v) {
+  v = Math.max(1, Math.min(32, parseInt(v, 10) || 1));
   document.getElementById('fCpus').value = v;
   document.getElementById('fCpusRange').value = v;
-  // keep topology consistent: 1 socket, vCores per socket, unchanged threads
-  document.getElementById('fSockets').value = 1;
-  document.getElementById('fCoresPerSocket').value = v;
-  document.getElementById('cpuValBadge').textContent = v + (v===1?' Core':' Cores');
+  document.getElementById('cpuValBadge').textContent = v + (v === 1 ? ' Core' : ' Cores');
   updateSummary();
 }
-function syncTopology(){
-  const s = Math.max(1, parseInt(document.getElementById('fSockets').value,10)||1);
-  const c = Math.max(1, parseInt(document.getElementById('fCoresPerSocket').value,10)||1);
-  const t = Math.max(1, parseInt(document.getElementById('fThreads').value,10)||1);
-  let total = s*c*t;
-  total = Math.min(32, total);
-  document.getElementById('fCpus').value = total;
-  document.getElementById('fCpusRange').value = total;
-  document.getElementById('cpuValBadge').textContent = total + (total===1?' Core':' Cores');
-  updateSummary();
-}
-function syncMem(v){
-  v = Math.max(256, Math.min(65536, parseInt(v,10)||512));
+
+function syncMem(v) {
+  v = Math.max(256, Math.min(65536, parseInt(v, 10) || 512));
   document.getElementById('fMem').value = v;
   document.getElementById('fMemRange').value = v;
-  const gb = (v/1024).toFixed(1);
+  const gb = (v / 1024).toFixed(1);
   document.getElementById('memValBadge').textContent = `${v} MB (${gb} GB)`;
   updateSummary();
 }
-function setDisk(d){ document.getElementById('fDisk').value=d; document.getElementById('diskValBadge').textContent=d; updateSummary(); }
-function applyPreset(cpus, mem, disk, btn){
-  document.querySelectorAll('.preset-card').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  syncCpu(cpus); syncMem(mem); setDisk(disk);
-  VP.toast(`Applied ${btn.querySelector('.preset-name').textContent.trim()} preset`,'info');
-}
-function addFwd(pair){
-  const cur=(document.getElementById('fFwdCustom').value||'').split(',').map(s=>s.trim()).filter(Boolean);
-  if(!cur.includes(pair)){ cur.push(pair); document.getElementById('fFwdCustom').value=cur.join(', '); customFwdsChanged(document.getElementById('fFwdCustom').value); }
-}
-function customFwdsChanged(val){ document.getElementById('fFwds').value=val; updateSummary(); }
-function setImgMode(mode){
-  document.getElementById('modeDownloadLabel').classList.toggle('active',mode==='download');
-  document.getElementById('modeUploadLabel').classList.toggle('active',mode==='upload');
-  document.getElementById('uploadBox').style.display = mode==='upload'?'block':'none';
+
+function setDisk(d) {
+  document.getElementById('fDisk').value = d;
+  document.getElementById('diskValBadge').textContent = d;
   updateSummary();
 }
-function fileSelected(input){
-  const f=input.files[0]; const el=document.getElementById('imgName');
-  el.textContent = f ? `Selected: ${f.name} (${VP.fmtBytes(f.size)})` : '';
+
+function applyPreset(cpus, mem, disk, btn) {
+  document.querySelectorAll('.preset-card').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  syncCpu(cpus);
+  syncMem(mem);
+  setDisk(disk);
+  VP.toast(`Applied ${btn.querySelector('.preset-name').textContent.trim()} preset`, 'info');
 }
 
-/* ---------- Summary ---------- */
-function field(idFallback, def){ const el = document.getElementById(idFallback); return el ? (el.value || def) : def; }
-function updateSummary(){
+function addFwd(pair) {
+  const cur = (document.getElementById('fFwdCustom').value || '').split(',').map(s=>s.trim()).filter(Boolean);
+  if (!cur.includes(pair)) {
+    cur.push(pair);
+    document.getElementById('fFwdCustom').value = cur.join(', ');
+    customFwdsChanged(document.getElementById('fFwdCustom').value);
+  }
+}
+
+function customFwdsChanged(val) {
+  document.getElementById('fFwds').value = val;
+  updateSummary();
+}
+
+function setImgMode(mode) {
+  document.getElementById('modeDownloadLabel').classList.toggle('active', mode === 'download');
+  document.getElementById('modeUploadLabel').classList.toggle('active', mode === 'upload');
+  document.getElementById('uploadBox').style.display = mode === 'upload' ? 'block' : 'none';
+  updateSummary();
+}
+
+function fileSelected(input) {
+  const f = input.files[0];
+  const el = document.getElementById('imgName');
+  if (f) {
+    el.textContent = `Selected: ${f.name} (${VP.fmtBytes(f.size)})`;
+  } else {
+    el.textContent = '';
+  }
+}
+
+function updateSummary() {
   const osEl = document.querySelector('input[name="os"]:checked');
   const osName = osEl ? osEl.value : 'Ubuntu 24.04';
-  const name = field('fName','my-vm');
-  const cpus = field('fCpus','2');
-  const mem = field('fMem','2048');
-  const disk = field('fDisk','20G');
-  const user = field('fUser','root');
-  const port = field('fPort','') || 'Auto';
+  const name = document.getElementById('fName').value || 'my-vm';
+  const cpus = document.getElementById('fCpus').value || '2';
+  const mem = document.getElementById('fMem').value || '2048';
+  const disk = document.getElementById('fDisk').value || '20G';
+  const user = document.getElementById('fUser').value || 'root';
+  const port = document.getElementById('fPort').value || 'Auto (25501-25600)';
   const ownerSel = document.getElementById('fOwner');
   const owner = ownerSel ? ownerSel.options[ownerSel.selectedIndex].text.split('·')[0].trim() : '';
   const nodeSel = document.getElementById('fNode');
   const nodeLabel = nodeSel ? nodeSel.options[nodeSel.selectedIndex].text.split(' (')[0].trim() : 'Primary Node';
-  const region = field('fRegion','—') || '—';
 
-  const s = { os:osName, node:nodeLabel, name:slugify(name), cpu:cpus+' core(s)', mem, disk, user, port, owner, region };
-  const sets = {
-    sumOs: s.os, sumNode: s.node, sumName: s.name, sumCpu: s.cpu, sumMem: s.mem+' MB',
-    sumDisk: s.disk.toUpperCase(), sumUser: s.user, sumPort: port, sumOwner: owner, sumRegion: s.region,
-    sumFirmware: (document.getElementById('fFirmware').value||'bios').toUpperCase(),
-    liveOs: s.os, liveNode: s.node, liveName: s.name, liveCpu: s.cpu, liveMem: s.mem+' MB',
-    liveDisk: s.disk.toUpperCase(), liveUser: s.user, livePort: s.port, liveOwner: owner,
-  };
-  for (const [k,v] of Object.entries(sets)) { const el=document.getElementById(k); if(el) el.textContent=v; }
-  // packages count
-  const pkgs = document.getElementById('fPackages').value.split('\n').map(x=>x.trim()).filter(Boolean);
-  document.getElementById('sumPkgs').textContent = pkgs.length ? pkgs.length + ' package(s)' : 'None';
+  document.getElementById('sumOs').textContent = osName;
+  document.getElementById('sumNode').textContent = nodeLabel;
+  document.getElementById('sumName').textContent = slugify(name);
+  document.getElementById('sumCpu').textContent = cpus + (cpus === '1' ? ' Core' : ' Cores');
+  document.getElementById('sumMem').textContent = mem + ' MB (' + (parseInt(mem,10)/1024).toFixed(1) + ' GB)';
+  document.getElementById('sumDisk').textContent = disk.toUpperCase();
+  document.getElementById('sumUser').textContent = user;
+  document.getElementById('sumPort').textContent = port ? port : 'Auto';
+  document.getElementById('sumOwner').textContent = owner;
 }
 
-/* ---------- Create ---------- */
-async function createVm(){
-  const rawName = document.getElementById('fName').value.trim();
+async function createVm() {
+  const nameInput = document.getElementById('fName');
+  const rawName = nameInput.value.trim();
   const slug = slugify(rawName);
-  if(!slug){ document.getElementById('fName').focus(); return VP.toast('Please enter a valid VM name','error'); }
+
+  if (!slug) {
+    nameInput.focus();
+    return VP.toast('Please enter a valid VM name', 'error');
+  }
 
   const btn = document.getElementById('btnCreate');
   const prog = document.getElementById('createProgress');
@@ -1086,7 +624,7 @@ async function createVm(){
   prog.style.display = 'block';
 
   const fd = new FormData();
-  fd.append('os', (document.querySelector('input[name="os"]:checked')||{}).value);
+  fd.append('os', (document.querySelector('input[name="os"]:checked') || {}).value);
   fd.append('name', slug);
   fd.append('hostname', document.getElementById('fHost').value || slug);
   fd.append('username', document.getElementById('fUser').value || 'root');
@@ -1095,68 +633,20 @@ async function createVm(){
   fd.append('cpus', document.getElementById('fCpus').value || '2');
   fd.append('disk_size', (document.getElementById('fDisk').value || '20G').toUpperCase());
   fd.append('ssh_port', document.getElementById('fPort').value || '');
-
+  
   const rawFwds = document.getElementById('fFwdCustom').value || '';
-  const parsedFwds = rawFwds.split(',').map(s=>s.trim()).filter(Boolean).map(p=>{ const[h,g]=p.split(':'); return { host:parseInt(h,10), guest:parseInt(g,10) }; }).filter(p=>!isNaN(p.host)&&!isNaN(p.guest));
+  const parsedFwds = rawFwds.split(',').map(s=>s.trim()).filter(Boolean).map(p=>{
+    const[h,g]=p.split(':');
+    return { host: parseInt(h,10), guest: parseInt(g,10) };
+  }).filter(p => !isNaN(p.host) && !isNaN(p.guest));
   fd.append('port_forwards', JSON.stringify(parsedFwds));
 
-  // Basics / identity
-  fd.append('description', document.getElementById('fDesc').value || '');
-  fd.append('tag', document.getElementById('fTag').value || '');
-  fd.append('region', document.getElementById('fRegion').value || '');
-  fd.append('vmid', document.getElementById('fVmid').value || '');
-
-  // CPU
-  fd.append('cpu_sockets', document.getElementById('fSockets').value || '1');
-  fd.append('cores_per_socket', document.getElementById('fCoresPerSocket').value || '1');
-  fd.append('threads_per_core', document.getElementById('fThreads').value || '1');
-  fd.append('cpu_model', document.getElementById('fCpuModel').value || 'default');
-  fd.append('cpu_units', document.getElementById('fCpuUnits').value || '1024');
-  fd.append('cpu_limit', document.getElementById('fCpuLimit').value || '0');
-
-  // RAM
-  fd.append('mem_min', document.getElementById('fMemMin').value || '0');
-  fd.append('mem_max', document.getElementById('fMemMax').value || '0');
-  fd.append('ballooning', document.getElementById('fBalloon').checked ? '1' : '0');
-  fd.append('memory_hotplug', document.getElementById('fMemHotplug').checked ? (document.getElementById('fMemMax').value || document.getElementById('fMem').value) : '0');
-
-  // Storage
-  fd.append('storage_pool', document.getElementById('fPool').value || 'default');
-  fd.append('disk_format', document.getElementById('fFormat').value || 'qcow2');
-  fd.append('additional_disks', JSON.stringify(collectDataDisks()));
-
-  // Boot / firmware
-  fd.append('boot_order', document.getElementById('fBootOrder').value || 'c');
-  fd.append('firmware', document.getElementById('fFirmware').value || 'bios');
-  fd.append('machine_type', document.getElementById('fMachine').value || 'pc');
-  fd.append('secure_boot', document.getElementById('fSecureBoot').checked ? '1' : '0');
-  fd.append('tpm', document.getElementById('fTpm').checked ? '1' : '0');
-
-  // Network
-  fd.append('nic_model', document.getElementById('fNicModel').value || 'virtio');
-  fd.append('nic_count', document.getElementById('fNicCount').value || '1');
-
-  // Auth & cloud-init
-  const sshKeys = document.getElementById('fSshKeys').value.split('\n').map(x=>x.trim()).filter(Boolean);
-  if (sshKeys.length) fd.append('ssh_keys', JSON.stringify(sshKeys));
-  fd.append('timezone', document.getElementById('fTimezone').value || 'UTC');
-  fd.append('locale', document.getElementById('fLocale').value || 'en_US.UTF-8');
-  fd.append('cloudinit_packages', JSON.stringify(document.getElementById('fPackages').value.split('\n').map(x=>x.trim()).filter(Boolean)));
-  fd.append('cloudinit_commands', JSON.stringify(document.getElementById('fCommands').value.split('\n').map(x=>x.trim()).filter(Boolean)));
-  fd.append('cloudinit_userdata', document.getElementById('fUserData').value || '');
-
-  // Deployment
   fd.append('start_on_boot', document.getElementById('fStartBoot').checked ? '1' : '0');
   fd.append('gui_mode', document.getElementById('fGui').checked ? '1' : '0');
-  fd.append('install_guest_agent', document.getElementById('fGuestAgent').checked ? '1' : '0');
-  fd.append('enable_monitoring', document.getElementById('fMonitoring').checked ? '1' : '0');
-  fd.append('enable_backups', document.getElementById('fBackups').checked ? '1' : '0');
-  fd.append('backup_schedule', document.getElementById('fBackupSched').value || '');
-
   fd.append('owner_id', document.getElementById('fOwner').value);
-  fd.append('node_id', (document.getElementById('fNode')||{}).value || '1');
+  fd.append('node_id', (document.getElementById('fNode') || {}).value || '1');
 
-  if ((document.querySelector('input[name="imgSrc"]:checked')||{}).value === 'upload') {
+  if ((document.querySelector('input[name="imgSrc"]:checked') || {}).value === 'upload') {
     const f = document.getElementById('fImg').files[0];
     if (f) fd.append('image', f);
   }
@@ -1166,7 +656,7 @@ async function createVm(){
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Failed to create server');
     VP.toast('VM Created successfully! SSH Port: ' + d.vm.ssh_port, 'success');
-    setTimeout(()=>{ location.href = '/admin/servers/' + d.vm.id; }, 900);
+    setTimeout(() => { location.href = '/admin/servers/' + d.vm.id; }, 900);
   } catch (e) {
     VP.toast(e.message, 'error');
     btn.disabled = false;
@@ -1175,14 +665,12 @@ async function createVm(){
   }
 }
 
-/* ---------- Ignore IPv4/IPv6: fields intentionally omitted — addressing is fully automatic (slirp user networking). ---------- */
-
-// Init
+// Initial password & summary setup
 const urlParams = new URLSearchParams(window.location.search);
 const targetOwner = urlParams.get('owner_id');
-if (targetOwner && document.getElementById('fOwner')) document.getElementById('fOwner').value = targetOwner;
-// Seed one data disk template
+if (targetOwner && document.getElementById('fOwner')) {
+  document.getElementById('fOwner').value = targetOwner;
+}
 genPassword();
-renderSteps();
+updateSummary();
 </script>
-<%- include('../partials/foot') %>
