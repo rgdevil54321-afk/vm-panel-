@@ -23,6 +23,17 @@
     </div>
 
     <div class="card">
+      <div class="card-title">Music &amp; Sound</div>
+      <p class="muted mb-2 text-sm">Soft calm ambient music while you work. No custom songs — just a gentle background pad, on or off.</p>
+      <button type="button" id="ambientToggle" class="btn btn-block mb-2" style="padding:12px;font-weight:700"></button>
+      <div class="flex-between mb-2" style="gap:10px">
+        <span class="text-sm">UI sound effects (clicks, toasts)</span>
+        <label class="switch"><input type="checkbox" id="sfxToggle" <%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
+      </div>
+      <div class="form-hint">Toggle music anytime — it starts soft and calm instantly.</div>
+    </div>
+
+    <div class="card">
       <div class="card-title">Two-Factor Authentication (2FA)</div>
       <% if (typeof tfaSetup !== 'undefined' && tfaSetup) { %>
         <div class="alert alert-info">
@@ -66,4 +77,20 @@ async function disableTfa() {
     setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
+
+// Music & Sound toggles
+document.getElementById('sfxToggle')?.addEventListener('change', async (e) => {
+  const enabled = e.target.checked;
+  if (window.APP_SETTINGS) window.APP_SETTINGS.sfx_user_enabled = enabled;
+  try {
+    await fetch('/api/user/sfx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
+    VP.toast(enabled ? 'Sound effects on' : 'Sound effects off', 'success');
+  } catch (err) { VP.toast('Could not save', 'error'); }
+});
 </script>
+<style>
+#ambientToggle { transition: all .2s ease; }
+#ambientToggle[data-on="1"] { background: linear-gradient(135deg, #10b981, #059669); border-color: rgba(16,185,129,.4); color:#fff; }
+.amb-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#34d399; margin-right:8px; box-shadow: 0 0 8px #34d399; animation: ambPulse 1.6s infinite; }
+@keyframes ambPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>

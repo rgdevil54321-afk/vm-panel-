@@ -21,6 +21,8 @@ function publicUser(u) {
     verified: !!u.verified,
     suspended: !!u.suspended,
     tfa_enabled: !!u.tfa_enabled,
+    music_enabled: u.music_enabled === 1 || u.music_enabled === '1' || u.music_enabled === true,
+    sfx_enabled: u.sfx_enabled === undefined ? true : (u.sfx_enabled === 1 || u.sfx_enabled === '1' || u.sfx_enabled === true),
     last_login_at: u.last_login_at,
     last_login_ip: u.last_login_ip,
     created_at: u.created_at,

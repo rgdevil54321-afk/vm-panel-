@@ -303,8 +303,11 @@ do_install_node() {
     log_warn "node-agent/install-node.sh not found in the current directory."
     read -r -p "Clone the venlix-nodes repo here to get the node installer? [y/N]: " C
     if [[ "$C" =~ ^[Yy]$ ]]; then
-      git clone --depth 1 https://github.com/rgdevil54321-afk/vm-panel-.git /tmp/venlix-node-install
-      cd /tmp/venlix-node-install
+      rm -rf /tmp/venlix-node-install
+      git clone --depth 1 https://github.com/rgdevil54321-afk/vm-panel-.git /tmp/venlix-node-install || { log_err "Git clone failed — check internet/SSH access to GitHub."; return 1; }
+      ( cd /tmp/venlix-node-install && bash node-agent/install-node.sh )
+      return_node_install_result
+      return
     else
       log_err "Cannot install node agent without the repo. Aborting."
       return 1
@@ -319,7 +322,32 @@ do_install_node() {
   else
     bash node-agent/install-node.sh
   fi
+  return_node_install_result
   echo ""
+}
+
+# Verify the agent actually got installed and tell the user what to do next.
+return_node_install_result() {
+  echo ""
+  if systemctl is-active --quiet venlix-node 2>/dev/null; then
+    log_ok "Node agent service is running (systemd: venlix-node)."
+    AGENT_INSTALLED=1
+  elif pm2 jlist 2>/dev/null | grep -q '"venlix-node"'; then
+    log_ok "Node agent is running under PM2 (venlix-node)."
+    AGENT_INSTALLED=1
+  elif [ -f /opt/venlix-node/agent.js ]; then
+    log_warn "Agent files exist but the service is NOT running. Try: systemctl restart venlix-node   (or: pm2 restart venlix-node)"
+  else
+    log_err "Node agent was NOT installed. Scroll up for the precheck failure that stopped it."
+  fi
+  if [ "${AGENT_INSTALLED:-0}" = "1" ] && [ -f /opt/venlix-node/connect-key.txt ]; then
+    echo ""
+    printf "${GREEN}${BOLD}  ┌─────────────────────────────────────────────────────┐${NC}\n"
+    printf "${GREEN}${BOLD}  │  CONNECT KEY (paste in Panel → Nodes → Connect):   │${NC}\n"
+    printf "${GREEN}${BOLD}  │                                                     │${NC}\n"
+    printf "${GREEN}${BOLD}  │  %s${NC}\n" "$(cat /opt/venlix-node/connect-key.txt)"
+    printf "${GREEN}${BOLD}  └─────────────────────────────────────────────────────┘${NC}\n"
+  fi
 }
 
 # =============================================================================
@@ -828,8 +856,6 @@ do_change_ports() {
   if [ -f "$APP_DIR/.env" ]; then
     sed -i "s|^PANEL_PORT=.*|PANEL_PORT=${NPANEL}|" "$APP_DIR/.env"
     sed -i "s|^API_PORT=.*|API_PORT=${NAPI}|" "$APP_DIR/.env"
-    echo "PANEL_PORT=${NPANEL}" >> "$APP_DIR/.env"
-    echo "API_PORT=${NAPI}" >> "$APP_DIR/.env"
     grep -qE '^PANEL_PORT=' "$APP_DIR/.env" || echo "PANEL_PORT=${NPANEL}" >> "$APP_DIR/.env"
     grep -qE '^API_PORT=' "$APP_DIR/.env" || echo "API_PORT=${NAPI}" >> "$APP_DIR/.env"
   fi

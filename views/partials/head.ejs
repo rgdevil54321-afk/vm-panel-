@@ -29,16 +29,12 @@ const navbarStyle = settings['panel.navbar_style'] || 'glass';
 <script>
 window.VP_CONFIG = { apiPort: 3002 };
 window.APP_SETTINGS = <%- JSON.stringify({
-  music_mode: settings['panel.music_mode'] || 'none',
-  music_url: settings['panel.music_url'] || '',
-  music_file: settings['panel.music_file'] || '',
-  music_autoplay: String(settings['panel.music_autoplay']) === '1' || settings['panel.music_autoplay'] === true,
-  music_loop: String(settings['panel.music_loop']) !== '0' && settings['panel.music_loop'] !== false,
-  music_volume: parseInt(settings['panel.music_volume'], 10) || 35,
+  music_mode: 'none',
   music_title: settings['panel.name'] || 'Music',
-  sfx_enabled: String(settings['panel.sfx_enabled']) !== '0' && settings['panel.sfx_enabled'] !== false,
   sfx_volume: parseInt(settings['panel.sfx_volume'], 10) || 40,
-  secret_blur: String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true
+  secret_blur: String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true,
+  ambient_user_enabled: typeof user !== 'undefined' && user ? (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) : false,
+  sfx_user_enabled: typeof user !== 'undefined' && user ? (user.sfx_enabled === undefined ? true : (user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true)) : true
 }) %>;
 function vpApiBase() {
   return '';

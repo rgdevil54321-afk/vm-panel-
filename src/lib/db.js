@@ -253,6 +253,15 @@ if (!vmsColumns.includes('node_id')) {
   db.exec('ALTER TABLE vms ADD COLUMN node_id INTEGER');
   db.exec('CREATE INDEX IF NOT EXISTS idx_vms_node ON vms(node_id)');
 }
+// ---- Per-user preferences ----
+const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userColumns.includes('music_enabled')) {
+  db.exec('ALTER TABLE users ADD COLUMN music_enabled INTEGER NOT NULL DEFAULT 0');
+}
+if (!userColumns.includes('sfx_enabled')) {
+  db.exec('ALTER TABLE users ADD COLUMN sfx_enabled INTEGER NOT NULL DEFAULT 1');
+}
+
 // ---- Venlix hKVM-style VM creator advanced columns ----
 const vmAdvColumns = {
   description: 'TEXT',

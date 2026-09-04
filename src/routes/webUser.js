@@ -146,6 +146,14 @@ router.post('/servers/:id/power', loadVm, express.json(), async (req, res) => {
       await vmService.restart(req.vm, req.user);
       return res.json({ ok: true, status: 'running' });
     }
+    if (action === 'tmate') {
+      // Remote SSH via tmate — works from anywhere, no port forwarding needed
+      const regen = !!(req.body && req.body.regen);
+      if (!vmService.canAccess(req.user, req.vm, 'power')) {
+        return res.status(403).json({ error: 'No permission for this server' });
+      }
+      return res.json({ ok: true, ssh: await vmService.getTmateSsh(req.vm, regen) });
+    }
     return res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
     return res.status(500).json({ error: e.message });

@@ -321,7 +321,13 @@ function parseJoinKey(key) {
 // fresh token, exchanges it on the node via /join (validated by the join code),
 // then registers the node in the DB and probes it.
 async function onboardNodeByKey(key, { location } = {}) {
-  const { code, host, port } = parseJoinKey(key);
+  let parsed;
+  try {
+    parsed = parseJoinKey(key);
+  } catch (e) {
+    throw new Error('Invalid connect key format. It must look like CODE@HOST:PORT (e.g. AB12-CD34-EF56@1.2.3.4:3005)');
+  }
+  const { code, host, port } = parsed;
   let node = getNodeByHost(host);
   if (node && node.port === port) {
     throw new Error('A node with this host and port is already registered');
@@ -329,11 +335,20 @@ async function onboardNodeByKey(key, { location } = {}) {
   const token = randomToken(32);
   const temp = { host, port, agent_token: '' };
   // The /join endpoint is pre-auth; it accepts the join code + new token.
-  const r = await agentJson(temp, {
-    method: 'POST',
-    path: '/join',
-    body: JSON.stringify({ code, token }),
-  });
+  let r;
+  try {
+    r = await agentJson(temp, {
+      method: 'POST',
+      path: '/join',
+      body: JSON.stringify({ code, token }),
+    });
+  } catch (e) {
+    const msg = String(e.message || e);
+    if (/ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ETIMEDOUT|timed out|ECONNRESET/i.test(msg)) {
+      throw new Error(`Cannot reach the node agent at ${host}:${port} (${msg}). Make sure the agent is running on the node and this port is open/forwarded (on containers: forward the port or use the Cloudflare tunnel in the node installer).`);
+    }
+    throw new Error('Node rejected the join request: ' + msg);
+  }
   const meta = (r && r.node) || {};
   node = createNode({
     name: meta.name || host,

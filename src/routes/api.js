@@ -7,7 +7,7 @@ const scheduleService = require('../services/scheduleService');
 const agentService = require('../services/agentService');
 const activity = require('../services/activityService');
 const { db, settings } = require('../lib/db');
-const { apiAuth, apiAdmin } = require('../middleware/auth');
+const { apiAuth, apiAdmin, getUserFromReq } = require('../middleware/auth');
 const { uploadAvatar } = require('../middleware/upload');
 const router = express.Router();
 
@@ -55,6 +55,23 @@ router.get('/settings/public', (req, res) => {
   });
 });
 
+// Beacon save endpoint: sendBeacon cannot set Authorization headers,
+// so auth falls back to the login cookie (same-origin). Registered
+// BEFORE router.use(apiAuth) on purpose.
+router.post('/customization/save-beacon', json, (req, res) => {
+  const user = getUserFromReq(req); // sendBeacon sends cookies, no Bearer header
+  if (!user || (user.role !== 'admin' && !user.root_admin)) return res.status(401).json({ error: 'Not authenticated' });
+  try {
+    const fields = ['panel.bg_overlay', 'panel.bg_blur', 'panel.bg_transparency'];
+    for (const k of fields) {
+      if (req.body[k] !== undefined) settings.set(k, String(req.body[k]));
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ---------- Authenticated ----------
 router.use(apiAuth);
 
@@ -80,6 +97,23 @@ router.post('/user/profile', json, (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+});
+
+// Per-user ambient music + sound effects preferences
+router.post('/user/ambient-music', json, (req, res) => {
+  const enabled = req.body.enabled ? 1 : 0;
+  const { db } = require('../lib/db');
+  db.prepare('UPDATE users SET music_enabled = ?, updated_at = ? WHERE id = ?')
+    .run(enabled, new Date().toISOString(), req.user.id);
+  res.json({ ok: true, enabled: !!enabled });
+});
+
+router.post('/user/sfx', json, (req, res) => {
+  const enabled = req.body.enabled ? 1 : 0;
+  const { db } = require('../lib/db');
+  db.prepare('UPDATE users SET sfx_enabled = ?, updated_at = ? WHERE id = ?')
+    .run(enabled, new Date().toISOString(), req.user.id);
+  res.json({ ok: true, enabled: !!enabled });
 });
 
 router.post('/user/avatar', uploadAvatar.single('avatar'), (req, res) => {

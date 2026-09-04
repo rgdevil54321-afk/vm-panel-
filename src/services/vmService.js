@@ -337,11 +337,18 @@ function serializeVm(row) {
   try { forwards = JSON.parse(row.port_forwards || '[]'); } catch (_) {}
   const remote = (Number(row.node_id) || 1) !== 1;
   const parseJson = (s) => { try { return JSON.parse(s || 'null'); } catch (_) { return null; } };
+  // Node host for SSH instructions (falls back to the panel's own host)
+  let node_host = null;
+  try {
+    const n = db.prepare('SELECT host, port FROM nodes WHERE id = ?').get(row.node_id || 1);
+    if (n) node_host = n.host;
+  } catch (_) {}
   const out = {
     ...row,
     port_forwards: forwards,
     additional_disks: parseJson(row.additional_disks) || [],
     advanced: parseJson(row.advanced) || {},
+    node_host: node_host || 'localhost',
     gui_mode: !!row.gui_mode,
     start_on_boot: !!row.start_on_boot,
     ballooning: row.ballooning === 1 || row.ballooning === '1',

@@ -114,10 +114,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 10 10 0 0 0 9.54-13.88A10 10 0 0 0 12 2z"/></svg>
       Customization &amp; Background
     </button>
-    <button class="tab" data-tab="music" onclick="showTab('music')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-      Music &amp; Sound
-    </button>
     <button class="tab" data-tab="security" onclick="showTab('security')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       Security
@@ -538,95 +534,8 @@
 
   </div>
 
-  <!-- ============ MUSIC & SOUND ============ -->
+  <!-- ============ SECRET BLUR ============ -->
   <div class="tab-pane" id="tab-music" style="display:none">
-    <div class="grid grid-2 mb-4" style="gap:20px">
-      <!-- Sound Effects -->
-      <div class="card" style="padding:22px">
-        <div class="card-title mb-2" style="font-size:18px">Sound Effects</div>
-        <p class="muted text-sm mb-3">Play short UI sounds for clicks, toasts and notifications.</p>
-
-        <div class="flex-between mb-3" style="align-items:center">
-          <div>
-            <div style="font-weight:700;font-size:14px;color:#fff">Enable Sound Effects</div>
-            <div class="muted text-sm">Clicks, success, error, notifications</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="sfxEnabled" <%= String(all['panel.sfx_enabled']) === '0' || all['panel.sfx_enabled'] === false ? '' : 'checked' %> />
-            <span class="switch-slider"></span>
-          </label>
-        </div>
-
-        <div class="form-group mb-3">
-          <label>Sound Effect Volume</label>
-          <div class="flex" style="gap:10px;align-items:center">
-            <input type="range" id="sfxVolume" min="0" max="100" step="1" value="<%= all['panel.sfx_volume'] || '40' %>" style="flex:1" oninput="document.getElementById('sfxVolBadge').textContent=this.value+'%'"/>
-            <span class="pill pill-blue mono" id="sfxVolBadge"><%= all['panel.sfx_volume'] || '40' %>%</span>
-          </div>
-        </div>
-
-        <div class="flex" style="gap:8px;flex-wrap:wrap">
-          <button type="button" class="btn btn-sm" onclick="if(window.SFX){SFX.play('click')}">Click</button>
-          <button type="button" class="btn btn-sm" onclick="if(window.SFX){SFX.play('success')}">Success</button>
-          <button type="button" class="btn btn-sm" onclick="if(window.SFX){SFX.play('error')}">Error</button>
-          <button type="button" class="btn btn-sm" onclick="if(window.SFX){SFX.play('notify')}">Notify</button>
-          <button type="button" class="btn btn-sm" onclick="if(window.SFX){SFX.play('boot')}">Boot</button>
-        </div>
-      </div>
-
-      <!-- Music -->
-      <div class="card" style="padding:22px">
-        <div class="card-title mb-2" style="font-size:18px">Background Music</div>
-        <p class="muted text-sm mb-3">Play a floating music player in the panel dock.</p>
-
-        <div class="form-group mb-3">
-          <label>Music Source</label>
-          <select id="musicMode">
-            <option value="none" <%= all['panel.music_mode'] === 'none' ? 'selected' : '' %>>Disabled</option>
-            <option value="url" <%= all['panel.music_mode'] === 'url' ? 'selected' : '' %>>Direct URL</option>
-            <option value="file" <%= all['panel.music_mode'] === 'file' ? 'selected' : '' %>>Uploaded File</option>
-          </select>
-        </div>
-
-        <div class="form-group mb-3" id="musicUrlGroup" style="<%= all['panel.music_mode'] === 'url' ? '' : 'display:none' %>">
-          <label>Music URL (mp3 / ogg)</label>
-          <input id="musicUrl" value="<%= all['panel.music_url'] || '' %>" placeholder="https://example.com/song.mp3"/>
-        </div>
-
-        <div class="form-group mb-3" id="musicUploadGroup" style="<%= all['panel.music_mode'] === 'file' ? '' : 'display:none' %>">
-          <label>Upload Music File</label>
-          <div class="flex" style="gap:10px;align-items:center;flex-wrap:wrap">
-            <label class="btn btn-sm btn-primary" style="cursor:pointer">
-              <span>Choose File</span>
-              <input type="file" accept="audio/*" style="display:none" id="musicFileInput" onchange="uploadMusicFile(this)"/>
-            </label>
-            <% if (all['panel.music_file']) { %>
-              <a class="btn btn-sm" href="<%= all['panel.music_file'] %>" target="_blank">Current File</a>
-            <% } %>
-          </div>
-          <div class="form-hint mt-1">mp3, ogg, m4a, wav</div>
-        </div>
-
-        <div class="flex" style="gap:20px;flex-wrap:wrap">
-          <label class="flex" style="gap:6px;align-items:center;font-size:13px">
-            <input type="checkbox" id="musicAutoplay" <%= String(all['panel.music_autoplay']) === '1' || all['panel.music_autoplay'] === true ? 'checked' : '' %> /> Autoplay
-          </label>
-          <label class="flex" style="gap:6px;align-items:center;font-size:13px">
-            <input type="checkbox" id="musicLoop" <%= String(all['panel.music_loop']) === '0' || all['panel.music_loop'] === false ? '' : 'checked' %> /> Loop
-          </label>
-        </div>
-
-        <div class="form-group mt-3">
-          <label>Default Volume</label>
-          <div class="flex" style="gap:10px;align-items:center">
-            <input type="range" id="musicDefaultVol" min="0" max="100" step="1" value="<%= all['panel.music_volume'] || '35' %>" style="flex:1" oninput="document.getElementById('musicVolBadge').textContent=this.value+'%'"/>
-            <span class="pill pill-blue mono" id="musicVolBadge"><%= all['panel.music_volume'] || '35' %>%</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Secret Blur -->
     <div class="card mb-4" style="padding:22px">
       <div class="card-title mb-1" style="font-size:18px">Secret Blur</div>
       <p class="muted text-sm mb-3">Blur sensitive on-screen information (passwords, tokens, API keys) to protect against privacy leaks / screen sharing.</p>
@@ -642,7 +551,16 @@
       </div>
     </div>
 
-    <button class="btn btn-primary" onclick="saveMusicSfx()">Save Music, Sound &amp; Blur Settings</button>
+    <div class="card mb-4" style="padding:22px">
+      <div class="card-title mb-1" style="font-size:18px">Sound Effects Volume (panel-wide default)</div>
+      <div class="flex" style="gap:10px;align-items:center">
+        <input type="range" id="sfxVolume" min="0" max="100" step="1" value="<%= all['panel.sfx_volume'] || '40' %>" style="flex:1"/>
+        <span class="pill pill-blue mono" id="sfxVolBadge"><%= all['panel.sfx_volume'] || '40' %>%</span>
+      </div>
+      <div class="form-hint mt-2">Individual users can turn sounds and music on/off from their own Settings page.</div>
+    </div>
+
+    <button class="btn btn-primary" onclick="saveMusicSfx()">Save Settings</button>
   </div>
 
   <!-- ============ SECURITY ============ -->
@@ -909,6 +827,8 @@ function updateLiveTransparency(val) {
 function updateLiveOverlay(val) {
   document.getElementById('overlayValBadge').textContent = `${Math.round(val * 100)}%`;
   document.documentElement.style.setProperty('--bg-overlay-val', val);
+  const ov = document.getElementById('bgOverlay');
+  if (ov) ov.style.background = `rgba(5,8,18,${val})`;
   scheduleAutoSave();
 }
 
@@ -916,11 +836,25 @@ function scheduleAutoSave() {
   clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(() => {
     saveCustomizationSettings(false);
-  }, 250);
+  }, 600);
+  // ALSO fire an immediate save so a fast page navigation can't lose it
+  if (!scheduleAutoSave._syncing) {
+    scheduleAutoSave._syncing = true;
+    saveCustomizationSettings(false).finally(() => { scheduleAutoSave._syncing = false; });
+  }
 }
 
 function flushAutoSave() {
   clearTimeout(saveDebounceTimer);
+  // sendBeacon survives page unload (unlike fetch)
+  try {
+    const payload = JSON.stringify({
+      'panel.bg_blur': document.getElementById('sliderBlur').value,
+      'panel.bg_transparency': document.getElementById('sliderTransparency').value,
+      'panel.bg_overlay': document.getElementById('sliderOverlay').value
+    });
+    navigator.sendBeacon('/api/customization/save-beacon', new Blob([payload], { type: 'application/json' }));
+  } catch (_) {}
   saveCustomizationSettings(false);
 }
 
@@ -967,15 +901,8 @@ function resetCustomizationDefaults() {
 }
 
 async function saveMusicSfx() {
-  const mode = document.getElementById('musicMode').value;
   const body = {
-    'panel.sfx_enabled': document.getElementById('sfxEnabled').checked ? '1' : '0',
     'panel.sfx_volume': document.getElementById('sfxVolume').value,
-    'panel.music_mode': mode,
-    'panel.music_url': mode === 'url' ? document.getElementById('musicUrl').value : '',
-    'panel.music_autoplay': document.getElementById('musicAutoplay').checked ? '1' : '0',
-    'panel.music_loop': document.getElementById('musicLoop').checked ? '1' : '0',
-    'panel.music_volume': document.getElementById('musicDefaultVol').value,
     'panel.secret_blur': document.getElementById('secretBlurEnabled').checked ? '1' : '0',
   };
   try {
@@ -986,20 +913,12 @@ async function saveMusicSfx() {
     });
     const d = await res.json();
     if (!res.ok || !d.ok) throw new Error(d.error || 'Failed to save');
-    // Sync in-page sound/player state
     if (window.APP_SETTINGS) {
-      window.APP_SETTINGS.sfx_enabled = body['panel.sfx_enabled'] === '1';
       window.APP_SETTINGS.sfx_volume = parseInt(body['panel.sfx_volume'], 10);
-      window.APP_SETTINGS.music_mode = mode;
-      window.APP_SETTINGS.music_url = body['panel.music_url'];
-      window.APP_SETTINGS.music_autoplay = body['panel.music_autoplay'] === '1';
-      window.APP_SETTINGS.music_loop = body['panel.music_loop'] === '1';
-      window.APP_SETTINGS.music_volume = parseInt(body['panel.music_volume'], 10);
       window.APP_SETTINGS.secret_blur = body['panel.secret_blur'] === '1';
     }
-    if (window.Music) window.Music.refresh();
     if (window.SFX) window.SFX.play('success');
-    VP.toast('Music, sound & blur settings saved!', 'success');
+    VP.toast('Settings saved!', 'success');
   } catch (e) {
     if (window.SFX) window.SFX.play('error');
     VP.toast(e.message, 'error');

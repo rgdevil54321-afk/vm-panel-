@@ -521,6 +521,8 @@ echo "  >>> Connect Key <<<"
 echo ""
 echo "      ${JOIN_CODE}@${NODE_HOST}:${AGENT_PORT}"
 echo ""
+# Persist the connect key so the management suite can re-display it later.
+echo "${JOIN_CODE}@${NODE_HOST}:${AGENT_PORT}" > "$AGENT_DIR/connect-key.txt" 2>/dev/null || true
 echo "  On your panel:"
 echo "    1. Go to Nodes & Cluster Overview"
 echo "    2. Click 'Connect With Node Key'"
