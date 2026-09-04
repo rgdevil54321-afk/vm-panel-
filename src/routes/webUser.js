@@ -338,6 +338,9 @@ router.post('/settings', express.urlencoded({ extended: true }), (req, res) => {
     const data = {};
     if (req.body.avatar_url) data.avatar = req.body.avatar_url;
     if (req.body.language) data.language = req.body.language;
+    if (req.body.music_enabled !== undefined) data.music_enabled = req.body.music_enabled === 'on' || req.body.music_enabled === '1' || req.body.music_enabled === 'true' ? 1 : 0;
+    if (req.body.music_volume !== undefined) data.music_volume = Math.max(0, Math.min(100, parseInt(req.body.music_volume, 10) || 35));
+    if (req.body.sfx_enabled !== undefined) data.sfx_enabled = req.body.sfx_enabled === 'on' || req.body.sfx_enabled === '1' || req.body.sfx_enabled === 'true' ? 1 : 0;
     authService.updateUser(req.user.id, data);
     return render(res, 'userSettings', { success: 'Settings saved!' });
   } catch (e) {
