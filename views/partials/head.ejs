@@ -20,9 +20,9 @@ const navbarStyle = settings['panel.navbar_style'] || 'glass';
 <meta name="referrer" content="no-referrer"/>
 <title><%= panelName %> - <%= title %></title>
 <link rel="icon" href="<%= favicon %>"/>
-<link rel="stylesheet" href="/css/panel.css"/>
-<script src="/js/audio.js" defer></script>
-<script src="/js/secretblur.js" defer></script>
+<link rel="stylesheet" href="/css/panel.css?v=<%= panelBootId %>"/>
+<script src="/js/audio.js?v=<%= panelBootId %>" defer></script>
+<script src="/js/secretblur.js?v=<%= panelBootId %>" defer></script>
 <% if (typeof styles !== 'undefined') { for (const s of styles) { %><link rel="stylesheet" href="<%= s %>"/><% } } %>
 <% if (typeof scripts !== 'undefined') { for (const s of scripts) { %><script src="<%= s %>"></script><% } } %>
 <style>:root { --accent: <%= accent %>; }</style>

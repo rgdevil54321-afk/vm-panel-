@@ -20,6 +20,8 @@ const authService = require('./services/authService');
 function createWebApp() {
   const app = express();
   app.disable('x-powered-by');
+  // Cache buster: changes on every panel restart so browsers reload JS/CSS
+  app.set('panelBootId', Date.now().toString(36));
   app.set('view engine', 'ejs');
   app.set('views', path.join(config.root, 'views'));
   app.use(express.urlencoded({ extended: true }));
@@ -28,6 +30,7 @@ function createWebApp() {
   app.use((req, res, next) => {
     res.locals.settings = settings.all();
     res.locals.user = null;
+    res.locals.panelBootId = app.get('panelBootId');
     res.locals.uploadUrl = (p) => p ? (String(p).startsWith('http') ? p : `/uploads${String(p).startsWith('/uploads') ? '' : '/'}${p}`) : '';
     next();
   });

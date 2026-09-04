@@ -1,4 +1,4 @@
-<script src="/js/panel.js"></script>
+<script src="/js/panel.js?v=<%= panelBootId %>"></script>
 <% if (typeof scripts !== 'undefined') { for (const s of scripts) { %><script src="<%= s %>"></script><% } } %>
 </body>
 </html>
