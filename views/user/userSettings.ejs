@@ -24,13 +24,30 @@
 
     <div class="card">
       <div class="card-title">Music &amp; Sound</div>
-      <p class="muted mb-2 text-sm">Soft calm ambient music while you work. No custom songs — just a gentle background pad, on or off.</p>
-      <button type="button" id="ambientToggle" class="btn btn-block mb-2" style="padding:12px;font-weight:700"></button>
+      <p class="muted mb-2 text-sm">Soft calm ambient music while you work — no custom songs, just on/off and volume.</p>
       <div class="flex-between mb-2" style="gap:10px">
-        <span class="text-sm">UI sound effects (clicks, toasts)</span>
+        <span class="text-sm" style="font-weight:600">Ambient Music</span>
+        <label class="switch"><input type="checkbox" id="ambientMusicSwitch" <%= (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
+      </div>
+      <div class="mb-3" id="ambientVolWrap" style="<%= (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) ? '' : 'opacity:0.4' %>">
+        <div class="flex-between mb-1">
+          <span class="text-sm">Music Volume</span>
+          <span class="pill pill-green mono font-bold" id="ambientVolBadge"><%= (user.music_volume !== undefined && user.music_volume !== null) ? user.music_volume : '35' %>%</span>
+        </div>
+        <input type="range" id="ambientVol" min="0" max="100" step="1" value="<%= (user.music_volume !== undefined && user.music_volume !== null) ? user.music_volume : '35' %>"/>
+      </div>
+      <hr class="hr" style="margin:14px 0"/>
+      <div class="flex-between mb-2" style="gap:10px">
+        <span class="text-sm" style="font-weight:600">UI Sound Effects (clicks, toasts)</span>
         <label class="switch"><input type="checkbox" id="sfxToggle" <%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
       </div>
-      <div class="form-hint">Toggle music anytime — it starts soft and calm instantly.</div>
+      <div id="sfxVolWrap" style="<%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? '' : 'opacity:0.4' %>">
+        <div class="flex-between mb-1">
+          <span class="text-sm">Effects Volume</span>
+          <span class="pill pill-blue mono font-bold" id="sfxVolBadge"><%= (user.sfx_volume !== undefined && user.sfx_volume !== null) ? user.sfx_volume : '40' %>%</span>
+        </div>
+        <input type="range" id="sfxVol" min="0" max="100" step="1" value="<%= (user.sfx_volume !== undefined && user.sfx_volume !== null) ? user.sfx_volume : '40' %>"/>
+      </div>
     </div>
 
     <div class="card">
@@ -77,20 +94,4 @@ async function disableTfa() {
     setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
-
-// Music & Sound toggles
-document.getElementById('sfxToggle')?.addEventListener('change', async (e) => {
-  const enabled = e.target.checked;
-  if (window.APP_SETTINGS) window.APP_SETTINGS.sfx_user_enabled = enabled;
-  try {
-    await fetch('/api/user/sfx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
-    VP.toast(enabled ? 'Sound effects on' : 'Sound effects off', 'success');
-  } catch (err) { VP.toast('Could not save', 'error'); }
-});
 </script>
-<style>
-#ambientToggle { transition: all .2s ease; }
-#ambientToggle[data-on="1"] { background: linear-gradient(135deg, #10b981, #059669); border-color: rgba(16,185,129,.4); color:#fff; }
-.amb-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#34d399; margin-right:8px; box-shadow: 0 0 8px #34d399; animation: ambPulse 1.6s infinite; }
-@keyframes ambPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-</style>

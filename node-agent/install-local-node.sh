@@ -53,18 +53,18 @@ EOF
 
 mkdir -p "$AGENT_DIR/data" "$AGENT_DIR/vms"
 
-echo "[+] Installing agent dependencies (uuid)..."
+echo "[+] Agent has ZERO npm dependencies (Node built-in crypto) — nothing to install."
 cd "$AGENT_DIR"
-npm install uuid --save >/dev/null 2>&1
-if [[ ! -d node_modules ]]; then
-  echo "[x] npm install failed." >&2
-  exit 1
-fi
+node --check agent.js || { echo "[x] agent.js syntax error." >&2; exit 1; }
 
 # ---------- start via PM2 (works without systemd) ----------
 if ! command -v pm2 >/dev/null 2>&1; then
   echo "[+] Installing PM2..."
-  npm install -g pm2 --no-audit --no-fund >/dev/null 2>&1
+  if ! timeout 240 npm install -g pm2 --no-audit --no-fund > /tmp/venlix-pm2-npm.log 2>&1; then
+    echo "[!] PM2 install failed:"
+    tail -n 10 /tmp/venlix-pm2-npm.log || true
+    exit 1
+  fi
 fi
 echo "[+] Registering agent with PM2..."
 pm2 delete venlix-node >/dev/null 2>&1 || true

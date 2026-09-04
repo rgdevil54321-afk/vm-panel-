@@ -261,6 +261,12 @@ if (!userColumns.includes('music_enabled')) {
 if (!userColumns.includes('sfx_enabled')) {
   db.exec('ALTER TABLE users ADD COLUMN sfx_enabled INTEGER NOT NULL DEFAULT 1');
 }
+if (!userColumns.includes('music_volume')) {
+  db.exec('ALTER TABLE users ADD COLUMN music_volume INTEGER NOT NULL DEFAULT 35');
+}
+if (!userColumns.includes('sfx_volume')) {
+  db.exec('ALTER TABLE users ADD COLUMN sfx_volume INTEGER NOT NULL DEFAULT 40');
+}
 
 // ---- Venlix hKVM-style VM creator advanced columns ----
 const vmAdvColumns = {

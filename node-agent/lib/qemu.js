@@ -4,7 +4,8 @@ const path = require('path');
 const os = require('os');
 const { spawn, spawnSync, execSync } = require('child_process');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+// Built-in UUID (Node 14.17+/16+): zero npm dependencies for the agent.
+const uuidv4 = () => crypto.randomUUID();
 const state = require('./state');
 
 const VM_DIR = path.resolve(__dirname, '..', '..', 'vms');

@@ -31,10 +31,11 @@ window.VP_CONFIG = { apiPort: 3002 };
 window.APP_SETTINGS = <%- JSON.stringify({
   music_mode: 'none',
   music_title: settings['panel.name'] || 'Music',
-  sfx_volume: parseInt(settings['panel.sfx_volume'], 10) || 40,
-  secret_blur: String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true,
   ambient_user_enabled: typeof user !== 'undefined' && user ? (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) : false,
-  sfx_user_enabled: typeof user !== 'undefined' && user ? (user.sfx_enabled === undefined ? true : (user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true)) : true
+  ambient_user_volume: (typeof user !== 'undefined' && user && user.music_volume !== undefined && user.music_volume !== null) ? Number(user.music_volume) : 35,
+  sfx_user_enabled: typeof user !== 'undefined' && user ? (user.sfx_enabled === undefined ? true : (user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true)) : true,
+  sfx_user_volume: (typeof user !== 'undefined' && user && user.sfx_volume !== undefined && user.sfx_volume !== null) ? Number(user.sfx_volume) : 40,
+  secret_blur: String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true
 }) %>;
 function vpApiBase() {
   return '';

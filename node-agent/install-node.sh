@@ -265,13 +265,11 @@ else
   echo "[+] Fresh install (no prior agent data found)."
 fi
 
-echo "[+] Installing Node dependencies (uuid only)..."
+echo "[+] Agent has ZERO npm dependencies (uses Node's built-in crypto) — nothing to install."
 cd "$AGENT_DIR"
-# uuid is the only third-party dependency (no native build)
-npm install uuid --save
-if [[ ! -d node_modules ]]; then
-  echo "[x] npm install failed. Check network access." >&2
-  exit 1
+# sanity check: agent must load without any npm packages
+if ! node -e "require('./agent.js')" --check 2>/dev/null; then
+  node --check agent.js || { echo "[x] agent.js syntax error — report this." >&2; exit 1; }
 fi
 
 # ---------- set node metadata ----------

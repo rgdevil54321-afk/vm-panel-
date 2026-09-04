@@ -102,18 +102,20 @@ router.post('/user/profile', json, (req, res) => {
 // Per-user ambient music + sound effects preferences
 router.post('/user/ambient-music', json, (req, res) => {
   const enabled = req.body.enabled ? 1 : 0;
+  const volume = Math.max(0, Math.min(100, parseInt(req.body.volume, 10) || 35));
   const { db } = require('../lib/db');
-  db.prepare('UPDATE users SET music_enabled = ?, updated_at = ? WHERE id = ?')
-    .run(enabled, new Date().toISOString(), req.user.id);
-  res.json({ ok: true, enabled: !!enabled });
+  db.prepare('UPDATE users SET music_enabled = ?, music_volume = ?, updated_at = ? WHERE id = ?')
+    .run(enabled, volume, new Date().toISOString(), req.user.id);
+  res.json({ ok: true, enabled: !!enabled, volume });
 });
 
 router.post('/user/sfx', json, (req, res) => {
   const enabled = req.body.enabled ? 1 : 0;
+  const volume = Math.max(0, Math.min(100, parseInt(req.body.volume, 10) || 40));
   const { db } = require('../lib/db');
-  db.prepare('UPDATE users SET sfx_enabled = ?, updated_at = ? WHERE id = ?')
-    .run(enabled, new Date().toISOString(), req.user.id);
-  res.json({ ok: true, enabled: !!enabled });
+  db.prepare('UPDATE users SET sfx_enabled = ?, sfx_volume = ?, updated_at = ? WHERE id = ?')
+    .run(enabled, volume, new Date().toISOString(), req.user.id);
+  res.json({ ok: true, enabled: !!enabled, volume });
 });
 
 router.post('/user/avatar', uploadAvatar.single('avatar'), (req, res) => {

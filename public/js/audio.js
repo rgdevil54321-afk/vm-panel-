@@ -31,7 +31,7 @@
       osc.type = type;
       osc.frequency.setValueAtTime(freq, t0);
       if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
-      const v = vol * ((S.sfx_volume / 100) || 0.4);
+      const v = vol * ((S.sfx_user_volume / 100) || 0.4);
       gain.gain.setValueAtTime(0.0001, t0);
       gain.gain.exponentialRampToValueAtTime(v, t0 + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
@@ -68,7 +68,12 @@
     breathTimer: null,
     chordTimer: null,
     playing: false,
-    volume: 0.35,
+    volume: null, // null = use the user's saved volume from APP_SETTINGS
+
+    effectiveVolume() {
+      if (Ambient.volume !== null && Ambient.volume !== undefined) return Ambient.volume;
+      return (S.ambient_user_volume !== undefined) ? S.ambient_user_volume / 100 : 0.35;
+    },
 
     // Pentatonic-ish chord sets that always sound calm together
     chords: [
@@ -84,7 +89,7 @@
       if (!ctx) return null;
       if (!Ambient.master) {
         Ambient.master = ctx.createGain();
-        Ambient.master.gain.value = Ambient.volume;
+        Ambient.master.gain.value = Ambient.effectiveVolume();
         // gentle low-pass to keep everything soft & warm
         const lp = ctx.createBiquadFilter();
         lp.type = 'lowpass';
@@ -161,15 +166,17 @@
       }
     },
 
-    setVolume(v) {
-      Ambient.volume = v;
-      if (Ambient.master) Ambient.master.gain.value = v;
+    setVolume(pct) {
+      // pct: 0-100 (user-friendly scale)
+      Ambient.volume = Math.max(0, Math.min(100, Number(pct))) / 100;
+      if (Ambient.master) Ambient.master.gain.value = Ambient.volume;
     },
 
-    toggle() {
-      if (Ambient.playing) Ambient.stop();
-      else Ambient.start();
-      Ambient.render();
+    toggle(force) {
+      const target = (force !== undefined) ? !!force : !Ambient.playing;
+      if (target === Ambient.playing) return Ambient.playing;
+      if (target) Ambient.start();
+      else Ambient.stop();
       Ambient.persist();
       return Ambient.playing;
     },
@@ -180,18 +187,20 @@
         fetch('/api/user/ambient-music', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabled: Ambient.playing }),
+          body: JSON.stringify({
+            enabled: Ambient.playing,
+            volume: document.getElementById('ambientVol') ? document.getElementById('ambientVol').value : undefined,
+          }),
         }).catch(() => {});
       } catch (_) {}
     },
 
     render() {
-      const btn = document.getElementById('ambientToggle');
-      if (!btn) return;
-      btn.dataset.on = Ambient.playing ? '1' : '0';
-      btn.innerHTML = Ambient.playing
-        ? '<span class="amb-dot"></span> Ambient Music: ON'
-        : 'Ambient Music: OFF';
+      // Sync the settings-page switch (if present)
+      const sw = document.getElementById('ambientMusicSwitch');
+      if (sw) sw.checked = Ambient.playing;
+      const wrap = document.getElementById('ambientVolWrap');
+      if (wrap) wrap.style.opacity = Ambient.playing ? '1' : '0.4';
     },
   };
 
@@ -229,17 +238,64 @@
 
   // Init once DOM ready
   function init() {
-    Ambient.render();
-    // sync the toggle UI if present (user settings page)
-    const btn = document.getElementById('ambientToggle');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        Ambient.toggle();
+    // Wire the user settings page controls (if present)
+    const sw = document.getElementById('ambientMusicSwitch');
+    if (sw) {
+      sw.addEventListener('change', () => {
+        Ambient.toggle(sw.checked);
         if (window.SFX) SFX.play('toggle');
+        VP.toast(sw.checked ? 'Ambient music on' : 'Ambient music off', 'success');
       });
     }
-    // instant click on the page can also start it (user intent signal)
-    document.addEventListener('click', () => { if (S.ambient_user_enabled) SFX.ensure(); }, { once: true });
+    const vol = document.getElementById('ambientVol');
+    if (vol) {
+      vol.addEventListener('input', () => {
+        document.getElementById('ambientVolBadge').textContent = vol.value + '%';
+        Ambient.setVolume(vol.value);
+        if (Ambient.playing === false && S.ambient_user_enabled) Ambient.start();
+      });
+      let volSaveTimer;
+      vol.addEventListener('change', () => {
+        clearTimeout(volSaveTimer);
+        volSaveTimer = setTimeout(() => Ambient.persist(), 400);
+      });
+    }
+    const sfxSw = document.getElementById('sfxToggle');
+    if (sfxSw) {
+      sfxSw.addEventListener('change', () => {
+        S.sfx_user_enabled = sfxSw.checked;
+        if (sfxSw.checked) SFX.play('toggle');
+        try {
+          fetch('/api/user/sfx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: sfxSw.checked }),
+          }).catch(() => {});
+        } catch (_) {}
+        VP.toast(sfxSw.checked ? 'Sound effects on' : 'Sound effects off', 'success');
+      });
+    }
+    const sfxVol = document.getElementById('sfxVol');
+    if (sfxVol) {
+      sfxVol.addEventListener('input', () => {
+        document.getElementById('sfxVolBadge').textContent = sfxVol.value + '%';
+        S.sfx_user_volume = parseInt(sfxVol.value, 10);
+      });
+      let sfxSaveTimer;
+      sfxVol.addEventListener('change', () => {
+        clearTimeout(sfxSaveTimer);
+        sfxSaveTimer = setTimeout(() => {
+          try {
+            fetch('/api/user/sfx', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ enabled: S.sfx_user_enabled !== false, volume: sfxVol.value }),
+            }).catch(() => {});
+          } catch (_) {}
+        }, 400);
+      });
+    }
+    Ambient.render();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
