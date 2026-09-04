@@ -1103,6 +1103,35 @@ async function reinstall(vm, data, user) {
 }
 
 async function getTmateSsh(vm, regen) {
+  // Local VMs (node 1): connect to the guest via SSH and run tmate there.
+  if (!isRemoteVm(vm)) {
+    const ssh = require('./sshService');
+    const script = [
+      'export DEBIAN_FRONTEND=noninteractive',
+      'command -v tmate >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq tmate) >/dev/null 2>&1 || true',
+      'rm -f /tmp/tmate.sock',
+      'tmux kill-session -t vpanel-tmate 2>/dev/null || true',
+      'command -v tmux >/dev/null 2>&1 || (apt-get install -y -qq tmux) >/dev/null 2>&1 || true',
+      'tmate -S /tmp/tmate.sock new-session -d -s vpanel-tmate 2>/dev/null || true',
+      'for i in $(seq 1 45); do [ -S /tmp/tmate.sock ] && break; sleep 1; done',
+      'tmate -S /tmp/tmate.sock wait tmate-ready 2>/dev/null || true',
+      "tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' 2>/dev/null || true",
+    ].join('\n');
+    const conn = await ssh.connect(vm, { readyTimeout: 15000 });
+    try {
+      const r = await ssh.exec(conn, script, { timeout: 180000 });
+      const out = String((r && (r.stdout || r.data)) || '').trim();
+      const m = out.match(/\b([a-z0-9]+)\@tmate\.io\b/i);
+      if (!m) {
+        throw new Error('Could not obtain a tmate SSH address. Is the VM running with internet access? Output: ' + out.slice(-300));
+      }
+      db.prepare('UPDATE vms SET tmate_ssh = ?, updated_at = ? WHERE id = ?').run(m[1] + '@tmate.io', now(), vm.id);
+      return m[1] + '@tmate.io';
+    } finally {
+      try { conn.end(); } catch (_) {}
+    }
+  }
+  // Remote VMs: ask the node's agent.
   const node = remoteNodeFor(vm);
   if (!node) throw new Error('Node not found for this VM');
   const r = await nodeRegistry.tmateVmOnNode(node, vm, !!regen);

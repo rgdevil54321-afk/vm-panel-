@@ -271,6 +271,12 @@ if (!userColumns.includes('secret_blur')) {
   db.exec('ALTER TABLE users ADD COLUMN secret_blur INTEGER NOT NULL DEFAULT 0');
 }
 
+// tmate SSH address for local VMs (remote VMs store it on the agent side)
+const vmTmateCol = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
+if (!vmTmateCol.includes('tmate_ssh')) {
+  db.exec("ALTER TABLE vms ADD COLUMN tmate_ssh TEXT DEFAULT NULL");
+}
+
 // ---- Venlix hKVM-style VM creator advanced columns ----
 const vmAdvColumns = {
   description: 'TEXT',

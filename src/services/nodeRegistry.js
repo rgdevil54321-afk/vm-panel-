@@ -229,35 +229,35 @@ async function createVmOnNode(node, payload) {
 }
 
 async function startVmOnNode(node, vm) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/start` });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/start` });
 }
 async function stopVmOnNode(node, vm, force) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/stop`, body: JSON.stringify({ force: !!force }) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/stop`, body: JSON.stringify({ force: !!force }) });
 }
 async function restartVmOnNode(node, vm) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/restart` });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/restart` });
 }
 async function deleteVmOnNode(node, vm) {
-  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.id}` });
+  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}` });
 }
 async function resizeVmOnNode(node, vm, newSize) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/resize`, body: JSON.stringify({ disk_size: newSize }) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/resize`, body: JSON.stringify({ disk_size: newSize }) });
 }
 async function vmStatsOnNode(node, vm) {
-  return agentJson(node, { method: 'GET', path: `/vms/${vm.id}/stats` });
+  return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/stats` });
 }
 async function vmStatusOnNode(node, vm) {
-  const d = await agentJson(node, { method: 'GET', path: `/vms/${vm.id}/status` });
+  const d = await agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/status` });
   return d.status;
 }
 async function vmBootLogOnNode(node, vm) {
-  return agentJson(node, { method: 'GET', path: `/vms/${vm.id}/bootlog` });
+  return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/bootlog` });
 }
 async function reinstallVmOnNode(node, vm, data) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/reinstall`, body: JSON.stringify(data || {}) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/reinstall`, body: JSON.stringify(data || {}) });
 }
 async function tmateVmOnNode(node, vm, regen) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.id}/tmate${regen ? '/regen' : ''}`, body: '{}' });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/tmate${regen ? '/regen' : ''}`, body: '{}' });
 }
 async function listVmsOnNode(node) {
   const d = await agentJson(node, { method: 'GET', path: '/vms' });
