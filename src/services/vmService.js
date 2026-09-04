@@ -958,6 +958,23 @@ async function start(vm, { user = null } = {}) {
   if (!fs.existsSync(vm.seed_file)) {
     writeSeed(vm);
   }
+  // Pre-flight: enough free RAM for the guest (+64MB QEMU overhead)?
+  const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
+  const os = require('os');
+  let haveBytes = os.freemem();
+  try {
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0) haveBytes = Math.min(haveBytes, Math.max(0, max - cur));
+  } catch (_) {}
+  try {
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    const used = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) haveBytes = Math.min(haveBytes, Math.max(0, lim - used));
+  } catch (_) {}
+  if (haveBytes < wantBytes + 64 * 1024 * 1024) {
+    throw new Error(`Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${Math.max(0, Math.round(haveBytes / 1024 / 1024))} MB is available. Stop other VMs, lower this VM's RAM, or increase the container/host memory limit.`);
+  }
   ensureVncPort(vm);
   ensureAgentPort(vm);
   const dir = vmDir(vm);

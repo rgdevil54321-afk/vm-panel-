@@ -344,7 +344,22 @@ async function createVm({ data, osList }) {
   const username = String(data.username || osEntry[4] || 'root').toLowerCase();
   const password = String(data.password || 'vpanel' + Math.random().toString(36).slice(2, 8));
   const diskSize = String(data.disk_size || '20G').toUpperCase();
-  const memory = parseInt(data.memory || '2048', 10);
+  // Clamp requested RAM to what the host/container can actually provide
+  // (leave 512MB for the system). Prevents un-bootable VMs on small nodes.
+  const hostTotalMb = Math.floor(os.totalmem() / 1024 / 1024);
+  let memAvailMb = hostTotalMb;
+  try {
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0) memAvailMb = Math.min(memAvailMb, Math.floor(max / 1024 / 1024));
+  } catch (e) {}
+  try {
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) memAvailMb = Math.min(memAvailMb, Math.floor(lim / 1024 / 1024));
+  } catch (e) {}
+  const maxVmMemMb = Math.max(256, memAvailMb - 512);
+  let memory = parseInt(data.memory || '2048', 10);
+  if (!Number.isFinite(memory) || memory < 256) memory = 256;
+  if (memory > maxVmMemMb) memory = maxVmMemMb;
   const cpus = parseInt(data.cpus || '2', 10);
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocHostPort(null, 'ssh_port', 25501, 25600);
   if (isNaN(sshPort) || sshPort < 23 || sshPort > 65535) throw new Error('Invalid SSH port');
@@ -503,8 +518,36 @@ function prepareImage(vm) {
   writeSeed(vm);
 }
 
+// Available memory in bytes: min(host view, cgroup v1/v2 limit for containers).
+function availableMemoryBytes() {
+  let avail = os.freemem();
+  try {
+    // cgroup v2
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0) avail = Math.min(avail, Math.max(0, max - cur));
+  } catch (e) {}
+  try {
+    // cgroup v1
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    const used = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) avail = Math.min(avail, Math.max(0, lim - used));
+  } catch (e) {}
+  return avail;
+}
+
 function startVm(vm) {
   if (isRunning(vm)) return { ok: true, message: 'already running' };
+  // Pre-flight: can the host/container actually provide the guest RAM?
+  const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
+  const haveBytes = availableMemoryBytes();
+  if (haveBytes < wantBytes + 64 * 1024 * 1024) { // keep 64MB headroom for QEMU itself
+    const haveMb = Math.max(0, Math.round(haveBytes / 1024 / 1024));
+    return {
+      ok: false,
+      error: `Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${haveMb} MB is available. Stop other VMs, lower this VM's RAM, or increase the container/host memory limit.`,
+    };
+  }
   if (!vm.img_file || !fs.existsSync(vm.img_file)) {
     prepareImage(vm);
   }
