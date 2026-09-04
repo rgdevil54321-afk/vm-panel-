@@ -523,14 +523,40 @@ function startVm(vm) {
   } catch (e) {}
   const logFile = fs.openSync(path.join(dir, 'qemu.log'), 'a');
   const args = buildQemuArgs(vm);
-  const child = spawn('qemu-system-x86_64', args, { stdio: ['ignore', logFile, logFile] });
+  let child;
+  try {
+    child = spawn('qemu-system-x86_64', args, { stdio: ['ignore', logFile, logFile] });
+  } catch (e) {
+    try { fs.closeSync(logFile); } catch (_) {}
+    return { ok: false, error: 'qemu spawn failed: ' + e.message + '. Is qemu-system-x86_64 installed?' };
+  }
   child.on('error', (e) => {
-    fs.closeSync(logFile);
-    throw new Error('qemu spawn error: ' + e.message);
+    try { fs.closeSync(logFile); } catch (_) {}
+    console.error('[qemu] spawn error:', e.message);
   });
   child.on('exit', () => {
     try { fs.closeSync(logFile); } catch (e) {}
   });
+  // Give QEMU a moment to die on bad args / missing KVM, then verify it is alive.
+  const DIED = 1500;
+  let died = !child.pid;
+  if (child.pid) {
+    const end = Date.now() + DIED;
+    while (Date.now() < end) {
+      try { process.kill(child.pid, 0); } catch (e) { died = true; break; }
+      execSync('sleep 0.15', { stdio: 'ignore' });
+    }
+  }
+  if (died) {
+    let tail = '';
+    try {
+      tail = fs.readFileSync(path.join(dir, 'qemu.log'), 'utf8').split('\n').slice(-12).join('\n').trim();
+    } catch (e) {}
+    return {
+      ok: false,
+      error: 'QEMU exited immediately. ' + (tail ? 'Last QEMU output:\n' + tail : 'No output captured. Try: NO_KVM=1 in the agent .env (containers often have no /dev/kvm).'),
+    };
+  }
   vm.updated_at = now();
   state.upsertVm(vm);
   return { ok: true };

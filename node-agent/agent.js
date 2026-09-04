@@ -203,7 +203,11 @@ const server = http.createServer(async (req, res) => {
         const data = JSON.parse(body.toString() || '{}');
         return json(res, 200, { ok: true, vm: serializeVm(qemu.updateVm(vm, data)) });
       }
-      if (method === 'POST' && sub === '/start') return json(res, 200, { ok: true, result: qemu.startVm(vm) });
+      if (method === 'POST' && sub === '/start') {
+        const result = qemu.startVm(vm);
+        if (result && result.ok === false) return json(res, 500, { ok: false, error: result.error || 'QEMU failed to start' });
+        return json(res, 200, { ok: true, result });
+      }
       if (method === 'POST' && sub === '/stop') {
         const body = await readBody(req);
         let force = false;
