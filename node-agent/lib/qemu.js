@@ -523,6 +523,10 @@ function startVm(vm) {
   } catch (e) {}
   const logFile = fs.openSync(path.join(dir, 'qemu.log'), 'a');
   const args = buildQemuArgs(vm);
+  const pidFile = path.join(dir, 'qemu.pid');
+  // Clear any stale pid from a previous run so the checks below are truthful.
+  try { fs.unlinkSync(pidFile); } catch (e) {}
+
   let child;
   try {
     child = spawn('qemu-system-x86_64', args, { stdio: ['ignore', logFile, logFile] });
@@ -537,29 +541,50 @@ function startVm(vm) {
   child.on('exit', () => {
     try { fs.closeSync(logFile); } catch (e) {}
   });
-  // Give QEMU a moment to die on bad args / missing KVM, then verify it is alive.
-  const DIED = 1500;
-  let died = !child.pid;
-  if (child.pid) {
-    const end = Date.now() + DIED;
-    while (Date.now() < end) {
-      try { process.kill(child.pid, 0); } catch (e) { died = true; break; }
-      execSync('sleep 0.15', { stdio: 'ignore' });
+
+  // QEMU runs with -daemonize: the launcher parent exits immediately after
+  // the real daemon forks. Wait for the pidfile to appear, then verify that
+  // daemon is actually alive, and capture stderr if it never showed up.
+  const DEADLINE = Date.now() + 5000;
+  let daemonPid = null;
+  while (Date.now() < DEADLINE) {
+    try {
+      const txt = fs.readFileSync(pidFile, 'utf8').trim();
+      daemonPid = parseInt(txt, 10);
+      if (daemonPid > 0) break;
+    } catch (e) {}
+    if (child.exitCode !== null && child.exitCode !== undefined && child.exitCode !== 0) {
+      // Launcher failed hard (bad args, missing binary) — no daemon will ever appear.
+      break;
+    }
+    execSync('sleep 0.15', { stdio: 'ignore' });
+  }
+
+  let alive = false;
+  if (daemonPid > 0) {
+    // Re-check twice: a daemon can fail right after writing its pidfile.
+    for (let i = 0; i < 2; i++) {
+      try { process.kill(daemonPid, 0); alive = true; } catch (e) { alive = false; }
+      if (!alive) break;
+      execSync('sleep 0.3', { stdio: 'ignore' });
     }
   }
-  if (died) {
+
+  if (!alive) {
     let tail = '';
     try {
       tail = fs.readFileSync(path.join(dir, 'qemu.log'), 'utf8').split('\n').slice(-12).join('\n').trim();
     } catch (e) {}
+    try { fs.unlinkSync(pidFile); } catch (e) {}
     return {
       ok: false,
-      error: 'QEMU exited immediately. ' + (tail ? 'Last QEMU output:\n' + tail : 'No output captured. Try: NO_KVM=1 in the agent .env (containers often have no /dev/kvm).'),
+      error: 'QEMU failed to start. ' + (tail ? 'Last QEMU output:\n' + tail : 'No output captured (is qemu-system-x86_64 installed? On containers without /dev/kvm set NO_KVM=1 in the agent .env).'),
     };
   }
+
   vm.updated_at = now();
   state.upsertVm(vm);
-  return { ok: true };
+  return { ok: true, pid: daemonPid };
 }
 
 function stopVm(vm, force = false) {

@@ -966,6 +966,8 @@ async function start(vm, { user = null } = {}) {
   } catch (_) {}
   const logFile = fs.openSync(path.join(dir, 'qemu.log'), 'a');
   const args = buildQemuArgs(vm);
+  const pidFile = path.join(dir, 'qemu.pid');
+  try { fs.unlinkSync(pidFile); } catch (_) {}
   logger.info(`[vm] starting ${vm.name}: qemu-system-x86_64 ${args.join(' ')}`);
   const child = spawn('qemu-system-x86_64', args, { stdio: ['ignore', logFile, logFile] });
   child.on('error', (e) => {
@@ -973,13 +975,36 @@ async function start(vm, { user = null } = {}) {
     setDbStatus(vm.id, 'stopped');
   });
   child.on('exit', () => {
-    fs.closeSync(logFile);
-    setDbStatus(vm.id, 'stopped');
+    try { fs.closeSync(logFile); } catch (_) {}
   });
-  await new Promise((r) => setTimeout(r, 1500));
+
+  // QEMU uses -daemonize: wait for its pidfile, then verify the daemon lives.
+  const deadline = Date.now() + 5000;
+  let daemonPid = null;
+  while (Date.now() < deadline) {
+    try {
+      daemonPid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+      if (daemonPid > 0) break;
+    } catch (_) {}
+    if (child.exitCode) break; // launcher failed hard
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  let alive = false;
+  if (daemonPid > 0) {
+    await new Promise((r) => setTimeout(r, 400));
+    try { process.kill(daemonPid, 0); alive = true; } catch (_) { alive = false; }
+  }
+  if (!alive) {
+    let tail = '';
+    try {
+      tail = fs.readFileSync(path.join(dir, 'qemu.log'), 'utf8').split('\n').slice(-12).join('\n').trim();
+    } catch (_) {}
+    setDbStatus(vm.id, 'stopped');
+    throw new Error('QEMU failed to start. ' + (tail ? 'Output:\n' + tail : 'No output captured.'));
+  }
   setDbStatus(vm.id, 'running');
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:start' });
-  return { ok: true };
+  return { ok: true, pid: daemonPid };
 }
 
 async function stop(vm, { user = null, force = false } = {}) {
