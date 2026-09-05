@@ -361,6 +361,16 @@ async function createVm({ data, osList }) {
   if (!Number.isFinite(memory) || memory < 256) memory = 256;
   if (memory > maxVmMemMb) memory = maxVmMemMb;
   const cpus = parseInt(data.cpus || '2', 10);
+  // Pre-flight: enough free disk for this VM's image? (image + seed + snapshots)
+  const wantDiskBytes = (parseInt(String(diskSize).replace(/[^0-9]/g, ''), 10) || 20) * 1024 * 1024 * 1024;
+  let freeDiskBytes = Infinity;
+  try {
+    const dfOut = execSync(`df -B1 "${VM_DIR}"`, { encoding: 'utf8' }).trim().split('\n')[1].split(/\s+/);
+    freeDiskBytes = parseInt(dfOut[3], 10) || 0;
+  } catch (e) {}
+  if (freeDiskBytes !== Infinity && freeDiskBytes < wantDiskBytes + 2 * 1024 * 1024 * 1024) {
+    throw new Error(`Not enough disk space on this node: VM needs ${Math.round(wantDiskBytes / 1024 ** 3)} GB (+2 GB headroom) but only ${(freeDiskBytes / 1024 ** 3).toFixed(1)} GB is free. Free up space or reduce the disk size.`);
+  }
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocHostPort(null, 'ssh_port', 25501, 25600);
   if (isNaN(sshPort) || sshPort < 23 || sshPort > 65535) throw new Error('Invalid SSH port');
   if (inUsePort(sshPort)) throw new Error(`Port ${sshPort} is already in use`);

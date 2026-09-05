@@ -800,6 +800,20 @@ async function create({ user, data }) {
   const username = String(data.username || osEntry[4] || 'root').toLowerCase();
   const password = String(data.password || 'vpanel' + Math.random().toString(36).slice(2, 8));
   const diskSize = String(data.disk_size || settings.get('vm.default_disk') || '20G').toUpperCase();
+  // Pre-flight: enough free disk for this VM's image?
+  {
+    const wantBytes = (parseInt(String(diskSize).replace(/[^0-9]/g, ''), 10) || 20) * 1024 ** 3;
+    try {
+      const { execSync } = require('child_process');
+      const dfOut = execSync(`df -B1 "${VM_DIR}"`, { encoding: 'utf8' }).trim().split('\n')[1].split(/\s+/);
+      const freeBytes = parseInt(dfOut[3], 10) || 0;
+      if (freeBytes < wantBytes + 2 * 1024 ** 3) {
+        throw new Error(`Not enough disk space: VM needs ${Math.round(wantBytes / 1024 ** 3)} GB (+2 GB headroom) but only ${(freeBytes / 1024 ** 3).toFixed(1)} GB is free on the panel host.`);
+      }
+    } catch (e) {
+      if (String(e.message).startsWith('Not enough disk')) throw e;
+    }
+  }
   const memory = parseInt(data.memory || settings.get('vm.default_memory') || '2048', 10);
   const cpus = parseInt(data.cpus || settings.get('vm.default_cpus') || '2', 10);
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocPort();
