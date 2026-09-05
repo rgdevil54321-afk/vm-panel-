@@ -9,13 +9,20 @@
   <div class="grid grid-2 mt-3">
     <div class="card" style="padding:24px">
       <div class="card-title" style="margin:0">Credits Balance</div>
-      <div class="display-credit" style="font-size:46px;font-weight:800;color:var(--accent-2);margin:14px 0"><%= q.credits.toFixed(2) %></div>
-      <div class="muted text-sm">Credits are deducted when you create a VM. <span class="mono">credits</span> appear here once an admin tops you up.</div>
+      <div style="font-size:46px;font-weight:800;color:var(--accent-2);margin:14px 0"><%= q.credits.toFixed(2) %></div>
+      <% if (bonusEnabled) { %>
+        <% if (canClaim) { %>
+          <button class="btn btn-primary" onclick="claimBonus()">Claim Daily Bonus (+<%= prices.bonus %>)</button>
+        <% } else { %>
+          <div class="muted text-sm">Bonus claimed. Next available in <span id="bonusCountdown" data-at="<%= nextBonusAt %>">…</span></div>
+        <% } %>
+      <% } %>
+      <div class="muted text-sm" style="margin-top:10px">Credits are deducted when you create a VM. Ask an admin to top up your balance.</div>
     </div>
     <div class="card" style="padding:24px">
       <div class="card-title" style="margin:0">Resource Usage</div>
       <% const lim = (v) => (v < 0 ? 'Unlimited' : String(v)); %>
-      <table class="quota-table" style="width:100%;margin-top:12px">
+      <table style="width:100%;margin-top:12px">
         <tbody>
           <tr><td>VMs</td><td class="mono"><%= q.used_vms %> / <%= lim(q.max_vms) %></td></tr>
           <tr><td>CPU cores</td><td class="mono"><%= q.used_cpu %> / <%= lim(q.max_cpu) %></td></tr>
@@ -23,6 +30,16 @@
           <tr><td>Disk</td><td class="mono"><%= q.used_disk_gb.toFixed(1) %> GB / <%= lim(q.max_disk_gb) %></td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <div class="card mt-3" style="padding:24px">
+    <div class="card-title" style="margin:0">Pricing</div>
+    <p class="muted text-sm" style="margin:8px 0">A new VM costs: <span class="mono"><%= prices.base %> base + <%= prices.ram %> × RAM(GB) + <%= prices.disk %> × Disk(GB)</span> credits.</p>
+    <div class="grid grid-3" style="gap:12px">
+      <div class="stat" style="padding:14px"><div class="stat-value" style="font-size:22px"><%= prices.base %></div><div class="stat-label">Base price per VM</div></div>
+      <div class="stat" style="padding:14px"><div class="stat-value" style="font-size:22px"><%= prices.ram %></div><div class="stat-label">Per 1 GB RAM</div></div>
+      <div class="stat" style="padding:14px"><div class="stat-value" style="font-size:22px"><%= prices.disk %></div><div class="stat-label">Per 1 GB disk</div></div>
     </div>
   </div>
   <% } else { %>
@@ -33,3 +50,24 @@
 </div>
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
+<script>
+async function claimBonus() {
+  try {
+    const d = await VP.api('/billing/claim', { method: 'POST' });
+    VP.toast('+' + d.amount + ' credits claimed!', 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+(function tick() {
+  const el = document.getElementById('bonusCountdown');
+  if (!el) return;
+  const target = new Date(el.dataset.at).getTime();
+  const upd = () => {
+    const ms = target - Date.now();
+    if (ms <= 0) return location.reload();
+    const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    el.textContent = h + 'h ' + m + 'm';
+  };
+  upd(); setInterval(upd, 30000);
+})();
+</script>

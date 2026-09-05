@@ -60,10 +60,16 @@ function createUser({ username, email, password, name, role = 'user', verified =
   if (!password || password.length < 6) throw new Error('Password must be at least 6 characters');
   const hash = bcrypt.hashSync(password, 10);
   const now = new Date().toISOString();
+  let signupCredits = 0;
+  try {
+    if (String(settings.get('billing.enabled') || '0') === '1') {
+      signupCredits = parseFloat(settings.get('billing.signup_credits') || '0') || 0;
+    }
+  } catch (_) {}
   try {
     const info = db.prepare(
-      'INSERT INTO users (username, email, password, name, role, verified, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
-    ).run(username, email, hash, name || username, role, verified ? 1 : 0, now, now);
+      'INSERT INTO users (username, email, password, name, role, verified, credits, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).run(username, email, hash, name || username, role, verified ? 1 : 0, signupCredits, now, now);
     return findById(Number(info.lastInsertRowid));
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw new Error('Username or email already exists');

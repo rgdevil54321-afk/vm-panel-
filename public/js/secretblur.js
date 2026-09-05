@@ -27,7 +27,11 @@
     try {
       fetch('/api/user/secret-blur', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': (typeof vpToken === 'function' && vpToken()) ? 'Bearer ' + vpToken() : undefined,
+        },
         body: JSON.stringify({ enabled }),
       }).catch(() => {});
     } catch (_) {}
@@ -55,6 +59,9 @@
       }
     });
     applyState();
+    // Re-apply to dynamically injected secrets (tmate commands, tokens, etc.)
+    const mo = new MutationObserver(() => applyState());
+    mo.observe(document.body, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -459,7 +459,38 @@ router.get('/settings', (req, res) => render(res, 'userSettings', { tfaSetup: nu
 router.get('/user-settings', (req, res) => res.redirect('/settings'));
 router.get('/billing', (req, res) => {
   const q = vmService.effectiveQuota(req.user);
-  render(res, 'billing', { q, billingEnabled: String(settings.get('billing.enabled') || '0') === '1' });
+  const bonusEnabled = String(settings.get('billing.enabled') || '0') === '1' && (parseFloat(settings.get('billing.daily_bonus') || '0') || 0) > 0;
+  const lastBonus = req.user.last_bonus_at ? new Date(req.user.last_bonus_at) : null;
+  const canClaim = bonusEnabled && (!lastBonus || Date.now() - lastBonus.getTime() >= 24 * 3600 * 1000);
+  render(res, 'billing', {
+    q,
+    billingEnabled: String(settings.get('billing.enabled') || '0') === '1',
+    bonusEnabled, canClaim,
+    nextBonusAt: lastBonus ? new Date(lastBonus.getTime() + 24 * 3600 * 1000).toISOString() : null,
+    prices: {
+      base: parseFloat(settings.get('billing.base_price') || '0') || 0,
+      ram: parseFloat(settings.get('billing.ram_price') || '0') || 0,
+      disk: parseFloat(settings.get('billing.disk_price') || '0') || 0,
+      bonus: parseFloat(settings.get('billing.daily_bonus') || '0') || 0,
+    },
+  });
+});
+
+router.post('/billing/claim', (req, res) => {
+  try {
+    if (String(settings.get('billing.enabled') || '0') !== '1') return res.status(400).json({ error: 'Billing disabled' });
+    const bonus = parseFloat(settings.get('billing.daily_bonus') || '0') || 0;
+    if (bonus <= 0) return res.status(400).json({ error: 'Daily bonus disabled' });
+    const last = req.user.last_bonus_at ? new Date(req.user.last_bonus_at).getTime() : 0;
+    if (Date.now() - last < 24 * 3600 * 1000) {
+      return res.status(429).json({ error: 'Already claimed. Come back in ' + Math.ceil((24 * 3600 * 1000 - (Date.now() - last)) / 3600000) + 'h.' });
+    }
+    db.prepare('UPDATE users SET credits = credits + ?, last_bonus_at = ? WHERE id = ?').run(bonus, new Date().toISOString(), req.user.id);
+    activity.logActivity({ user_id: req.user.id, event: 'billing:bonus_claim', details: { amount: bonus } });
+    return res.json({ ok: true, amount: bonus });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 router.post('/settings', express.urlencoded({ extended: true }), (req, res) => {
   try {

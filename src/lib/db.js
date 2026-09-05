@@ -241,6 +241,8 @@ const defaultSettings = {
   'billing.base_price': '0',
   'billing.ram_price': '0',
   'billing.disk_price': '0',
+  'billing.signup_credits': '0',
+  'billing.daily_bonus': '0',
 };
 
 const vmsColumns = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
@@ -279,6 +281,7 @@ if (!userColumns.includes('secret_blur')) {
 const userQuotaCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
 const addUserCol = (name, ddl) => { if (!userQuotaCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
 addUserCol('credits', 'REAL NOT NULL DEFAULT 0');
+addUserCol('last_bonus_at', 'TEXT DEFAULT NULL');
 addUserCol('max_vms', 'INTEGER NOT NULL DEFAULT -1');
 addUserCol('max_cpu', 'INTEGER NOT NULL DEFAULT -1');
 addUserCol('max_mem_mb', 'INTEGER NOT NULL DEFAULT -1');

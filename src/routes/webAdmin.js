@@ -352,14 +352,14 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
     'panel.music_mode', 'panel.music_url', 'panel.music_youtube', 'panel.music_autoplay',
     'panel.music_loop', 'panel.music_volume', 'panel.navbar_style', 'panel.navbar_transparent',
     'panel.navbar_blur', 'panel.accent', 'panel.theme',
-    'panel.discord_url', 'panel.discord_enabled', 'panel.discord_code',
+    'panel.discord_url', 'panel.discord_enabled', 'panel.discord_code', 'panel.secret_blur',
   ]) save(key);
   save('panel.wallpapers_api_key');
   for (const key of ['mail.host', 'mail.port', 'mail.secure', 'mail.user', 'mail.pass', 'mail.from']) save(key);
   for (const key of ['security.allow_register', 'security.require_verify', 'security.force_tfa', 'vm.auto_port_min', 'vm.auto_port_max', 'vm.vnc_port_min', 'vm.vnc_port_max', 'vm.agent_port_min', 'vm.agent_port_max', 'vm.default_memory', 'vm.default_cpus', 'vm.default_disk', 'vm.default_os']) save(key);
   save('billing.enabled');
   if (req.body['billing.enabled'] === undefined) settings.set('billing.enabled', '0'); else settings.set('billing.enabled', '1');
-  save('billing.base_price'); save('billing.ram_price'); save('billing.disk_price');
+  save('billing.base_price'); save('billing.ram_price'); save('billing.disk_price'); save('billing.signup_credits'); save('billing.daily_bonus');
   if (req.body.vm_os_list) {
     try {
       settings.set('vm.os_list', JSON.stringify(JSON.parse(req.body.vm_os_list)));

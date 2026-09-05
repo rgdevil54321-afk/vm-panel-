@@ -130,6 +130,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
       Sound
     </button>
+    <button class="tab" data-tab="billing" onclick="showTab('billing')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h6"/></svg>
+      Billing
+    </button>
   </div>
 
   <!-- ============ GENERAL SETTINGS ============ -->
@@ -242,7 +246,7 @@
         <!-- 5. Panel Favicon -->
         <div class="mb-4">
           <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">5. Panel Favicon</label>
-          <div class="muted text-sm mb-3">Upload custom favicon icon (.ico, .png, .svg) or specify a direct Favicon URL with live preview.</div>
+          <div class="muted text-sm mb-3">Upload custom favicon icon (.ico, .png, .svg, .gif animated) or specify a direct Favicon URL with live preview.</div>
           
           <div class="grid grid-2" style="gap:24px;align-items:start">
             <div style="background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:14px;padding:20px">
@@ -417,6 +421,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Upload Image / Video
           </button>
+          <button type="button" class="subtab-btn" id="subtabBtnLive" onclick="switchBgSubtab('live')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            Live Wallpapers
+          </button>
           <button type="button" class="subtab-btn" id="subtabBtnUrl" onclick="switchBgSubtab('url')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             Background via URL
@@ -504,7 +512,15 @@
         </div>
       </div>
 
-      <!-- SUBTAB 3: BACKGROUND VIA URL -->
+      <!-- SUBTAB 3: LIVE WALLPAPERS (looping videos) -->
+      <div id="bgSubPaneLive" class="bg-subpane" style="display:none">
+        <div class="muted text-sm mb-3" style="padding:0 2px">Curated looping video backgrounds (free stock CDN). Click any video to apply it instantly — hover to preview.</div>
+        <div id="liveGalleryGrid" class="grid" style="grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:16px;min-height:260px">
+          <div class="empty" style="grid-column:1/-1"><div class="spin mb-2"></div><p class="muted">Loading live wallpapers...</p></div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 4: BACKGROUND VIA URL -->
       <div id="bgSubPaneUrl" class="bg-subpane" style="display:none">
         <div class="card" style="padding:22px;background:rgba(0,0,0,0.25)">
           <div class="card-title mb-2">Set Background via Direct URL</div>
@@ -575,6 +591,13 @@
             <option value="0" <%= all['security.force_tfa'] === '0' ? 'selected' : '' %>>No</option>
           </select>
         </div>
+        <div class="form-group"><label>Secret Blur default (new/signed-out users)</label>
+          <select name="panel.secret_blur">
+            <option value="1" <%= String(all['panel.secret_blur']) === '1' ? 'selected' : '' %>>Enabled</option>
+            <option value="0" <%= String(all['panel.secret_blur']) !== '1' ? 'selected' : '' %>>Disabled</option>
+          </select>
+          <div class="form-hint">Each user can override this in their Settings → Privacy. Blurs passwords, tokens &amp; SSH commands; hover to reveal.</div>
+        </div>
         <button class="btn btn-primary" type="submit">Save Security</button>
       </form>
     </div>
@@ -606,7 +629,10 @@
         <button class="btn btn-primary" type="submit">Save VM Defaults</button>
       </form>
     </div>
+  </div>
 
+  <!-- ============ BILLING ============ -->
+  <div class="tab-pane" id="tab-billing" style="display:none">
     <div class="card">
       <div class="card-title">Billing &amp; Credits</div>
       <p class="muted mb-2">Credits are deducted per VM at deploy time: base price + per-GB RAM + per-GB disk. Billing disabled = VMs are free.</p>
@@ -617,6 +643,12 @@
           <div class="form-group" style="margin:0"><label>Price per 1 GB RAM</label><input name="billing.ram_price" type="number" step="0.01" value="<%= all['billing.ram_price'] || '0' %>"/></div>
           <div class="form-group" style="margin:0"><label>Price per 1 GB disk</label><input name="billing.disk_price" type="number" step="0.01" value="<%= all['billing.disk_price'] || '0' %>"/></div>
         </div>
+        <div class="form-row-3" style="margin-top:10px">
+          <div class="form-group" style="margin:0"><label>Free credits on signup</label><input name="billing.signup_credits" type="number" step="0.01" value="<%= all['billing.signup_credits'] || '0' %>"/></div>
+          <div class="form-group" style="margin:0"><label>Daily bonus credits (0 = off)</label><input name="billing.daily_bonus" type="number" step="0.01" value="<%= all['billing.daily_bonus'] || '0' %>"/></div>
+          <div class="form-group" style="margin:0"></div>
+        </div>
+        <div class="form-hint mb-2">Daily bonus: users can claim once per 24h from their Billing page. Signup credits are granted when a new account registers (billing must be enabled).</div>
         <button class="btn btn-primary" type="submit" style="margin-top:12px">Save Billing</button>
       </form>
     </div>
@@ -676,6 +708,10 @@ function switchBgSubtab(subtab) {
   } else if (subtab === 'upload') {
     document.getElementById('subtabBtnUpload').classList.add('active');
     document.getElementById('bgSubPaneUpload').style.display = 'block';
+  } else if (subtab === 'live') {
+    document.getElementById('subtabBtnLive').classList.add('active');
+    document.getElementById('bgSubPaneLive').style.display = 'block';
+    loadLiveWallpapers();
   } else if (subtab === 'url') {
     document.getElementById('subtabBtnUrl').classList.add('active');
     document.getElementById('bgSubPaneUrl').style.display = 'block';
@@ -684,6 +720,49 @@ function switchBgSubtab(subtab) {
     document.getElementById('bgSubPaneFav').style.display = 'block';
     renderFavorites();
   }
+}
+
+// Live Wallpapers (looping videos)
+async function loadLiveWallpapers() {
+  const grid = document.getElementById('liveGalleryGrid');
+  if (!grid || grid.dataset.loaded === '1') return;
+  grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="spin mb-2"></div><p class="muted">Loading live wallpapers...</p></div>';
+  try {
+    const res = await fetch('/api/wallpapers/live', { headers: { Authorization: 'Bearer ' + vpToken() } });
+    const data = await res.json();
+    if (!data.ok || !data.videos) throw new Error(data.error || 'Failed to load');
+    grid.innerHTML = '';
+    for (const v of data.videos) {
+      const card = document.createElement('div');
+      card.className = 'wp-card';
+      card.style.cssText = 'position:relative;border-radius:14px;overflow:hidden;cursor:pointer;border:1px solid var(--border);aspect-ratio:16/9;background:#000';
+      card.innerHTML = `
+        <video src="${v.url}" poster="${v.poster}" muted loop playsinline preload="none"
+          style="width:100%;height:100%;object-fit:cover;display:block"
+          onmouseover="this.play()" onmouseout="this.pause();this.currentTime=0"></video>
+        <div style="position:absolute;left:0;right:0;bottom:0;padding:10px 12px;background:linear-gradient(transparent,rgba(0,0,0,.85));color:#fff;font-weight:700;font-size:13px">${v.title}</div>
+        <span class="pill pill-blue" style="position:absolute;top:10px;right:10px">LIVE</span>`;
+      card.onclick = () => applyLiveWallpaper(v);
+      grid.appendChild(card);
+    }
+    grid.dataset.loaded = '1';
+  } catch (e) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><p class="muted">Could not load live wallpapers: ${e.message}</p></div>`;
+  }
+}
+
+async function applyLiveWallpaper(v) {
+  try {
+    const res = await fetch('/api/wallpapers/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + vpToken() },
+      body: JSON.stringify({ url: v.url, mode: 'video' }),
+    });
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || 'Failed');
+    VP.toast('Live wallpaper applied: ' + v.title, 'success');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { VP.toast(e.message, 'error'); }
 }
 
 function updateFavCountBadge() {

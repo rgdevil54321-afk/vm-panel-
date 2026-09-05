@@ -205,4 +205,24 @@ function getCuratedFallback(category, page, query, errMsg) {
 module.exports = {
   CATEGORIES,
   getWallpapers,
+  getLiveWallpapers,
 };
+
+// Curated looping video backgrounds (free, hotlinkable CDN files).
+function getLiveWallpapers() {
+  const items = [
+    { id: 'stars', title: 'Stars in Space', poster: 'https://assets.mixkit.co/videos/1610/1610-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/1610/1610-720.mp4', tags: ['Space', 'Loop'] },
+    { id: 'milkyway', title: 'Milky Way Timelapse', poster: 'https://assets.mixkit.co/videos/4148/4148-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4148/4148-720.mp4', tags: ['Space', 'Night'] },
+    { id: 'darknight', title: 'Dark Starry Night', poster: 'https://assets.mixkit.co/videos/100823/1724199603/100823-video-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/100823/100823-720.mp4', tags: ['Dark', 'Night'] },
+    { id: 'fullmoon', title: 'Full Moon Haze', poster: 'https://assets.mixkit.co/videos/4433/4433-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4433/4433-720.mp4', tags: ['Night', 'Moon'] },
+    { id: 'nightlake', title: 'Night Sky Calm Lake', poster: 'https://assets.mixkit.co/videos/1704/1704-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/1704/1704-720.mp4', tags: ['Night', 'Water'] },
+    { id: 'thunder', title: 'Thunderstorm at Night', poster: 'https://assets.mixkit.co/videos/4422/4422-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4422/4422-720.mp4', tags: ['Storm', 'Night'] },
+    { id: 'citydusk', title: 'Aerial City at Dusk', poster: 'https://assets.mixkit.co/videos/41375/41375-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/41375/41375-720.mp4', tags: ['City', 'Aerial'] },
+    { id: 'citynight', title: 'City Avenue at Night', poster: 'https://assets.mixkit.co/videos/41161/41161-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/41161/41161-720.mp4', tags: ['City', 'Night'] },
+    { id: 'tunnel', title: 'Traffic Tunnel Timelapse', poster: 'https://assets.mixkit.co/videos/4067/4067-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4067/4067-720.mp4', tags: ['City', 'Timelapse'] },
+    { id: 'timesquare', title: 'Times Square Rainy Night', poster: 'https://assets.mixkit.co/videos/4332/4332-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4332/4332-720.mp4', tags: ['City', 'Rain'] },
+    { id: 'matterhorn', title: 'Matterhorn at Night', poster: 'https://assets.mixkit.co/videos/4281/4281-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4281/4281-720.mp4', tags: ['Mountain', 'Night'] },
+    { id: 'fireworks', title: 'Beach Fireworks', poster: 'https://assets.mixkit.co/videos/4157/4157-thumb-360-0.jpg', url: 'https://assets.mixkit.co/videos/4157/4157-720.mp4', tags: ['Beach', 'Sky'] },
+  ];
+  return { ok: true, videos: items };
+}

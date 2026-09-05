@@ -383,6 +383,15 @@ router.get('/wallpapers', async (req, res) => {
   }
 });
 
+// Live (looping video) wallpapers
+router.get('/wallpapers/live', (req, res) => {
+  try {
+    res.json(wallpaperService.getLiveWallpapers());
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.post('/wallpapers/apply', json, (req, res) => {
   try {
     const { url, mode = 'image', overlay, blur, transparency } = req.body || {};

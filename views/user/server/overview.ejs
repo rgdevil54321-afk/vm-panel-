@@ -270,7 +270,7 @@
             <button class="btn btn-sm" id="tmateRegenBtn" onclick="loadTmate(true, this)" title="Start a fresh session and get a new address" style="display:none">↻ New</button>
           </div>
         </div>
-        <div class="mono" id="tmateCmd" style="background:#060913;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);color:var(--accent-2);font-size:13px;word-break:break-all">
+        <div class="mono" id="tmateCmd" data-secret style="background:#060913;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);color:var(--accent-2);font-size:13px;word-break:break-all">
           ssh ****@tmate.io — click "Get SSH Command"
         </div>
         <div class="muted mt-1" style="font-size:11px">Works from anywhere — no port forwarding needed. Run it in any terminal to control this server.</div>
@@ -278,7 +278,7 @@
         <div class="flex-between" style="font-size:12.5px">
           <span class="muted">Default Password:</span>
           <div class="flex" style="gap:6px">
-            <span class="mono font-bold" style="color:#fff"><%= vm.password %></span>
+            <span class="mono font-bold" style="color:#fff" data-secret><%= vm.password %></span>
             <button class="icon-btn" style="width:24px;height:24px" onclick="copyText('<%= vm.password %>')" title="Copy password">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>

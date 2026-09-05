@@ -27,7 +27,7 @@ function makeUploader(subdir, { allowed, maxSize = 30 * 1024 * 1024 }) {
 }
 
 const uploadLogo = makeUploader('logo', { allowed: ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif'] });
-const uploadFavicon = makeUploader('favicon', { allowed: ['.png', '.ico', '.jpg', '.jpeg', '.svg', '.webp'] });
+const uploadFavicon = makeUploader('favicon', { allowed: ['.png', '.ico', '.jpg', '.jpeg', '.svg', '.webp', '.gif'] });
 const uploadBackground = makeUploader('background', { allowed: ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.avi', '.mov'] });
 const uploadMusic = makeUploader('music', { allowed: ['.mp3', '.ogg', '.wav', '.m4a', '.aac', '.flac', '.mp4', '.webm'] });
 const uploadAvatar = makeUploader('avatar', { allowed: ['.png', '.jpg', '.jpeg', '.webp', '.gif'] });
