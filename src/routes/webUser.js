@@ -70,8 +70,12 @@ router.get('/servers/:id/overview', loadVm, (req, res) => {
   render(res, 'server/overview', { vm: req.vm, backups: backupService.listForVm(req.vm.id), allUsers });
 });
 
-router.get('/servers/:id/status', loadVm, (req, res) => {
-  res.json({ ok: true, stats: vmService.liveStats(req.vm) });
+router.get('/servers/:id/status', loadVm, async (req, res) => {
+  try {
+    res.json({ ok: true, stats: await vmService.fullStatsFor(req.vm) });
+  } catch (e) {
+    res.json({ ok: true, stats: vmService.liveStats(req.vm) });
+  }
 });
 
 router.get('/servers/:id/console', loadVm, (req, res) => {
@@ -97,6 +101,56 @@ router.get('/servers/:id/files', loadVm, (req, res) => {
 
 router.get('/servers/:id/backups', loadVm, (req, res) => {
   render(res, 'server/backups', { vm: req.vm, backups: backupService.listForVm(req.vm.id) });
+});
+
+// ---------- Snapshots ----------
+router.get('/servers/:id/snapshots', loadVm, async (req, res) => {
+  try {
+    const data = await vmService.snapshotsFor(req.vm);
+    render(res, 'server/snapshots', { vm: req.vm, snapshots: data.snapshots || [], running: vmService.statusOf(req.vm) === 'running' });
+  } catch (e) {
+    render(res, 'server/snapshots', { vm: req.vm, snapshots: [], snapshotsError: e.message, running: vmService.statusOf(req.vm) === 'running' });
+  }
+});
+
+router.get('/servers/:id/snapshots/list', loadVm, async (req, res) => {
+  try {
+    const data = await vmService.snapshotsFor(req.vm);
+    return res.json({ ok: true, snapshots: data.snapshots || [] });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/servers/:id/snapshots', loadVm, express.json(), async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim() || ('snapshot-' + Date.now().toString(36));
+    const result = await vmService.createSnapshotFor(req.vm, name);
+    activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:snapshot:create', details: { name: result.name, node: req.vm.node_id } });
+    return res.json({ ok: true, result });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/servers/:id/snapshots/:sname/revert', loadVm, async (req, res) => {
+  try {
+    const result = await vmService.revertSnapshotFor(req.vm, req.params.sname);
+    activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:snapshot:revert', details: { name: req.params.sname } });
+    return res.json({ ok: true, result });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/servers/:id/snapshots/:sname/delete', loadVm, async (req, res) => {
+  try {
+    const result = await vmService.deleteSnapshotFor(req.vm, req.params.sname);
+    activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:snapshot:delete', details: { name: req.params.sname } });
+    return res.json({ ok: true, result });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 router.get('/servers/:id/schedules', loadVm, (req, res) => {

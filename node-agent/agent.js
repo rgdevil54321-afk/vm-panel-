@@ -221,9 +221,33 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, vm: serializeVm(qemu.resizeDisk(vm, data.disk_size)) });
       }
       if (method === 'GET' && sub === '/status') return json(res, 200, { ok: true, status: qemu.statusOf(vm), running: qemu.isRunning(vm) });
-      if (method === 'GET' && sub === '/stats') return json(res, 200, { ok: true, stats: qemu.liveStats(vm) });
+      if (method === 'GET' && sub === '/stats') return json(res, 200, { ok: true, stats: await qemu.fullStats(vm) });
       if (method === 'GET' && sub === '/bootlog') return json(res, 200, { ok: true, log: qemu.bootLog(vm) });
       if (method === 'POST' && sub === '/bootlog/clear') return json(res, 200, qemu.clearBootLog(vm));
+
+      if (method === 'GET' && sub === '/snapshots') {
+        return json(res, 200, await qemu.listSnapshots(vm));
+      }
+      if (method === 'POST' && sub === '/snapshots') {
+        const body = await readBody(req);
+        let data = {};
+        try { data = JSON.parse(body.toString() || '{}'); } catch (e) {}
+        try {
+          return json(res, 201, { ok: true, result: await qemu.createSnapshot(vm, data.name) });
+        } catch (e) {
+          return json(res, 400, { ok: false, error: e.message });
+        }
+      }
+      const snapMatch = sub.match(/^\/snapshots\/([^/]+)(\/revert)?$/);
+      if (snapMatch) {
+        const sname = decodeURIComponent(snapMatch[1]);
+        try {
+          if (method === 'POST' && snapMatch[2]) return json(res, 200, { ok: true, result: await qemu.revertSnapshot(vm, sname) });
+          if (method === 'DELETE' || method === 'POST') return json(res, 200, { ok: true, result: await qemu.deleteSnapshot(vm, sname) });
+        } catch (e) {
+          return json(res, 400, { ok: false, error: e.message });
+        }
+      }
 
       if (method === 'POST' && sub === '/tmate') {
         try {

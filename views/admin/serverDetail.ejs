@@ -130,6 +130,14 @@
 
       <div class="card">
         <div class="flex-between mb-2">
+          <div class="card-title" style="margin:0">Snapshots (<span id="snapCount">…</span>)</div>
+          <button class="btn btn-sm btn-primary" onclick="createSnap()">+ New Snapshot</button>
+        </div>
+        <div id="snapList" class="muted text-sm">Loading snapshots…</div>
+      </div>
+
+      <div class="card">
+        <div class="flex-between mb-2">
           <div class="card-title" style="margin:0">Subusers (<%= subs.length %>)</div>
           <a href="/servers/<%= vm.id %>/subusers" class="btn btn-sm">Manage</a>
         </div>
@@ -271,6 +279,60 @@ async function del() {
     VP.toast(e.message, 'error');
   }
 }
+
+async function loadSnapshots() {
+  const list = document.getElementById('snapList');
+  const count = document.getElementById('snapCount');
+  try {
+    const d = await VP.api('/admin/servers/<%= vm.id %>/snapshots');
+    const snaps = d.snapshots || [];
+    if (count) count.textContent = snaps.length;
+    if (!list) return;
+    if (!snaps.length) { list.textContent = 'No snapshots yet — create one to capture the full VM state.'; return; }
+    list.innerHTML = snaps.map((s) =>
+      '<div class="flex-between" style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">' +
+      '<span class="mono truncate" style="max-width:150px" title="' + (s.date || '') + '">' + (s.name || '') + '</span>' +
+      '<span style="display:flex;gap:6px;flex-shrink:0">' +
+      '<span class="muted text-sm" style="align-self:center">' + (s.size_text || ((s.size_bytes || 0) / 1024 / 1024).toFixed(1) + ' MB') + '</span>' +
+      '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 7px" onclick="revertSnap(\'' + s.name.replace(/'/g, "\\'") + '\')">Revert</button>' +
+      '<button class="btn btn-sm btn-danger" style="font-size:11px;padding:2px 7px" onclick="delSnap(\'' + s.name.replace(/'/g, "\\'") + '\')">Delete</button>' +
+      '</span></div>'
+    ).join('');
+  } catch (e) {
+    if (list) list.textContent = 'Failed to load snapshots: ' + e.message;
+  }
+}
+
+async function createSnap() {
+  const name = prompt('Snapshot name (optional):', 'snapshot-' + Date.now().toString(36));
+  if (name === null) return;
+  try {
+    await VP.api('/admin/servers/<%= vm.id %>/snapshots', { method: 'POST', body: { name } });
+    VP.toast('Snapshot created', 'success');
+    loadSnapshots();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function revertSnap(name) {
+  const ok = await VP.confirmDialog('Revert <%= vm.name %> to snapshot "' + name + '"? The disk will roll back, interrupting the VM briefly.', { title: 'Revert snapshot?' });
+  if (!ok) return;
+  try {
+    await VP.api(`/admin/servers/<%= vm.id %>/snapshots/${encodeURIComponent(name)}/revert`, { method: 'POST' });
+    VP.toast('Reverted to ' + name, 'success');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function delSnap(name) {
+  const ok = await VP.confirmDialog('Delete snapshot "' + name + '"?', { title: 'Delete snapshot?' });
+  if (!ok) return;
+  try {
+    await VP.api(`/admin/servers/<%= vm.id %>/snapshots/${encodeURIComponent(name)}/delete`, { method: 'POST' });
+    loadSnapshots();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+loadSnapshots();
 
 async function loadTmate(regen, btn) {
   if (!btn.disabled) btn.disabled = true;

@@ -1,0 +1,76 @@
+<%- include('../../partials/head', { title: vm.name + ' - Snapshots' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Snapshots · <%= vm.name %></h2>
+    <button class="btn btn-primary" onclick="createSnapshot()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Create Snapshot
+    </button>
+  </div>
+  <%- include('_tabs') %>
+
+  <div class="card">
+    <% if (typeof snapshotsError !== 'undefined' && snapshotsError) { %>
+      <div class="alert alert-warn"><%= snapshotsError %></div>
+    <% } %>
+    <% if (snapshots.length === 0) { %>
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+        <p>No snapshots yet. Snapshots capture the full VM state (disk + RAM) and let you roll back anytime.</p>
+      </div>
+    <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Size</th><th>Date</th><th class="right">Actions</th></tr></thead>
+        <tbody>
+        <% for (const s of snapshots) { %>
+          <tr>
+            <td class="mono"><%= s.name %></td>
+            <td><%= s.size_text || ((s.size_bytes || 0) / 1024 / 1024).toFixed(1) + ' MB' %></td>
+            <td class="muted"><%= s.date || '—' %></td>
+            <td class="right">
+              <div class="flex right" style="gap:6px">
+                <button class="btn btn-sm btn-primary" onclick="revert('<%= s.name %>')">Revert</button>
+                <button class="btn btn-sm btn-danger" onclick="delSnap('<%= s.name %>')">Delete</button>
+              </div>
+            </td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+async function createSnapshot() {
+  const name = prompt('Snapshot name (optional):', 'snapshot-' + Date.now().toString(36));
+  if (name === null) return;
+  try {
+    const d = await VP.api('/servers/<%= vm.id %>/snapshots', { method: 'POST', body: { name } });
+    VP.toast('Snapshot created: ' + (d.result && d.result.name), 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function revert(name) {
+  const ok = await VP.confirmDialog('Revert the VM to snapshot "' + name + '"? It will roll back the disk, interrupting the VM briefly.', { title: 'Revert snapshot?' });
+  if (!ok) return;
+  try {
+    await VP.api(`/servers/<%= vm.id %>/snapshots/${encodeURIComponent(name)}/revert`, { method: 'POST' });
+    VP.toast('Reverted to ' + name, 'success');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function delSnap(name) {
+  const ok = await VP.confirmDialog('Delete snapshot "' + name + '"? This cannot be undone.', { title: 'Delete snapshot?' });
+  if (!ok) return;
+  try {
+    await VP.api(`/servers/<%= vm.id %>/snapshots/${encodeURIComponent(name)}/delete`, { method: 'POST' });
+    location.reload();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

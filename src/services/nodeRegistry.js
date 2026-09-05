@@ -259,6 +259,18 @@ async function reinstallVmOnNode(node, vm, data) {
 async function tmateVmOnNode(node, vm, regen) {
   return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/tmate${regen ? '/regen' : ''}`, body: '{}' });
 }
+async function listSnapshotsOnNode(node, vm) {
+  return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/snapshots` });
+}
+async function createSnapshotOnNode(node, vm, name) {
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/snapshots`, body: JSON.stringify({ name }) });
+}
+async function revertSnapshotOnNode(node, vm, name) {
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/snapshots/${encodeURIComponent(name)}/revert` });
+}
+async function deleteSnapshotOnNode(node, vm, name) {
+  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}/snapshots/${encodeURIComponent(name)}` });
+}
 async function listVmsOnNode(node) {
   const d = await agentJson(node, { method: 'GET', path: '/vms' });
   return d.vms || [];

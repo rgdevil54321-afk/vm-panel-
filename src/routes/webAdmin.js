@@ -155,6 +155,54 @@ router.get('/admin/servers/:id/tmate-status', (req, res) => {
   return res.json(vmService.tmateJobStatus(vm));
 });
 
+router.get('/admin/servers/:id/snapshots', async (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  try {
+    const data = await vmService.snapshotsFor(vm);
+    return res.json({ ok: true, snapshots: data.snapshots || [] });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/admin/servers/:id/snapshots', express.json(), async (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  try {
+    const name = String((req.body && req.body.name) || '').trim() || ('snapshot-' + Date.now().toString(36));
+    const result = await vmService.createSnapshotFor(vm, name);
+    activity.logActivity({ user_id: req.user.id, vm_id: vm.id, event: 'vm:snapshot:create', details: { name: result.name, node: vm.node_id } });
+    return res.json({ ok: true, result });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/admin/servers/:id/snapshots/:sname/revert', async (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  try {
+    const result = await vmService.revertSnapshotFor(vm, req.params.sname);
+    activity.logActivity({ user_id: req.user.id, vm_id: vm.id, event: 'vm:snapshot:revert', details: { name: req.params.sname } });
+    return res.json({ ok: true, result });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/admin/servers/:id/snapshots/:sname/delete', async (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  try {
+    const result = await vmService.deleteSnapshotFor(vm, req.params.sname);
+    activity.logActivity({ user_id: req.user.id, vm_id: vm.id, event: 'vm:snapshot:delete', details: { name: req.params.sname } });
+    return res.json({ ok: true, result });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/admin/servers/:id', (req, res) => {
   const vm = vmService.getVm(req.params.id);
   if (!vm) return res.status(404).render('error/404', { code: 404, title: 'Not Found', message: 'Server not found', settings: settings.all(), user: req.user });

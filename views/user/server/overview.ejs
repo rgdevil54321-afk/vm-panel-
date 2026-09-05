@@ -142,6 +142,40 @@
     </div>
   </div>
 
+  <div class="grid grid-2 mb-4">
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(168,85,247,0.15);color:#c084fc">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      </div>
+      <div style="flex:1">
+        <div class="flex-between">
+          <div class="stat-value" id="liveNetVal">—</div>
+        </div>
+        <div class="stat-label" id="liveNetLabel">Network I/O</div>
+        <div style="display:flex;gap:14px;margin-top:8px;font-size:12px">
+          <span style="color:#4ade80">▼ <span id="liveNetRx" class="mono">0 KB/s</span></span>
+          <span style="color:#38bdf8">▲ <span id="liveNetTx" class="mono">0 KB/s</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-icon" style="background:rgba(249,115,22,0.15);color:#fb923c">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M2 12h20M12 2v20"/></svg>
+      </div>
+      <div style="flex:1">
+        <div class="flex-between">
+          <div class="stat-value" id="liveIoVal">—</div>
+        </div>
+        <div class="stat-label" id="liveIoLabel">Disk I/O</div>
+        <div style="display:flex;gap:14px;margin-top:8px;font-size:12px">
+          <span style="color:#fb923c">Read <span id="liveIoRead" class="mono">0 KB/s</span></span>
+          <span style="color:#fbbf24">Write <span id="liveIoWrite" class="mono">0 KB/s</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="grid grid-2">
     <!-- Server Details & Live Telemetry -->
     <div class="card">
@@ -414,6 +448,8 @@ async function delServer() {
 
 // ---------------- Live State & Resource Bars Updater ----------------
 let lastStatus = '<%= vm.status %>';
+let lastNet = null;
+let lastIo = null;
 
 async function updateLiveStats() {
   try {
@@ -481,6 +517,46 @@ async function updateLiveStats() {
       if (diskAct) diskAct.textContent = actMb ? `${actMb} MB` : '0 MB';
       if (diskBadge) diskBadge.textContent = `${diskPct}%`;
       if (liveDiskBar) liveDiskBar.style.width = `${Math.min(100, Math.max(diskPct, 3))}%`;
+    }
+
+    // 4.5 Network + Disk I/O live rates (MB/s-style deltas over the poll loop)
+    const fmtRate = (bytesPerSec) => {
+      if (!bytesPerSec || bytesPerSec < 0) return '0 KB/s';
+      if (bytesPerSec >= 1024 * 1024) return (bytesPerSec / 1024 / 1024).toFixed(2) + ' MB/s';
+      return Math.max(0, Math.round(bytesPerSec / 1024)) + ' KB/s';
+    };
+    const nowMs = Date.now();
+    if (stats.network && stats.network.rx_bytes !== undefined) {
+      if (lastNet) {
+        const dt = Math.max(1, (nowMs - lastNet.t) / 1000);
+        const rx = (stats.network.rx_bytes - lastNet.rx) / dt;
+        const tx = (stats.network.tx_bytes - lastNet.tx) / dt;
+        const elRx = document.getElementById('liveNetRx');
+        const elTx = document.getElementById('liveNetTx');
+        const elVal = document.getElementById('liveNetVal');
+        const elLabel = document.getElementById('liveNetLabel');
+        if (elRx) elRx.textContent = fmtRate(rx);
+        if (elTx) elTx.textContent = fmtRate(tx);
+        const totalMb = ((stats.network.rx_bytes + stats.network.tx_bytes) / 1024 / 1024);
+        if (elVal) elVal.textContent = totalMb.toFixed(1) + ' MB';
+        if (elLabel) elLabel.textContent = 'Network I/O · total since boot';
+      }
+      lastNet = { t: nowMs, rx: stats.network.rx_bytes, tx: stats.network.tx_bytes };
+    }
+    if (stats.io && stats.io.read_bytes !== undefined) {
+      if (lastIo) {
+        const dt = Math.max(1, (nowMs - lastIo.t) / 1000);
+        const rd = (stats.io.read_bytes - lastIo.rd) / dt;
+        const wr = (stats.io.write_bytes - lastIo.wr) / dt;
+        const elRd = document.getElementById('liveIoRead');
+        const elWr = document.getElementById('liveIoWrite');
+        const elVal = document.getElementById('liveIoVal');
+        if (elRd) elRd.textContent = fmtRate(rd);
+        if (elWr) elWr.textContent = fmtRate(wr);
+        const totalMb = ((stats.io.read_bytes + stats.io.write_bytes) / 1024 / 1024);
+        if (elVal) elVal.textContent = totalMb.toFixed(1) + ' MB';
+      }
+      lastIo = { t: nowMs, rd: stats.io.read_bytes, wr: stats.io.write_bytes };
     }
 
     // 5. Uptime, Health Bar & PID

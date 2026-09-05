@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn, spawnSync, execSync } = require('child_process');
+const net = require('net');
 const crypto = require('crypto');
 // Built-in UUID (Node 14.17+/16+): zero npm dependencies for the agent.
 const uuidv4 = () => crypto.randomUUID();
@@ -70,6 +71,216 @@ function parseForwards(str) {
     if (m) out.push({ host: parseInt(m[1], 10), guest: parseInt(m[2], 10) });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// QMP / HMP monitor helpers (over the per-VM unix socket we add to QEMU cmds).
+// ---------------------------------------------------------------------------
+function qmpTalk(vm, commandLine) {
+  return new Promise((resolve) => {
+    const sockPath = path.join(vmDir(vm), 'qmp.sock');
+    if (!fs.existsSync(sockPath)) return resolve({ error: 'QMP socket not present (VM not running or started before this build?)' });
+    let sock;
+    try {
+      sock = net.connect(sockPath);
+    } catch (e) {
+      return resolve({ error: e.message });
+    }
+    sock.on('error', (e) => settle(new Error('QMP socket: ' + (e.message || e))));
+    sock.setTimeout(8000, () => settle(new Error('QMP timeout')));
+    let buf = '';
+    let phase = 'greeting'; // greeting -> capwait -> ready
+    let settled = false;
+    function settle(err, data) {
+      if (settled) return;
+      settled = true;
+      try { sock.destroy(); } catch (_) {}
+      resolve(err ? { error: String(err.message || err) } : data);
+    }
+    sock.on('data', (chunk) => {
+      buf += chunk.toString();
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        let o;
+        try { o = JSON.parse(line); } catch (_) { continue; }
+        if (o && o.event) continue; // async notifications
+        if (phase === 'greeting' && o && o.QMP) {
+          phase = 'capwait';
+          sock.write(JSON.stringify({ execute: 'qmp_capabilities' }) + '\n');
+          continue;
+        }
+        if (phase === 'capwait' && o && o.return !== undefined) {
+          phase = 'ready';
+          sock.write(commandLine + '\n');
+          continue;
+        }
+        if (phase === 'ready') {
+          if (o && o.error) return settle(new Error('QMP: ' + (o.error.desc || o.error.class)));
+          if (o && o.return !== undefined) return settle(null, o.return);
+        }
+      }
+    });
+  });
+}
+
+// Run an HMP command via the QMP "human-monitor-command" bridge.
+async function hmp(vm, cmd) {
+  const r = await qmpTalk(vm, JSON.stringify({ execute: 'human-monitor-command', arguments: { 'command-line': cmd } }));
+  if (r && r.error) throw new Error(r.error);
+  return r && r.return !== undefined ? r.return : '';
+}
+
+const SNAPSHOT_LINE = /^\s*(\d+)\s+(\S+)\s+([0-9.]+(?:\s*(?:KiB|MiB|GiB|kB|MB|GB|bytes))?)\s+(.+)$/;
+
+function parseSnapshots(text) {
+  const out = [];
+  if (!text) return out;
+  for (const raw of String(text).split('\n')) {
+    const line = raw.replace(/\r/g, '');
+    const m = line.match(SNAPSHOT_LINE);
+    if (!m) continue;
+    const sizeText = (m[3] || '').trim();
+    let sizeBytes = 0;
+    const sizeM = sizeText.match(/^([0-9.]+)\s*(KiB|MiB|GiB|kB|MB|GB|bytes)?$/i);
+    if (sizeM) {
+      const num = parseFloat(sizeM[1]);
+      const u = (sizeM[2] || 'bytes').toLowerCase();
+      if (u === 'gib' || u === 'gb') sizeBytes = num * 1024 ** 3;
+      else if (u === 'mib' || u === 'mb') sizeBytes = num * 1024 ** 2;
+      else if (u === 'kib' || u === 'kb') sizeBytes = num * 1024;
+      else sizeBytes = num;
+    }
+    out.push({ id: parseInt(m[1], 10), name: m[2], size_text: sizeText, size_bytes: sizeBytes, date: (m[4] || '').trim().slice(0, 22), vmclock: (m[4] || '').trim().split(/\s+/)[3] || '' });
+  }
+  return out;
+}
+
+function sanitizeSnapName(name) {
+  const clean = String(name || '').replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  return clean || 'snap-' + Date.now().toString(36);
+}
+
+function snapImage(vm) {
+  return vm.img_file || path.join(vmDir(vm), 'disk.qcow2');
+}
+
+async function listSnapshots(vm) {
+  try {
+    if (isRunning(vm)) {
+      const text = await hmp(vm, 'info snapshots');
+      return { ok: true, snapshots: parseSnapshots(text) };
+    }
+    const img = snapImage(vm);
+    if (!fs.existsSync(img)) return { ok: true, snapshots: [] };
+    const r = spawnSync('qemu-img', ['snapshot', '-l', img], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error('qemu-img snapshot -l: ' + (r.stderr || 'failed'));
+    return { ok: true, snapshots: parseSnapshots(r.stdout) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function createSnapshot(vm, name) {
+  const tag = sanitizeSnapName(name);
+  if (isRunning(vm)) {
+    const r = await hmp(vm, 'savevm ' + tag).catch((e) => ({ error: e.message }));
+    if (r && r.error) throw new Error('savevm failed: ' + r.error);
+    return { ok: true, name: tag, running: true };
+  }
+  const img = snapImage(vm);
+  const r = spawnSync('qemu-img', ['snapshot', '-c', tag, img], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error('Snapshot failed: ' + (r.stderr || 'qemu-img returned ' + r.status));
+  return { ok: true, name: tag, running: false };
+}
+
+async function deleteSnapshot(vm, name) {
+  const tag = sanitizeSnapName(name);
+  if (isRunning(vm)) {
+    const r = await hmp(vm, 'delvm ' + tag).catch((e) => ({ error: e.message }));
+    if (r && r.error) throw new Error('delvm failed: ' + r.error);
+    return { ok: true };
+  }
+  const img = snapImage(vm);
+  const r = spawnSync('qemu-img', ['snapshot', '-d', tag, img], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error('Snapshot delete failed: ' + (r.stderr || 'qemu-img returned ' + r.status));
+  return { ok: true };
+}
+
+async function revertSnapshot(vm, name) {
+  const tag = sanitizeSnapName(name);
+  if (isRunning(vm)) {
+    // Safest: pause, load state, resume. If loadvm fails, cont to unstick.
+    let err = null;
+    try { await hmp(vm, 'stop'); } catch (e) {}
+    try {
+      const r = await hmp(vm, 'loadvm ' + tag).catch((e) => ({ error: e.message }));
+      if (r && r.error) err = r.error;
+    } catch (e) { err = e.message; }
+    try { await hmp(vm, 'cont'); } catch (e) {}
+    if (err) throw new Error('Revert (live) failed: ' + err);
+    return { ok: true, running: true };
+  }
+  const img = snapImage(vm);
+  const r = spawnSync('qemu-img', ['snapshot', '-a', tag, img], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error('Revert failed: ' + (r.stderr || 'qemu-img returned ' + r.status));
+  return { ok: true, running: false };
+}
+
+function parseHumanBytes(text) {
+  const m = String(text || '0').trim().match(/^([0-9.]+)\s*([KMG]?i?B|bytes)?$/i);
+  if (!m) return 0;
+  const num = parseFloat(m[1]);
+  const u = (m[2] || 'bytes').toLowerCase();
+  if (u === 'gib' || u === 'gb') return num * 1024 ** 3;
+  if (u === 'mib' || u === 'mb') return num * 1024 ** 2;
+  if (u === 'kib' || u === 'kb') return num * 1024;
+  return num;
+}
+
+// Disk I/O counters via QMP query-blockstats (total since boot).
+async function ioStats(vm) {
+  if (!isRunning(vm)) return { read_bytes: 0, write_bytes: 0, reads: 0, writes: 0 };
+  const r = await qmpTalk(vm, JSON.stringify({ execute: 'query-blockstats' })).catch(() => null);
+  let readBytes = 0, writeBytes = 0, reads = 0, writes = 0;
+  if (r && Array.isArray(r)) {
+    for (const d of r) {
+      const s = d.stats || {};
+      if (Number.isFinite(s.rd_bytes)) { readBytes += s.rd_bytes; reads += s.rd_operations || 0; }
+      if (Number.isFinite(s.wr_bytes)) { writeBytes += s.wr_bytes; writes += s.wr_operations || 0; }
+    }
+  }
+  return { read_bytes: readBytes, write_bytes: writeBytes, reads, writes };
+}
+
+// Network byte counters via HMP "info usernet" (SLIRP session stats).
+async function netTotals(vm) {
+  if (!isRunning(vm)) return { rx_bytes: 0, tx_bytes: 0, rx_packets: 0, tx_packets: 0 };
+  try {
+    const text = await hmp(vm, 'info usernet');
+    let rxBytes = 0, txBytes = 0, rxPkts = 0, txPkts = 0;
+    for (const raw of String(text).split('\n')) {
+      const line = raw.replace(/\r/g, '');
+      const m = line.match(/<<\s*([0-9.]+(?:[KMG]i?B|bytes)?)\[(\d+)\]\s*>>\s*([0-9.]+(?:[KMG]i?B|bytes)?)\[(\d+)\]/i);
+      if (!m) continue;
+      rxBytes += parseHumanBytes(m[1]);
+      rxPkts += parseInt(m[2], 10) || 0;
+      txBytes += parseHumanBytes(m[3]);
+      txPkts += parseInt(m[4], 10) || 0;
+    }
+    return { rx_bytes: rxBytes, tx_bytes: txBytes, rx_packets: rxPkts, tx_packets: txPkts };
+  } catch (e) {
+    return { rx_bytes: 0, tx_bytes: 0, rx_packets: 0, tx_packets: 0 };
+  }
+}
+
+// Rich per-VM telemetry: live stats + cumulative disk/net counters.
+async function fullStats(vm) {
+  const live = liveStats(vm);
+  const [io, net] = await Promise.all([ioStats(vm), netTotals(vm)]);
+  return { ...live, io, network: net };
 }
 
 function buildQemuArgs(vm) {
@@ -162,6 +373,7 @@ function buildQemuArgs(vm) {
     '-serial', `file:${path.join(dir, 'boot.log')}`,
     '-vga', 'std',
     '-pidfile', path.join(dir, 'qemu.pid'),
+    '-qmp', `unix:${path.join(dir, 'qmp.sock')},server,nowait`,
     '-daemonize',
   );
 
