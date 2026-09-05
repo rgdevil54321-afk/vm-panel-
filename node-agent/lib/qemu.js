@@ -346,17 +346,17 @@ async function createVm({ data, osList }) {
   const diskSize = String(data.disk_size || '20G').toUpperCase();
   // Clamp requested RAM to what the host/container can actually provide
   // (leave 512MB for the system). Prevents un-bootable VMs on small nodes.
-  const hostTotalMb = Math.floor(os.totalmem() / 1024 / 1024);
-  let memAvailMb = hostTotalMb;
+  // In containers the cgroup limit is the ceiling; on bare hosts it's totalmem.
+  let capMb = Math.floor(os.totalmem() / 1024 / 1024);
   try {
     const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
-    if (Number.isFinite(max) && max > 0) memAvailMb = Math.min(memAvailMb, Math.floor(max / 1024 / 1024));
+    if (Number.isFinite(max) && max > 0 && max < os.totalmem()) capMb = Math.min(capMb, Math.floor(max / 1024 / 1024));
   } catch (e) {}
   try {
     const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
-    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) memAvailMb = Math.min(memAvailMb, Math.floor(lim / 1024 / 1024));
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) capMb = Math.min(capMb, Math.floor(lim / 1024 / 1024));
   } catch (e) {}
-  const maxVmMemMb = Math.max(256, memAvailMb - 512);
+  const maxVmMemMb = Math.max(256, capMb - 512);
   let memory = parseInt(data.memory || '2048', 10);
   if (!Number.isFinite(memory) || memory < 256) memory = 256;
   if (memory > maxVmMemMb) memory = maxVmMemMb;
@@ -529,33 +529,41 @@ function prepareImage(vm) {
 }
 
 // Available memory in bytes: min(host view, cgroup v1/v2 limit for containers).
-function availableMemoryBytes() {
+// Returns { bytes, limitedBy } so callers can explain WHERE the cap comes from.
+function memoryBudget() {
   let avail = os.freemem();
+  let limitedBy = 'host free memory (' + Math.round(os.freemem() / 1024 ** 2) + ' MB)';
   try {
     // cgroup v2
     const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
     const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
-    if (Number.isFinite(max) && max > 0) avail = Math.min(avail, Math.max(0, max - cur));
+    if (Number.isFinite(max) && max > 0) {
+      const cg = Math.max(0, max - cur);
+      if (cg < avail) { avail = cg; limitedBy = 'container/cgroup v2 limit (' + Math.round(max / 1024 ** 2) + ' MB total, ' + Math.round(cur / 1024 ** 2) + ' MB used)'; }
+    }
   } catch (e) {}
   try {
     // cgroup v1
     const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
     const used = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(), 10);
-    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) avail = Math.min(avail, Math.max(0, lim - used));
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) {
+      const cg = Math.max(0, lim - used);
+      if (cg < avail) { avail = cg; limitedBy = 'container/cgroup v1 limit (' + Math.round(lim / 1024 ** 2) + ' MB total, ' + Math.round(used / 1024 ** 2) + ' MB used)'; }
+    }
   } catch (e) {}
-  return avail;
+  return { bytes: avail, limitedBy };
 }
 
 function startVm(vm) {
   if (isRunning(vm)) return { ok: true, message: 'already running' };
   // Pre-flight: can the host/container actually provide the guest RAM?
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
-  const haveBytes = availableMemoryBytes();
-  if (haveBytes < wantBytes + 64 * 1024 * 1024) { // keep 64MB headroom for QEMU itself
-    const haveMb = Math.max(0, Math.round(haveBytes / 1024 / 1024));
+  const budget = memoryBudget();
+  if (budget.bytes < wantBytes + 64 * 1024 * 1024) { // keep 64MB headroom for QEMU itself
+    const haveMb = Math.max(0, Math.round(budget.bytes / 1024 / 1024));
     return {
       ok: false,
-      error: `Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${haveMb} MB is available. Stop other VMs, lower this VM's RAM, or increase the container/host memory limit.`,
+      error: `Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${haveMb} MB is available — limited by the ${budget.limitedBy}. The physical host may have much more RAM, but this process runs inside a container/cgroup cap. Fix: raise the container memory limit (Proxmox LXC: Options > Memory; Docker: --memory), or set the VM's RAM lower.`,
     };
   }
   if (!vm.img_file || !fs.existsSync(vm.img_file)) {
