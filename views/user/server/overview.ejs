@@ -333,25 +333,52 @@ function copyText(t) {
     .catch(() => VP.toast('Failed to copy', 'error'));
 }
 
-// Remote SSH via tmate — works from anywhere, no port forwarding needed
+// Remote SSH via tmate — works from anywhere, no port forwarding needed.
+// The server starts a background job (guest boot takes minutes) and we poll.
 async function loadTmate(regen, btn) {
   const el = document.getElementById('tmateCmd');
   const regenBtn = document.getElementById('tmateRegenBtn');
   if (btn) { btn.disabled = true; btn.textContent = regen ? 'Generating...' : 'Getting...'; }
-  el.textContent = 'Connecting to the VM (first boot takes 1-3 min for SSH to come up; installing tmate adds ~30s)...';
+  el.textContent = 'Connecting to the VM (first boot takes 1-3 min for SSH + tmate)...';
   try {
-    const r = await VP.api('/servers/<%= vm.id %>/power', { method: 'POST', body: { action: 'tmate', regen: !!regen } });
-    const ssh = r.ssh;
-    el.textContent = 'ssh ' + ssh;
-    el.onclick = () => copyText('ssh ' + ssh);
-    el.style.cursor = 'pointer';
-    el.title = 'Click to copy';
-    if (regenBtn) regenBtn.style.display = 'inline-flex';
-    VP.toast(regen ? 'New SSH command generated' : 'SSH command ready — click it to copy', 'success');
+    await VP.api('/servers/<%= vm.id %>/power', { method: 'POST', body: { action: 'tmate', regen: !!regen } });
+    const started = Date.now();
+    const poll = async () => {
+      try {
+        const s = await VP.api('/servers/<%= vm.id %>/tmate-status');
+        if (s.status === 'done' && s.ssh) {
+          el.textContent = 'ssh ' + s.ssh;
+          el.onclick = () => copyText('ssh ' + s.ssh);
+          el.style.cursor = 'pointer';
+          el.title = 'Click to copy';
+          if (regenBtn) regenBtn.style.display = 'inline-flex';
+          VP.toast(regen ? 'New SSH command generated' : 'SSH command ready — click it to copy', 'success');
+          if (btn) { btn.disabled = false; btn.textContent = 'Get SSH Command'; }
+          return;
+        }
+        if (s.status === 'error') {
+          el.textContent = 'Could not get SSH command: ' + s.error;
+          VP.toast(s.error, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = 'Get SSH Command'; }
+          return;
+        }
+        if (Date.now() - started > 5 * 60 * 1000) {
+          el.textContent = 'Still not ready after 5 minutes — is the VM running with internet? Check the VNC console.';
+          VP.toast('Timed out waiting for SSH command', 'error');
+          if (btn) { btn.disabled = false; btn.textContent = 'Get SSH Command'; }
+          return;
+        }
+        setTimeout(poll, 3000);
+      } catch (e) {
+        el.textContent = 'Could not get SSH command: ' + e.message;
+        VP.toast(e.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Get SSH Command'; }
+      }
+    };
+    setTimeout(poll, 3000);
   } catch (e) {
     el.textContent = 'Could not get SSH command: ' + e.message;
     VP.toast(e.message, 'error');
-  } finally {
     if (btn) { btn.disabled = false; btn.textContent = regen ? '↻ New' : 'Get SSH Command'; }
   }
 }

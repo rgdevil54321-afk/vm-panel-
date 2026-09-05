@@ -127,7 +127,8 @@ router.post('/admin/servers/:id/action', async (req, res) => {
     }
     else if (action === 'tmate') {
       const regen = !!(req.body && req.body.regen);
-      res.json({ ok: true, ssh: await vmService.getTmateSsh(vm, regen) });
+      const job = vmService.startTmateJob(vm, regen);
+      res.json({ ok: true, pending: true, job: job.job, note: job.note });
     }
     else res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
@@ -146,6 +147,12 @@ router.post('/admin/servers/:id/transfer', express.json(), (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+router.get('/admin/servers/:id/tmate-status', (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  return res.json(vmService.tmateJobStatus(vm));
 });
 
 router.get('/admin/servers/:id', (req, res) => {

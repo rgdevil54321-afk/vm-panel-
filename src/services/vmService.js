@@ -1133,10 +1133,41 @@ async function reinstall(vm, data, user) {
   return r;
 }
 
+// tmate jobs: the panel request returns instantly (Cloudflare kills requests
+// after ~100s) and the browser polls for the result while the job runs.
+const tmateJobs = new Map();
+
+function startTmateJob(vm, regen) {
+  const key = String(vm.id);
+  const existing = tmateJobs.get(key);
+  if (existing && existing.status === 'running' && Date.now() - existing.started < 5 * 60 * 1000) {
+    return { pending: true, job: key, note: 'already running' };
+  }
+  const job = { status: 'running', started: Date.now(), ssh: null, error: null };
+  tmateJobs.set(key, job);
+  getTmateSsh(vm, regen)
+    .then((ssh) => { job.status = 'done'; job.ssh = ssh; })
+    .catch((e) => { job.status = 'error'; job.error = e.message; })
+    .finally(() => setTimeout(() => tmateJobs.delete(key), 10 * 60 * 1000));
+  return { pending: true, job: key };
+}
+
+function tmateJobStatus(vm) {
+  const key = String(vm.id);
+  const job = tmateJobs.get(key);
+  if (!job) {
+    // No live job — if we already have a stored address, serve it.
+    const stored = vm.tmate_ssh;
+    if (stored) return { status: 'done', ssh: stored };
+    return { status: 'none' };
+  }
+  if (job.status === 'done') return { status: 'done', ssh: job.ssh };
+  if (job.status === 'error') return { status: 'error', error: job.error };
+  return { status: 'running', started: job.started };
+}
+
 async function getTmateSsh(vm, regen) {
   // Local VMs (node 1): connect to the guest via SSH and run tmate there.
-  // Cloud-init guests take 1-3 minutes after boot before SSH answers, so
-  // retry patiently for up to ~3 minutes before giving up.
   if (!isRemoteVm(vm)) {
     const ssh = require('./sshService');
     const script = [
@@ -1372,5 +1403,5 @@ module.exports = {
   VM_DIR, vmDir, dbVms, getVm, create, start, stop, restart, remove, update,
   resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, allocPort, allocVncPort, allocAgentPort,
   parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner,
-  reinstall, getTmateSsh,
+  reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
 };

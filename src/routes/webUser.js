@@ -147,17 +147,26 @@ router.post('/servers/:id/power', loadVm, express.json(), async (req, res) => {
       return res.json({ ok: true, status: 'running' });
     }
     if (action === 'tmate') {
-      // Remote SSH via tmate — works from anywhere, no port forwarding needed
+      // Async job (Cloudflare cuts long requests): start it and let the
+      // browser poll /servers/:id/tmate-status until the address is ready.
       const regen = !!(req.body && req.body.regen);
       if (!vmService.canAccess(req.user, req.vm, 'power')) {
         return res.status(403).json({ error: 'No permission for this server' });
       }
-      return res.json({ ok: true, ssh: await vmService.getTmateSsh(req.vm, regen) });
+      const job = vmService.startTmateJob(req.vm, regen);
+      return res.json({ ok: true, pending: true, job: job.job, note: job.note });
     }
     return res.status(400).json({ error: 'Unknown action' });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+});
+
+router.get('/servers/:id/tmate-status', loadVm, (req, res) => {
+  if (!vmService.canAccess(req.user, req.vm, 'power')) {
+    return res.status(403).json({ error: 'No permission for this server' });
+  }
+  return res.json(vmService.tmateJobStatus(req.vm));
 });
 
 router.post('/servers/:id/settings', loadVm, express.json(), (req, res) => {
