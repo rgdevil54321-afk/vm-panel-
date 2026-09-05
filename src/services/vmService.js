@@ -14,6 +14,32 @@ const { logActivity } = require('./activityService');
 const VM_DIR = config.vmDir;
 const RUNNING_PREFIX = 'qemu-system';
 
+// Available memory in bytes: min(host view, cgroup v1/v2 limit for containers).
+// Returns { bytes, limitedBy } so error messages explain WHERE the cap comes from.
+function memoryBudget() {
+  let avail = os.freemem();
+  let limitedBy = 'host free memory (' + Math.round(os.freemem() / 1024 ** 2) + ' MB)';
+  try {
+    // cgroup v2
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0) {
+      const cg = Math.max(0, max - cur);
+      if (cg < avail) { avail = cg; limitedBy = 'container/cgroup v2 limit (' + Math.round(max / 1024 ** 2) + ' MB total, ' + Math.round(cur / 1024 ** 2) + ' MB used)'; }
+    }
+  } catch (_) {}
+  try {
+    // cgroup v1
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    const used = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) {
+      const cg = Math.max(0, lim - used);
+      if (cg < avail) { avail = cg; limitedBy = 'container/cgroup v1 limit (' + Math.round(lim / 1024 ** 2) + ' MB total, ' + Math.round(used / 1024 ** 2) + ' MB used)'; }
+    }
+  } catch (_) {}
+  return { bytes: avail, limitedBy };
+}
+
 function ensureDirs() {
   for (const d of [VM_DIR, config.uploads.backup]) {
     fs.mkdirSync(d, { recursive: true });
@@ -974,20 +1000,9 @@ async function start(vm, { user = null } = {}) {
   }
   // Pre-flight: enough free RAM for the guest (+64MB QEMU overhead)?
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
-  const os = require('os');
-  let haveBytes = os.freemem();
-  try {
-    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
-    const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
-    if (Number.isFinite(max) && max > 0) haveBytes = Math.min(haveBytes, Math.max(0, max - cur));
-  } catch (_) {}
-  try {
-    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
-    const used = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim(), 10);
-    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) haveBytes = Math.min(haveBytes, Math.max(0, lim - used));
-  } catch (_) {}
-  if (haveBytes < wantBytes + 64 * 1024 * 1024) {
-    throw new Error(`Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${Math.max(0, Math.round(haveBytes / 1024 / 1024))} MB is available. Stop other VMs, lower this VM's RAM, or increase the container/host memory limit.`);
+  const budget = memoryBudget();
+  if (budget.bytes < wantBytes + 64 * 1024 * 1024) {
+    throw new Error(`Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${Math.max(0, Math.round(budget.bytes / 1024 / 1024))} MB is available — limited by the ${budget.limitedBy}. The physical host may have much more RAM, but this process runs inside a container/cgroup cap. Fix: raise the container memory limit (Proxmox LXC: Options > Memory; Docker: --memory), or set the VM's RAM lower.`);
   }
   ensureVncPort(vm);
   ensureAgentPort(vm);

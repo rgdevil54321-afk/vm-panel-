@@ -849,6 +849,30 @@ function hostStats() {
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
   const memPct = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+
+  // Also read the real host hardware (visible via /proc/meminfo inside a
+  // container) vs the container's cgroup cap. In a container hostMem is the
+  // physical RAM; totalMem here is the capped view. We report BOTH so the
+  // panel isn't confusing about why a 180GB box only lets VMs use 16GB.
+  let hostTotalMb = totalMem / 1024 / 1024;
+  let hostFreeMb = freeMem / 1024 / 1024;
+  let cgroupLimitMb = null;
+  try {
+    const mi = fs.readFileSync('/proc/meminfo', 'utf8');
+    const m = mi.match(/MemTotal:\s+(\d+)\s+kB/);
+    const f = mi.match(/MemAvailable:\s+(\d+)\s+kB/) || mi.match(/MemFree:\s+(\d+)\s+kB/);
+    if (m) hostTotalMb = parseInt(m[1], 10) / 1024 / 1024;
+    if (f) hostFreeMb = parseInt(f[1], 10) / 1024 / 1024;
+  } catch (e) {}
+  try {
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0 && max < os.totalmem()) cgroupLimitMb = max / 1024 / 1024;
+  } catch (e) {}
+  try {
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) cgroupLimitMb = Math.min(cgroupLimitMb || Infinity, lim / 1024 / 1024);
+  } catch (e) {}
+
   const load = os.loadavg();
   let disk = { total_bytes: 0, used_bytes: 0, free_bytes: 0, total_gb: '0', used_gb: '0', free_gb: '0', percent: 0 };
   try {
@@ -912,7 +936,7 @@ function hostStats() {
     process_uptime: Math.floor(process.uptime()),
     os: { type: os.type(), release: os.release(), arch: os.arch(), platform: os.platform() },
     cpu: { model: cpus[0] ? cpus[0].model : 'x86_64 Processor', cores_count: cpus.length, percent: overallPct, per_core: cpus.map(() => overallPct), load_avg: [load[0].toFixed(2), load[1].toFixed(2), load[2].toFixed(2)] },
-    memory: { total_mb: Math.round(totalMem / 1024 / 1024), used_mb: Math.round(usedMem / 1024 / 1024), free_mb: Math.round(freeMem / 1024 / 1024), percent: memPct },
+    memory: { total_mb: Math.round(totalMem / 1024 / 1024), used_mb: Math.round(usedMem / 1024 / 1024), free_mb: Math.round(freeMem / 1024 / 1024), percent: memPct, host_total_mb: Math.round(hostTotalMb), host_free_mb: Math.round(hostFreeMb), cgroup_limit_mb: cgroupLimitMb ? Math.round(cgroupLimitMb) : null, container_capped: !!cgroupLimitMb },
     swap,
     disk,
     hypervisor: { qemu_installed: usage().qemu, qemu_version: qemuVer, kvm_support: hasKvm(), cloud_init: spinupOk() },

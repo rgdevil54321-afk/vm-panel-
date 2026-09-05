@@ -134,6 +134,26 @@ function getNodeLiveStats() {
   const usedMem = totalMem - freeMem;
   const memPct = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
 
+  // Real host RAM (via /proc/meminfo) vs container cgroup cap, same as the agent.
+  let hostTotalMb = totalMem / 1024 / 1024;
+  let hostFreeMb = freeMem / 1024 / 1024;
+  let cgroupLimitMb = null;
+  try {
+    const mi = fs.readFileSync('/proc/meminfo', 'utf8');
+    const m = mi.match(/MemTotal:\s+(\d+)\s+kB/);
+    const f = mi.match(/MemAvailable:\s+(\d+)\s+kB/) || mi.match(/MemFree:\s+(\d+)\s+kB/);
+    if (m) hostTotalMb = parseInt(m[1], 10) / 1024 / 1024;
+    if (f) hostFreeMb = parseInt(f[1], 10) / 1024 / 1024;
+  } catch (_) {}
+  try {
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0 && max < os.totalmem()) cgroupLimitMb = max / 1024 / 1024;
+  } catch (_) {}
+  try {
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) cgroupLimitMb = Math.min(cgroupLimitMb || Infinity, lim / 1024 / 1024);
+  } catch (_) {}
+
   let diskInfo = {
     total_bytes: 0, used_bytes: 0, free_bytes: 0,
     total_gb: '0', used_gb: '0', free_gb: '0', percent: 0,
@@ -188,7 +208,7 @@ function getNodeLiveStats() {
     process_uptime: Math.floor(process.uptime()),
     os: { type: os.type(), release: os.release(), arch: os.arch(), platform: os.platform() },
     cpu: { model: cpus[0] ? cpus[0].model : 'x86_64 Processor', cores_count: cpus.length, percent: cpuStats.overall, per_core: cpuStats.cores, load_avg: [load[0].toFixed(2), load[1].toFixed(2), load[2].toFixed(2)] },
-    memory: { total_mb: Math.round(totalMem / 1024 / 1024), used_mb: Math.round(usedMem / 1024 / 1024), free_mb: Math.round(freeMem / 1024 / 1024), percent: memPct },
+    memory: { total_mb: Math.round(totalMem / 1024 / 1024), used_mb: Math.round(usedMem / 1024 / 1024), free_mb: Math.round(freeMem / 1024 / 1024), percent: memPct, host_total_mb: Math.round(hostTotalMb), host_free_mb: Math.round(hostFreeMb), cgroup_limit_mb: cgroupLimitMb ? Math.round(cgroupLimitMb) : null, container_capped: !!cgroupLimitMb },
     swap: swapStats,
     disk: diskInfo,
     network: netStats,
