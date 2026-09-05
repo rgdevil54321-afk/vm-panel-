@@ -1029,17 +1029,28 @@ async function getTmateSsh(vm) {
     "tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' >/tmp/tmate_addr 2>/dev/null || true",
     'cat /tmp/tmate_addr 2>/dev/null || true',
   ].join('\n');
-  const r = await execInGuest(vm, script, 180000);
-  const out = String((r && r.stdout) || '').trim();
-  const m = out.match(/\b([a-z0-9]+)\@tmate\.io\b/i);
-  if (!m) {
-    throw new Error('Could not obtain a tmate SSH address. Is tmate installed and does the VM have internet? Agent output: ' + out.slice(-300));
+  // The guest agent / SSH may not be up yet right after boot: retry up to ~3 min.
+  const deadline = Date.now() + 3 * 60 * 1000;
+  let lastErr = null;
+  while (Date.now() < deadline) {
+    try {
+      const r = await execInGuest(vm, script, 180000);
+      const out = String((r && r.stdout) || '').trim();
+      const m = out.match(/\b([a-z0-9]+)\@tmate\.io\b/i);
+      if (!m) throw new Error('tmate did not return an SSH address yet' + (out ? ' (guest output: ' + out.slice(-120) + ')' : ''));
+      if (!vm.tmate_ssh || vm.tmate_ssh !== m[1] + '@tmate.io') {
+        vm.tmate_ssh = m[1] + '@tmate.io';
+        state.upsertVm(vm);
+      }
+      return vm.tmate_ssh;
+    } catch (e) {
+      lastErr = e;
+      // "no agent port/token" style errors will not fix themselves with retries
+      if (/no agent port|no guest agent token/i.test(e.message)) throw e;
+      await new Promise((r) => setTimeout(r, 10000));
+    }
   }
-  if (!vm.tmate_ssh || vm.tmate_ssh !== m[1] + '@tmate.io') {
-    vm.tmate_ssh = m[1] + '@tmate.io';
-    state.upsertVm(vm);
-  }
-  return vm.tmate_ssh;
+  throw new Error('Guest did not become reachable in 3 minutes (still booting / no internet / guest agent missing). Last error: ' + (lastErr ? lastErr.message : 'timeout'));
 }
 
 async function regenerateTmate(vm) {

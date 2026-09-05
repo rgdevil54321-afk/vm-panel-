@@ -1121,6 +1121,8 @@ async function reinstall(vm, data, user) {
 
 async function getTmateSsh(vm, regen) {
   // Local VMs (node 1): connect to the guest via SSH and run tmate there.
+  // Cloud-init guests take 1-3 minutes after boot before SSH answers, so
+  // retry patiently for up to ~3 minutes before giving up.
   if (!isRemoteVm(vm)) {
     const ssh = require('./sshService');
     const script = [
@@ -1134,7 +1136,25 @@ async function getTmateSsh(vm, regen) {
       'tmate -S /tmp/tmate.sock wait tmate-ready 2>/dev/null || true',
       "tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}' 2>/dev/null || true",
     ].join('\n');
-    const conn = await ssh.connect(vm, { readyTimeout: 15000 });
+
+    let conn = null;
+    let lastErr = null;
+    const deadline = Date.now() + 3 * 60 * 1000; // 3 minutes total
+    let attempt = 0;
+    while (Date.now() < deadline) {
+      attempt++;
+      try {
+        conn = await ssh.connect(vm, { readyTimeout: 20000 });
+        break;
+      } catch (e) {
+        lastErr = e;
+        conn = null;
+        await new Promise((r) => setTimeout(r, 8000));
+      }
+    }
+    if (!conn) {
+      throw new Error('Could not SSH into the VM after ' + attempt + ' attempts (' + (lastErr ? lastErr.message : 'timeout') + '). The guest may still be booting (cloud-init takes 1-3 min), SSH may not be installed, or the VM has no network. Try again in a minute.');
+    }
     try {
       const r = await ssh.exec(conn, script, { timeout: 180000 });
       const out = String((r && (r.stdout || r.data)) || '').trim();

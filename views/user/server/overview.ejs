@@ -338,7 +338,7 @@ async function loadTmate(regen, btn) {
   const el = document.getElementById('tmateCmd');
   const regenBtn = document.getElementById('tmateRegenBtn');
   if (btn) { btn.disabled = true; btn.textContent = regen ? 'Generating...' : 'Getting...'; }
-  el.textContent = 'Connecting to server & generating SSH command... (up to 60s first time)';
+  el.textContent = 'Connecting to the VM (first boot takes 1-3 min for SSH to come up; installing tmate adds ~30s)...';
   try {
     const r = await VP.api('/servers/<%= vm.id %>/power', { method: 'POST', body: { action: 'tmate', regen: !!regen } });
     const ssh = r.ssh;
