@@ -936,6 +936,78 @@ function resizeDisk(vm, newSize) {
   return vm;
 }
 
+function freeDiskBytes() {
+  try {
+    const out = execSync(`df -B1 "${VM_DIR}"`, { encoding: 'utf8' }).trim().split('\n')[1].split(/\s+/);
+    return parseInt(out[3], 10) || 0;
+  } catch (e) { return 0; }
+}
+
+function normalizeDiskSize(size) {
+  const m = String(size || '').trim().toUpperCase().match(/^([0-9]+)([GM])$/);
+  if (!m) throw new Error('Disk size must be like 50G or 512M');
+  const num = parseInt(m[1], 10);
+  if (num < 1) throw new Error('Disk size must be at least 1 unit');
+  return { number: num, unit: m[2] };
+}
+
+// Attach a new data disk (qcow2) to the VM. VM must be stopped so QEMU picks it
+// up on next boot; the panel warns if it is running.
+function addDataDisk(vm, data) {
+  if (isRunning(vm)) throw new Error('Stop the VM before adding a data disk so it can attach on next boot.');
+  const { number, unit } = normalizeDiskSize(data && data.size);
+  const size = number + unit;
+  const bus = String((data && data.bus) || 'virtio').replace(/[^a-z0-9_-]/gi, '').slice(0, 16) || 'virtio';
+  const wantBytes = size.endsWith('G') ? number * 1024 ** 3 : number * 1024 ** 2;
+  const freeNow = freeDiskBytes();
+  if (freeNow < wantBytes + 2 * 1024 ** 3) {
+    throw new Error(`Not enough disk space: needs ${size} (+2 GB headroom) but only ${(freeNow / 1024 ** 3).toFixed(1)} GB free on the node.`);
+  }
+  const dir = vmDir(vm);
+  let disks = [];
+  try { disks = JSON.parse(vm.additional_disks || '[]'); } catch (e) { disks = []; }
+  let name = String((data && data.name) || '').replace(/[^a-zA-Z0-9_\-.]/g, '').slice(0, 40);
+  if (!name) name = 'data-' + (disks.length + 1);
+  let file = path.join(dir, name.endsWith('.qcow2') ? name : name + '.qcow2');
+  let i = 1;
+  while (fs.existsSync(file)) {
+    i++;
+    file = path.join(dir, `${name}-${i}.qcow2`);
+  }
+  const r = spawnSync('qemu-img', ['create', '-f', 'qcow2', file, size], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error('Failed to create data disk: ' + (r.stderr || 'qemu-img returned ' + r.status));
+  disks.push({ name: path.basename(file, '.qcow2'), size, bus, file });
+  vm.additional_disks = JSON.stringify(disks);
+  vm.updated_at = now();
+  state.upsertVm(vm);
+  return vm;
+}
+
+// Grow an existing data disk (by name). Works while stopped; while running the
+// guest needs to re-read its partition (e.g. growpart) to use it.
+function growDataDisk(vm, diskName, newSize) {
+  const { unit } = normalizeDiskSize(newSize);
+  let disks = [];
+  try { disks = JSON.parse(vm.additional_disks || '[]'); } catch (e) { disks = []; }
+  const idx = disks.findIndex((d) => d.name === diskName || path.basename(String(d.file || '')).replace(/\.qcow2$/, '') === diskName);
+  if (idx < 0) throw new Error('Data disk not found: ' + diskName);
+  const disk = disks[idx];
+  const cur = normalizeDiskSize(disk.size);
+  const next = normalizeDiskSize(newSize);
+  const curBytes = cur.unit === 'G' ? cur.number * 1024 ** 3 : cur.number * 1024 ** 2;
+  const nextBytes = next.unit === 'G' ? next.number * 1024 ** 3 : next.number * 1024 ** 2;
+  if (nextBytes < curBytes) throw new Error('New size must be larger than the current size (' + disk.size + '). Shrinking is not supported.');
+  const file = disk.file || path.join(vmDir(vm), disk.name.endsWith('.qcow2') ? disk.name : disk.name + '.qcow2');
+  const r = spawnSync('qemu-img', ['resize', file, next.number + next.unit], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error('Failed to grow data disk: ' + (r.stderr || 'qemu-img returned ' + r.status));
+  disk.size = next.number + next.unit;
+  disks[idx] = disk;
+  vm.additional_disks = JSON.stringify(disks);
+  vm.updated_at = now();
+  state.upsertVm(vm);
+  return vm;
+}
+
 function bootLog(vm) {
   const dir = vmDir(vm);
   let content = '';

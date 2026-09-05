@@ -1,0 +1,100 @@
+<%- include('../../partials/head', { title: vm.name + ' - Storage' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Storage Volumes · <%= vm.name %></h2>
+    <span class="pill <%= running ? 'pill-green' : 'pill-gray' %>"><%= running ? 'Running' : 'Stopped' %></span>
+  </div>
+  <%- include('_tabs') %>
+
+  <% if (running) { %>
+    <div class="alert alert-warn mb-3">VM is running — new data disks attach on next boot, and growing a disk needs the guest to re-read it (e.g. <code class="mono">sudo growpart /dev/vdb 1; sudo resize2fs /dev/vdb1</code>).</div>
+  <% } %>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Volume</th><th>Size</th><th>Bus</th><th>Type</th><th class="right">Actions</th></tr></thead>
+        <tbody>
+        <% for (const vol of volumes) { %>
+          <tr>
+            <td class="mono"><%= vol.name %> <%= vol.primary ? '<span class="pill pill-blue" style="margin-left:6px">boot</span>' : '' %></td>
+            <td><%= vol.size %></td>
+            <td><span class="pill pill-gray"><%= vol.bus %></span></td>
+            <td><%= vol.primary ? 'system (root)' : 'data' %></td>
+            <td class="right">
+              <div class="flex right" style="gap:6px">
+                <% if (vol.primary) { %>
+                  <button class="btn btn-sm" onclick="resizeMain()">Grow Root Disk</button>
+                <% } else { %>
+                  <button class="btn btn-sm" onclick="growDisk('<%= vol.name %>', '<%= vol.size %>')">Grow</button>
+                <% } %>
+              </div>
+            </td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-title">Add Data Disk</div>
+    <div class="grid grid-3" style="gap:12px;margin-top:10px">
+      <div class="form-group" style="margin:0">
+        <label>Size</label>
+        <input id="dd_size" class="input" placeholder="e.g. 50G or 512M" value="20G" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Name (optional)</label>
+        <input id="dd_name" class="input" placeholder="data1" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Bus</label>
+        <select id="dd_bus" style="width:100%;padding:10px;border-radius:8px">
+          <option value="virtio">virtio (recommended)</option>
+          <option value="sata">sata</option>
+          <option value="ide">ide</option>
+          <option value="scsi">scsi</option>
+        </select>
+      </div>
+    </div>
+    <div class="flex right" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="addDisk()">Add Data Disk</button>
+    </div>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+async function addDisk() {
+  const size = document.getElementById('dd_size').value.trim();
+  const name = document.getElementById('dd_name').value.trim();
+  const bus = document.getElementById('dd_bus').value;
+  try {
+    await VP.api('/servers/<%= vm.id %>/volumes', { method: 'POST', body: { size, name, bus } });
+    VP.toast('Data disk added' + (<%= running %> ? ' — it will attach on next boot' : ''), 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function growDisk(name, cur) {
+  const size = prompt('New size (larger than ' + cur + '):');
+  if (!size) return;
+  try {
+    await VP.api(`/servers/<%= vm.id %>/volumes/${encodeURIComponent(name)}/grow`, { method: 'POST', body: { size } });
+    VP.toast('Disk grown to ' + size.toUpperCase(), 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function resizeMain() {
+  const size = prompt('New root disk size (e.g. 100G). VM must be stopped:');
+  if (!size) return;
+  try {
+    await VP.api('/servers/<%= vm.id %>/resize', { method: 'POST', body: { disk_size: size } });
+    VP.toast('Root disk resized', 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

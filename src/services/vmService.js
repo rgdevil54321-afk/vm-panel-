@@ -1540,6 +1540,105 @@ async function resizeDisk(vm, newSize, user) {
   return getVm(vm.id);
 }
 
+// ---------- Storage volumes (data disks) ----------
+function parseDataDisks(vm) {
+  let disks = [];
+  try { disks = JSON.parse(vm.additional_disks || '[]'); } catch (e) { disks = []; }
+  return Array.isArray(disks) ? disks : [];
+}
+
+function persistDataDisks(vm, disks) {
+  db.prepare('UPDATE vms SET additional_disks = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(disks), now(), vm.id);
+}
+
+function normalizeDiskSizeLocal(size) {
+  const m = String(size || '').trim().toUpperCase().match(/^([0-9]+)([GM])$/);
+  if (!m) throw new Error('Disk size must be like 50G or 512M');
+  const num = parseInt(m[1], 10);
+  if (num < 1) throw new Error('Disk size must be at least 1 unit');
+  return { number: num, unit: m[2] };
+}
+
+function freeDiskBytesLocal() {
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync(`df -B1 "${VM_DIR}"`, { encoding: 'utf8' }).trim().split('\n')[1].split(/\s+/);
+    return parseInt(out[3], 10) || 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+async function addDataDiskFor(vm, data, user) {
+  const { number, unit } = normalizeDiskSizeLocal(data && data.size);
+  const size = number + unit;
+  const bus = String((data && data.bus) || 'virtio').replace(/[^a-z0-9_-]/gi, '').slice(0, 16) || 'virtio';
+  if (isLocalVm(vm)) {
+    const wantBytes = size.endsWith('G') ? number * 1024 ** 3 : number * 1024 ** 2;
+    const freeNow = freeDiskBytesLocal();
+    if (freeNow < wantBytes + 2 * 1024 ** 3) {
+      throw new Error(`Not enough disk space: needs ${size} (+2 GB headroom) but only ${(freeNow / 1024 ** 3).toFixed(1)} GB free on the local host.`);
+    }
+    const dir = vmDir(vm);
+    let disks = parseDataDisks(vm);
+    let name = String((data && data.name) || '').replace(/[^a-zA-Z0-9_\-.]/g, '').slice(0, 40);
+    if (!name) name = 'data-' + (disks.length + 1);
+    let file = path.join(dir, name.endsWith('.qcow2') ? name : name + '.qcow2');
+    let i = 1;
+    while (fs.existsSync(file)) {
+      i++;
+      file = path.join(dir, `${name}-${i}.qcow2`);
+    }
+    const r = spawnSync('qemu-img', ['create', '-f', 'qcow2', file, size], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error('Failed to create data disk: ' + (r.stderr || 'qemu-img returned ' + r.status));
+    disks.push({ name: path.basename(file, '.qcow2'), size, bus, file });
+    persistDataDisks(vm, disks);
+  } else {
+    const node = remoteNodeFor(vm);
+    if (!node) throw new Error('Node not found for this VM');
+    const d = await nodeRegistry.addDiskOnNode(node, vm, { name: data && data.name, size, bus });
+    if (!d || d.ok === false) throw new Error((d && d.error) || 'Failed to add data disk on node');
+    persistDataDisks(vm, parseDataDisks({ additional_disks: d.vm ? d.vm.additional_disks : '[]' }));
+  }
+  logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:disk:add', details: { size, bus } });
+  return getVm(vm.id);
+}
+
+async function growDataDiskFor(vm, diskName, newSize, user) {
+  normalizeDiskSizeLocal(newSize);
+  if (isLocalVm(vm)) {
+    let disks = parseDataDisks(vm);
+    const idx = disks.findIndex((d) => d.name === diskName || String(d.file || '').replace(/\.qcow2$/, '').split(path.sep).pop() === diskName || d.name === String(diskName).replace(/\.qcow2$/, ''));
+    if (idx < 0) throw new Error('Data disk not found: ' + diskName);
+    const disk = disks[idx];
+    normalizeDiskSizeLocal(disk.size);
+    const r = spawnSync('qemu-img', ['resize', disk.file || path.join(vmDir(vm), disk.name.endsWith('.qcow2') ? disk.name : disk.name + '.qcow2'), String(newSize).toUpperCase()], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error('Failed to grow data disk: ' + (r.stderr || 'qemu-img returned ' + r.status));
+    disk.size = String(newSize).toUpperCase();
+    disks[idx] = disk;
+    persistDataDisks(vm, disks);
+  } else {
+    const node = remoteNodeFor(vm);
+    if (!node) throw new Error('Node not found for this VM');
+    const d = await nodeRegistry.growDiskOnNode(node, vm, diskName, newSize);
+    if (!d || d.ok === false) throw new Error((d && d.error) || 'Failed to grow data disk on node');
+    persistDataDisks(vm, parseDataDisks({ additional_disks: d.vm ? d.vm.additional_disks : '[]' }));
+  }
+  logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:disk:grow', details: { disk: diskName, newSize: String(newSize).toUpperCase() } });
+  return getVm(vm.id);
+}
+
+function volumesFor(vm) {
+  const main = {
+    name: 'root',
+    size: vm.disk_size,
+    bus: 'virtio',
+    file: vm.img_file,
+    primary: true,
+  };
+  return { volumes: [main, ...parseDataDisks(vm)], running: isRunning(vm) };
+}
+
 function usage() {
   return {
     qemu: hasBin('qemu-system-x86_64'),
@@ -1670,4 +1769,5 @@ module.exports = {
   parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner,
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
+  addDataDiskFor, growDataDiskFor, volumesFor,
 };

@@ -138,6 +138,14 @@
 
       <div class="card">
         <div class="flex-between mb-2">
+          <div class="card-title" style="margin:0">Storage Volumes</div>
+          <a href="/servers/<%= vm.id %>/volumes" class="btn btn-sm">Manage</a>
+        </div>
+        <div class="muted text-sm">Root disk: <span class="mono"><%= vm.disk_size %></span><% const _ads = Array.isArray(vm.additional_disks) ? vm.additional_disks : (function(){ try { return JSON.parse(vm.additional_disks || '[]') || []; } catch (_) { return []; } })(); %><% if (_ads.length) { %> · <%= _ads.length %> data disk(s)<% } %></div>
+      </div>
+
+      <div class="card">
+        <div class="flex-between mb-2">
           <div class="card-title" style="margin:0">Subusers (<%= subs.length %>)</div>
           <a href="/servers/<%= vm.id %>/subusers" class="btn btn-sm">Manage</a>
         </div>

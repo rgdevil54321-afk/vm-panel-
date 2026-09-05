@@ -243,6 +243,12 @@ async function deleteVmOnNode(node, vm) {
 async function resizeVmOnNode(node, vm, newSize) {
   return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/resize`, body: JSON.stringify({ disk_size: newSize }) });
 }
+async function addDiskOnNode(node, vm, data) {
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/disks`, body: JSON.stringify(data) });
+}
+async function growDiskOnNode(node, vm, name, size) {
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/disks/${encodeURIComponent(name)}/resize`, body: JSON.stringify({ size }) });
+}
 async function vmStatsOnNode(node, vm) {
   return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/stats` });
 }

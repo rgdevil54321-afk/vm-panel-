@@ -220,6 +220,25 @@ const server = http.createServer(async (req, res) => {
         const data = JSON.parse(body.toString() || '{}');
         return json(res, 200, { ok: true, vm: serializeVm(qemu.resizeDisk(vm, data.disk_size)) });
       }
+      if (method === 'POST' && sub === '/disks') {
+        const body = await readBody(req);
+        const data = JSON.parse(body.toString() || '{}');
+        try {
+          return json(res, 201, { ok: true, vm: serializeVm(qemu.addDataDisk(vm, data)) });
+        } catch (e) {
+          return json(res, 400, { ok: false, error: e.message });
+        }
+      }
+      const diskMatch = sub.match(/^\/disks\/([^/]+)\/resize$/);
+      if (diskMatch && method === 'POST') {
+        const body = await readBody(req);
+        const data = JSON.parse(body.toString() || '{}');
+        try {
+          return json(res, 200, { ok: true, vm: serializeVm(qemu.growDataDisk(vm, decodeURIComponent(diskMatch[1]), data.size)) });
+        } catch (e) {
+          return json(res, 400, { ok: false, error: e.message });
+        }
+      }
       if (method === 'GET' && sub === '/status') return json(res, 200, { ok: true, status: qemu.statusOf(vm), running: qemu.isRunning(vm) });
       if (method === 'GET' && sub === '/stats') return json(res, 200, { ok: true, stats: await qemu.fullStats(vm) });
       if (method === 'GET' && sub === '/bootlog') return json(res, 200, { ok: true, log: qemu.bootLog(vm) });

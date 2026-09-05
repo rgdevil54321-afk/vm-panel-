@@ -153,6 +153,29 @@ router.post('/servers/:id/snapshots/:sname/delete', loadVm, async (req, res) => 
   }
 });
 
+// ---------- Storage volumes ----------
+router.get('/servers/:id/volumes', loadVm, (req, res) => {
+  render(res, 'server/volumes', { vm: req.vm, ...vmService.volumesFor(req.vm) });
+});
+
+router.post('/servers/:id/volumes', loadVm, express.json(), async (req, res) => {
+  try {
+    const updated = await vmService.addDataDiskFor(req.vm, req.body, req.user);
+    return res.json({ ok: true, vm: updated });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/servers/:id/volumes/:name/grow', loadVm, express.json(), async (req, res) => {
+  try {
+    const updated = await vmService.growDataDiskFor(req.vm, req.params.name, req.body.size, req.user);
+    return res.json({ ok: true, vm: updated });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/servers/:id/schedules', loadVm, (req, res) => {
   const schedules = db.prepare('SELECT * FROM schedules WHERE vm_id = ? ORDER BY id DESC').all(req.vm.id);
   render(res, 'server/schedules', { vm: req.vm, schedules });
