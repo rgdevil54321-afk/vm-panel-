@@ -91,6 +91,11 @@ function updateUser(id, data) {
   if (data.suspended !== undefined) { set.push('suspended = @suspended'); vals.suspended = data.suspended ? 1 : 0; }
   if (data.verified !== undefined) { set.push('verified = @verified'); vals.verified = data.verified ? 1 : 0; }
   if (data.root_admin !== undefined) { set.push('root_admin = @root_admin'); vals.root_admin = data.root_admin ? 1 : 0; }
+  if (data.credits !== undefined) { set.push('credits = @credits'); vals.credits = Number(data.credits) || 0; }
+  if (data.max_vms !== undefined) { set.push('max_vms = @max_vms'); vals.max_vms = parseInt(data.max_vms, 10); }
+  if (data.max_cpu !== undefined) { set.push('max_cpu = @max_cpu'); vals.max_cpu = parseInt(data.max_cpu, 10); }
+  if (data.max_mem_mb !== undefined) { set.push('max_mem_mb = @max_mem_mb'); vals.max_mem_mb = parseInt(data.max_mem_mb, 10); }
+  if (data.max_disk_gb !== undefined) { set.push('max_disk_gb = @max_disk_gb'); vals.max_disk_gb = parseInt(data.max_disk_gb, 10); }
   if (data.tfa_disabled) { set.push('tfa_enabled = 0, tfa_secret = NULL'); }
   if (set.length) {
     set.push('updated_at = @updated_at');

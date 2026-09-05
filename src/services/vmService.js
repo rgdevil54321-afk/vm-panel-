@@ -11,6 +11,7 @@ const { db, settings } = require('../lib/db');
 const logger = require('../lib/logger');
 const nodeRegistry = require('./nodeRegistry');
 const { logActivity } = require('./activityService');
+const webhooks = require('./webhookService');
 
 const VM_DIR = config.vmDir;
 const RUNNING_PREFIX = 'qemu-system';
@@ -913,6 +914,11 @@ async function create({ user, data }) {
   const exists = db.prepare('SELECT id FROM vms WHERE name = ? AND owner_id = ?').get(vmName, user.id);
   if (exists) throw new Error(`VM "${vmName}" already exists`);
 
+  // ---- Quota + credit enforcement ----
+  const { q, wantMem, wantDiskGb } = checkQuota(user, data);
+  const cost = billingCost(wantMem, wantDiskGb);
+  chargeCredits(user, cost);
+
   // ---- Normalize advanced hKVM-style fields (safe defaults, TCG/Docker compatible) ----
   const adv = normalizeAdvanced(data);
 
@@ -1241,6 +1247,7 @@ async function start(vm, { user = null } = {}) {
     }
     setDbStatus(vm.id, 'running');
     logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:start', details: { node: node.name } });
+    webhooks.emit(vm, 'vm:start', { id: vm.id, name: vm.name, node: node.name });
     return { ok: true, status: 'running' };
   }
 
@@ -1302,6 +1309,7 @@ async function start(vm, { user = null } = {}) {
   }
   setDbStatus(vm.id, 'running');
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:start' });
+  webhooks.emit(vm, 'vm:start', { id: vm.id, name: vm.name });
   return { ok: true, pid: daemonPid };
 }
 
@@ -1340,6 +1348,7 @@ async function stop(vm, { user = null, force = false } = {}) {
   try { fs.unlinkSync(path.join(vmDir(vm), 'qemu.pid')); } catch (_) {}
   setDbStatus(vm.id, 'stopped');
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: force ? 'vm:kill' : 'vm:stop' });
+  webhooks.emit(vm, 'vm:stop', { id: vm.id, name: vm.name, forced: !!force });
   return { ok: true };
 }
 
@@ -1538,6 +1547,66 @@ async function resizeDisk(vm, newSize, user) {
   db.prepare('UPDATE vms SET disk_size = ?, updated_at = ? WHERE id = ?').run(newSize.toUpperCase(), now(), vm.id);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:resize', details: { newSize } });
   return getVm(vm.id);
+}
+
+// ---------- Quotas + credits (billing) ----------
+function parseDiskGb(value) {
+  const m = String(value || '0').trim().toUpperCase().match(/^([0-9.]+)([GM])$/);
+  if (!m) return 0;
+  const num = parseFloat(m[1]);
+  return m[2] === 'G' ? num : num / 1024;
+}
+
+function effectiveQuota(user) {
+  const g = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : -1; };
+  let vms = db.prepare(
+    `SELECT COUNT(*) AS cnt, COALESCE(SUM(memory),0) AS mem, COALESCE(SUM(cpus),0) AS cpu FROM vms WHERE owner_id = ?`
+  ).get(user.id);
+  const diskNowGb = db.prepare('SELECT disk_size FROM vms WHERE owner_id = ?').all(user.id)
+    .reduce((a, r) => a + parseDiskGb(r.disk_size), 0);
+  return {
+    used_vms: vms.cnt, used_cpu: vms.cpu, used_mem_mb: vms.mem, used_disk_gb: diskNowGb,
+    max_vms: g(user.max_vms), max_cpu: g(user.max_cpu), max_mem_mb: g(user.max_mem_mb), max_disk_gb: g(user.max_disk_gb),
+    credits: Number(user.credits) || 0,
+  };
+}
+
+function checkQuota(user, data, osListEntry) {
+  const q = effectiveQuota(user);
+  const wantMem = parseInt(data.memory || settings.get('vm.default_memory') || '2048', 10);
+  const wantCpu = parseInt(data.cpus || settings.get('vm.default_cpus') || '2', 10);
+  const wantDiskGb = parseDiskGb(data.disk_size || settings.get('vm.default_disk') || '20G');
+  if (q.max_vms >= 0 && q.used_vms >= q.max_vms) {
+    throw new Error('Quota exceeded: you may run at most ' + q.max_vms + ' VM(s) and already have ' + q.used_vms + '.');
+  }
+  if (q.max_cpu >= 0 && q.used_cpu + wantCpu > q.max_cpu) {
+    throw new Error('Quota exceeded: CPU limit is ' + q.max_cpu + ' cores, this would make ' + (q.used_cpu + wantCpu) + '.');
+  }
+  if (q.max_mem_mb >= 0 && q.used_mem_mb + wantMem > q.max_mem_mb) {
+    throw new Error(`Quota exceeded: RAM limit is ${q.max_mem_mb} MB, this would make ${q.used_mem_mb + wantMem} MB.`);
+  }
+  if (q.max_disk_gb >= 0 && q.used_disk_gb + wantDiskGb > q.max_disk_gb) {
+    throw new Error(`Quota exceeded: disk limit is ${q.max_disk_gb} GB, this would make ${(q.used_disk_gb + wantDiskGb).toFixed(1)} GB.`);
+  }
+  return { q, wantMem, wantDiskGb };
+}
+
+function billingCost(wantMem, wantDiskGb) {
+  const enabled = String(settings.get('billing.enabled') || '0') === '1';
+  if (!enabled) return 0;
+  const base = parseFloat(settings.get('billing.base_price') || '0') || 0;
+  const ramPrice = parseFloat(settings.get('billing.ram_price') || '0') || 0;
+  const diskPrice = parseFloat(settings.get('billing.disk_price') || '0') || 0;
+  return base + ramPrice * (wantMem / 1024) + diskPrice * wantDiskGb;
+}
+
+function chargeCredits(user, cost) {
+  if (cost <= 0) return;
+  const { credits } = effectiveQuota(user);
+  if (credits < cost) {
+    throw new Error(`Not enough credits: this VM costs ${cost.toFixed(2)} credits but you have ${credits.toFixed(2)}.`);
+  }
+  db.prepare('UPDATE users SET credits = credits - ? WHERE id = ?').run(cost, user.id);
 }
 
 // ---------- Storage volumes (data disks) ----------
@@ -1769,5 +1838,5 @@ module.exports = {
   parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner,
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
-  addDataDiskFor, growDataDiskFor, volumesFor,
+  addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,
 };

@@ -232,6 +232,14 @@ router.get('/admin/users/:id', (req, res) => {
   render(res, 'userDetail', { target: authService.publicUser(target), vms, otherVms, loginHistory, logs });
 });
 
+// Quota + credit usage summary for the admin user detail page
+router.get('/admin/users/:id/quota', (req, res) => {
+  const target = authService.findById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  const q = vmService.effectiveQuota(target);
+  res.json({ ok: true, ...q });
+});
+
 router.post('/admin/users/:id/assign-vm', express.json(), (req, res) => {
   const target = authService.findById(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
@@ -349,6 +357,9 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
   save('panel.wallpapers_api_key');
   for (const key of ['mail.host', 'mail.port', 'mail.secure', 'mail.user', 'mail.pass', 'mail.from']) save(key);
   for (const key of ['security.allow_register', 'security.require_verify', 'security.force_tfa', 'vm.auto_port_min', 'vm.auto_port_max', 'vm.vnc_port_min', 'vm.vnc_port_max', 'vm.agent_port_min', 'vm.agent_port_max', 'vm.default_memory', 'vm.default_cpus', 'vm.default_disk', 'vm.default_os']) save(key);
+  save('billing.enabled');
+  if (req.body['billing.enabled'] === undefined) settings.set('billing.enabled', '0'); else settings.set('billing.enabled', '1');
+  save('billing.base_price'); save('billing.ram_price'); save('billing.disk_price');
   if (req.body.vm_os_list) {
     try {
       settings.set('vm.os_list', JSON.stringify(JSON.parse(req.body.vm_os_list)));

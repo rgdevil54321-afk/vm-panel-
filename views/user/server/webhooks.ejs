@@ -1,0 +1,79 @@
+<%- include('../../partials/head', { title: vm.name + ' - Webhooks' }) %>
+<%- include('../../partials/ambient') %>
+<%- include('../../partials/topbar') %>
+<%- include('../../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Webhooks · <%= vm.name %></h2>
+    <span class="pill <%= running ? 'pill-green' : 'pill-gray' %>"><%= running ? 'Running' : 'Stopped' %></span>
+  </div>
+  <%- include('_tabs') %>
+
+  <div class="card">
+    <div class="card-title">Endpoints</div>
+    <% if (hooks.length === 0) { %>
+      <div class="muted text-sm" style="padding:12px 0">No webhooks configured. Add one to receive VM lifecycle events (vm:start, vm:stop).</div>
+    <% } else { %>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>URL</th><th>Events</th><th>Secret</th><th class="right">Actions</th></tr></thead>
+        <tbody>
+        <% for (let i = 0; i < hooks.length; i++) { const h = hooks[i]; %>
+          <tr>
+            <td class="mono" style="word-break:break-all"><%= h.url %></td>
+            <td>
+              <% const evts = h.events || []; if (evts.includes('*')) { %><span class="pill pill-blue">all</span>
+              <% } else { for (const e of evts) { %><span class="pill pill-gray"><%= e %></span><% } } %>
+            </td>
+            <td class="mono"><%= h.secret ? '••••••' : 'none' %></td>
+            <td class="right"><button class="btn btn-sm btn-danger" onclick="delHook(<%= i %>)">Delete</button></td>
+          </tr>
+        <% } %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+  </div>
+
+  <div class="card mt-3" style="padding:20px">
+    <div class="card-title">Add Webhook</div>
+    <div class="grid grid-3" style="gap:12px;margin-top:10px">
+      <div class="form-group" style="margin:0">
+        <label>URL</label>
+        <input id="wh_url" class="input" placeholder="https://example.com/hook" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Secret (optional, HMAC-SHA256 signature)</label>
+        <input id="wh_secret" class="input" placeholder="" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Events (comma-separated)</label>
+        <input id="wh_events" class="input" placeholder="vm:start, vm:stop" value="vm:start, vm:stop" />
+      </div>
+    </div>
+    <div class="flex right" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="addHook()">Add Webhook</button>
+    </div>
+  </div>
+</div>
+<%- include('../../partials/music') %>
+<%- include('../../partials/foot') %>
+<script>
+async function addHook() {
+  const url = document.getElementById('wh_url').value.trim();
+  const secret = document.getElementById('wh_secret').value.trim();
+  const events = document.getElementById('wh_events').value.split(',').map((s) => s.trim()).filter(Boolean);
+  try {
+    await VP.api('/servers/<%= vm.id %>/webhooks', { method: 'POST', body: { url, secret, events } });
+    VP.toast('Webhook added', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function delHook(i) {
+  try {
+    await VP.api(`/servers/<%= vm.id %>/webhooks/${i}`, { method: 'DELETE' });
+    VP.toast('Webhook removed', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+</script>

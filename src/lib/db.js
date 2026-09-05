@@ -237,6 +237,10 @@ const defaultSettings = {
   'vm.default_machine_type': 'pc',
   'vm.default_firmware': 'bios',
   'vm.data_disk_default': '10G',
+  'billing.enabled': '0',
+  'billing.base_price': '0',
+  'billing.ram_price': '0',
+  'billing.disk_price': '0',
 };
 
 const vmsColumns = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
@@ -271,10 +275,31 @@ if (!userColumns.includes('secret_blur')) {
   db.exec('ALTER TABLE users ADD COLUMN secret_blur INTEGER NOT NULL DEFAULT 0');
 }
 
+// ---- Per-user quotas + credits (billing) ----
+const userQuotaCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+const addUserCol = (name, ddl) => { if (!userQuotaCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
+addUserCol('credits', 'REAL NOT NULL DEFAULT 0');
+addUserCol('max_vms', 'INTEGER NOT NULL DEFAULT -1');
+addUserCol('max_cpu', 'INTEGER NOT NULL DEFAULT -1');
+addUserCol('max_mem_mb', 'INTEGER NOT NULL DEFAULT -1');
+addUserCol('max_disk_gb', 'INTEGER NOT NULL DEFAULT -1');
+
 // tmate SSH address for local VMs (remote VMs store it on the agent side)
 const vmTmateCol = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 if (!vmTmateCol.includes('tmate_ssh')) {
   db.exec("ALTER TABLE vms ADD COLUMN tmate_ssh TEXT DEFAULT NULL");
+}
+
+// Webhooks configuration for a VM (JSON array of {url, secret, events[]})
+const vmWebhookCol = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
+if (!vmWebhookCol.includes('webhooks')) {
+  db.exec("ALTER TABLE vms ADD COLUMN webhooks TEXT DEFAULT '[]'");
+}
+
+// Backup retention (# backups to keep) per schedule
+const schedCols = db.prepare('PRAGMA table_info(schedules)').all().map((c) => c.name);
+if (!schedCols.includes('retention')) {
+  db.exec('ALTER TABLE schedules ADD COLUMN retention INTEGER NOT NULL DEFAULT 5');
 }
 
 // ---- Venlix hKVM-style VM creator advanced columns ----

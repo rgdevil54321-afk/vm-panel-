@@ -32,7 +32,11 @@ function runJob(schedule, vm) {
       if (sched.action === 'start') await vmService.start(curVm);
       else if (sched.action === 'stop') vmService.stop(curVm);
       else if (sched.action === 'restart') await vmService.restart(curVm);
-      else if (sched.action === 'backup') backupService.createBackup(curVm, { name: `sched-${Date.now()}` });
+      else if (sched.action === 'backup') {
+        backupService.createBackup(curVm, { name: `sched-${Date.now()}` });
+        const keep = parseInt(sched.retention, 10);
+        if (Number.isFinite(keep) && keep >= 0) backupService.pruneBackups(curVm.id, keep);
+      }
       db.prepare('UPDATE schedules SET last_run_at = ? WHERE id = ?').run(new Date().toISOString(), sched.id);
       logActivity({ vm_id: curVm.id, event: 'schedule:run', details: { name: sched.name, action: sched.action } });
     } catch (e) {
@@ -87,8 +91,8 @@ function add(data, user) {
   if (!cronExpr) throw new Error('Invalid cron expression');
   if (!['start', 'stop', 'restart', 'backup'].includes(data.action)) throw new Error('Invalid action');
   const info = db.prepare(
-    'INSERT INTO schedules (vm_id, name, cron, action, enabled, created_at) VALUES (?,?,?,?,?,?)'
-  ).run(data.vm_id, data.name, cronExpr, data.action, data.enabled ? 1 : 0, new Date().toISOString());
+    'INSERT INTO schedules (vm_id, name, cron, action, enabled, retention, created_at) VALUES (?,?,?,?,?,?,?)'
+  ).run(data.vm_id, data.name, cronExpr, data.action, data.enabled ? 1 : 0, parseInt(data.retention || '5', 10), new Date().toISOString());
   const sched = db.prepare('SELECT * FROM schedules WHERE id = ?').get(Number(info.lastInsertRowid));
   register(sched);
   logActivity({ user_id: user ? user.id : null, vm_id: data.vm_id, event: 'schedule:create', details: data });
@@ -99,12 +103,13 @@ function update(id, data, user) {
   const sched = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id);
   if (!sched) throw new Error('Schedule not found');
   const cronExpr = data.cron ? toCron(data.cron) : sched.cron;
-  db.prepare('UPDATE schedules SET name = ?, cron = ?, action = ?, enabled = ? WHERE id = ?')
+  db.prepare('UPDATE schedules SET name = ?, cron = ?, action = ?, enabled = ?, retention = ? WHERE id = ?')
     .run(
       data.name ?? sched.name,
       cronExpr,
       data.action ?? sched.action,
       data.enabled !== undefined ? (data.enabled ? 1 : 0) : sched.enabled,
+      data.retention !== undefined ? parseInt(data.retention, 10) : sched.retention,
       id
     );
   const updated = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id);

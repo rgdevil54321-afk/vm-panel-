@@ -1,0 +1,35 @@
+<%- include('../partials/head', { title: 'Billing & Quotas' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <h2 style="font-size:22px">Billing &amp; Quotas</h2>
+
+  <% if (billingEnabled) { %>
+  <div class="grid grid-2 mt-3">
+    <div class="card" style="padding:24px">
+      <div class="card-title" style="margin:0">Credits Balance</div>
+      <div class="display-credit" style="font-size:46px;font-weight:800;color:var(--accent-2);margin:14px 0"><%= q.credits.toFixed(2) %></div>
+      <div class="muted text-sm">Credits are deducted when you create a VM. <span class="mono">credits</span> appear here once an admin tops you up.</div>
+    </div>
+    <div class="card" style="padding:24px">
+      <div class="card-title" style="margin:0">Resource Usage</div>
+      <% const lim = (v) => (v < 0 ? 'Unlimited' : String(v)); %>
+      <table class="quota-table" style="width:100%;margin-top:12px">
+        <tbody>
+          <tr><td>VMs</td><td class="mono"><%= q.used_vms %> / <%= lim(q.max_vms) %></td></tr>
+          <tr><td>CPU cores</td><td class="mono"><%= q.used_cpu %> / <%= lim(q.max_cpu) %></td></tr>
+          <tr><td>RAM</td><td class="mono"><%= q.used_mem_mb %> MB / <%= lim(q.max_mem_mb) %></td></tr>
+          <tr><td>Disk</td><td class="mono"><%= q.used_disk_gb.toFixed(1) %> GB / <%= lim(q.max_disk_gb) %></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <% } else { %>
+  <div class="card mt-3" style="padding:24px">
+    <div class="muted">Billing is currently disabled by the administrator.</div>
+  </div>
+  <% } %>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>

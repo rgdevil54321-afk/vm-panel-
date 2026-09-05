@@ -155,7 +155,7 @@ router.post('/servers/:id/snapshots/:sname/delete', loadVm, async (req, res) => 
 
 // ---------- Storage volumes ----------
 router.get('/servers/:id/volumes', loadVm, (req, res) => {
-  render(res, 'server/volumes', { vm: req.vm, ...vmService.volumesFor(req.vm) });
+  render(res, 'server/volumes', { vm: req.vm, running: vmService.statusOf(req.vm) === 'running', ...vmService.volumesFor(req.vm) });
 });
 
 router.post('/servers/:id/volumes', loadVm, express.json(), async (req, res) => {
@@ -198,8 +198,46 @@ router.get('/servers/:id/subusers', loadVm, (req, res) => {
 });
 
 router.get('/servers/:id/activity', loadVm, (req, res) => {
-  const logs = activity.listActivity({ vm_id: req.vm.id, limit: 200 });
+  const logs = activity.listActivity({ vm_id: req.vm.id, limit: 100 });
   render(res, 'server/activity', { vm: req.vm, logs });
+});
+
+// ---------- Webhooks ----------
+router.get('/servers/:id/webhooks', loadVm, (req, res) => {
+  const webhookService = require('../services/webhookService');
+  const hooks = webhookService.getWebhooks(req.vm);
+  render(res, 'server/webhooks', { vm: req.vm, hooks, running: vmService.statusOf(req.vm) === 'running' });
+});
+
+router.post('/servers/:id/webhooks', loadVm, express.json(), (req, res) => {
+  try {
+    const webhookService = require('../services/webhookService');
+    if (!String(req.body.url || '').trim()) return res.status(400).json({ error: 'URL is required' });
+    try { new URL(req.body.url); } catch (_) { return res.status(400).json({ error: 'Invalid URL' }); }
+    let evts = req.body.events || ['vm:start', 'vm:stop'];
+    if (typeof evts === 'string') evts = evts.split(',').map((s) => s.trim()).filter(Boolean);
+    const hooks = webhookService.getWebhooks(req.vm);
+    hooks.push({ url: String(req.body.url).trim(), secret: req.body.secret || '', events: evts });
+    const updated = webhookService.setWebhooks(req.vm, hooks);
+    activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:webhook:create', details: { url: req.body.url } });
+    res.json({ ok: true, hooks: updated });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/servers/:id/webhooks/:index', loadVm, (req, res) => {
+  try {
+    const webhookService = require('../services/webhookService');
+    const hooks = webhookService.getWebhooks(req.vm);
+    const idx = parseInt(req.params.index, 10);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= hooks.length) return res.status(400).json({ error: 'Bad index' });
+    hooks.splice(idx, 1);
+    const updated = webhookService.setWebhooks(req.vm, hooks);
+    res.json({ ok: true, hooks: updated });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.post('/servers/:id/power', loadVm, express.json(), async (req, res) => {
@@ -419,6 +457,10 @@ router.post('/profile/password', express.json(), (req, res) => {
 
 router.get('/settings', (req, res) => render(res, 'userSettings', { tfaSetup: null }));
 router.get('/user-settings', (req, res) => res.redirect('/settings'));
+router.get('/billing', (req, res) => {
+  const q = vmService.effectiveQuota(req.user);
+  render(res, 'billing', { q, billingEnabled: String(settings.get('billing.enabled') || '0') === '1' });
+});
 router.post('/settings', express.urlencoded({ extended: true }), (req, res) => {
   try {
     const data = {};

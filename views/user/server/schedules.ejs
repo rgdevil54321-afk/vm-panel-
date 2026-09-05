@@ -51,12 +51,17 @@
       </div>
       <div class="form-group">
         <label>Action</label>
-        <select id="sAction">
+        <select id="sAction" onchange="toggleRetention()">
           <option value="start">Start server</option>
           <option value="stop">Stop server</option>
           <option value="restart">Restart server</option>
           <option value="backup" selected>Create backup</option>
         </select>
+      </div>
+      <div class="form-group" id="retentionGroup">
+        <label>Keep last N backups (retention)</label>
+        <input id="sRetention" type="number" value="5" min="0"/>
+        <div class="form-hint">Older scheduled backups are pruned automatically.</div>
       </div>
       <div class="flex right">
         <button class="btn" onclick="document.getElementById('schedModal').style.display='none'">Cancel</button>
@@ -68,12 +73,18 @@
 <%- include('../../partials/music') %>
 <%- include('../../partials/foot') %>
 <script>
-function openAdd() { document.getElementById('schedModal').style.display = 'block'; }
+function openAdd() { document.getElementById('schedModal').style.display = 'block'; toggleRetention(); }
+function toggleRetention() {
+  const isBackup = document.getElementById('sAction').value === 'backup';
+  document.getElementById('retentionGroup').style.display = isBackup ? '' : 'none';
+}
 async function saveSched() {
   try {
+    const body = { name: document.getElementById('sName').value || 'schedule', cron: document.getElementById('sCron').value, action: document.getElementById('sAction').value, enabled: true };
+    if (body.action === 'backup') body.retention = parseInt(document.getElementById('sRetention').value || '5', 10);
     await VP.api('/servers/<%= vm.id %>/schedules', {
       method: 'POST',
-      body: { name: document.getElementById('sName').value || 'schedule', cron: document.getElementById('sCron').value, action: document.getElementById('sAction').value, enabled: true },
+      body,
     });
     VP.toast('Schedule saved', 'success');
     location.reload();
