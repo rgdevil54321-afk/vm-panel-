@@ -210,6 +210,10 @@
       Live Boot Logs
       <span class="pulse-dot" style="margin-left:6px;margin-right:0"></span>
     </button>
+    <button class="console-tab" id="tabVnc" onclick="switchView('vnc')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Graphical (VNC)
+    </button>
   </div>
 
   <!-- SSH Terminal Pane -->
@@ -319,6 +323,33 @@
       <div class="resize-handle rh-bl" data-target="bootTermWrapper" data-dir="bl" title="Drag to resize (Bottom-Left)"></div>
       <div class="resize-handle rh-br" data-target="bootTermWrapper" data-dir="br" title="Drag to resize (Bottom-Right)"></div>
       <div class="resize-handle rh-b" data-target="bootTermWrapper" data-dir="b" title="Drag to resize height (Bottom)"></div>
+    </div>
+  </div>
+
+  <!-- Graphical (noVNC) Pane -->
+  <div id="paneVnc" class="card" style="padding:16px;display:none">
+    <div class="console-toolbar flex-between" style="margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <span id="vncState" class="pill pill-gray">not connected</span>
+        <% if (vm.vnc_port) { %>
+          <span class="muted text-sm mono" style="font-size:11px">VNC port: <%= vm.vnc_port %></span>
+        <% } %>
+      </div>
+      <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="vncConnect()">Connect</button>
+        <button class="btn btn-sm" onclick="vncDisconnect()">Disconnect</button>
+        <button class="btn btn-sm btn-primary" onclick="toggleFullscreen('paneVnc')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          Full
+        </button>
+      </div>
+    </div>
+    <div id="vncScreenWrap" style="width:100%;height:calc(100vh - 350px);min-height:380px;background:#060913;border-radius:12px;border:1px solid var(--border);overflow:hidden;position:relative">
+      <div id="vncStatusMsg" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text-muted);text-align:center;padding:20px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>Graphical console.<br/>Start the server, then click Connect. Requires VNC support and a display configured on the hypervisor.</span>
+      </div>
+      <canvas id="vncScreen" style="display:none;width:100%;height:100%"></canvas>
     </div>
   </div>
 </div>
@@ -924,14 +955,18 @@
     activeTab = tab;
     document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
     document.getElementById('tabBootLog').classList.toggle('active', tab === 'bootlog');
+    document.getElementById('tabVnc').classList.toggle('active', tab === 'vnc');
     document.getElementById('paneTerminal').style.display = tab === 'terminal' ? 'block' : 'none';
     document.getElementById('paneBootLog').style.display = tab === 'bootlog' ? 'block' : 'none';
+    if (document.getElementById('paneVnc')) document.getElementById('paneVnc').style.display = tab === 'vnc' ? 'block' : 'none';
 
     if (history.replaceState) {
-      history.replaceState(null, null, tab === 'bootlog' ? '?tab=bootlog' : '?tab=terminal');
+      const q = tab === 'bootlog' ? '?tab=bootlog' : tab === 'vnc' ? '?tab=vnc' : '?tab=terminal';
+      history.replaceState(null, null, q);
     }
 
     if (tab === 'terminal') {
+      window.vncDisconnect && window.vncDisconnect();
       leaveBootLog();
       setTimeout(() => {
         try { fit.fit(); sshResize(); term.focus(); updateSizeBadge(); } catch (e) {}
@@ -940,6 +975,7 @@
         sshConnect();
       }
     } else if (tab === 'bootlog') {
+      window.vncDisconnect && window.vncDisconnect();
       if (socket && connected) {
         socket.emit('console:leave');
       }
@@ -947,19 +983,98 @@
         try { bootFit.fit(); } catch (e) {}
       }, 100);
       joinBootLog();
+    } else if (tab === 'vnc') {
+      if (socket && connected) {
+        socket.emit('console:leave');
+      }
+      leaveBootLog();
+      window.vncConnect && window.vncConnect();
     }
+  };
+
+  // ================= noVNC Graphical Console =================
+  let vnc = null;
+  const vncStateEl = document.getElementById('vncState');
+  const vncScreen = document.getElementById('vncScreen');
+  const vncMsg = document.getElementById('vncStatusMsg');
+
+  function setVncState(label, cls) {
+    if (!vncStateEl) return;
+    vncStateEl.textContent = label;
+    vncStateEl.className = 'pill ' + (cls || 'pill-gray');
+  }
+
+  window.initVnc = function initVnc() {
+    if (!vncScreen) return;
+    vncScreen.style.display = 'none';
+    if (vncMsg) vncMsg.style.display = 'flex';
+  };
+
+  window.vncConnect = function vncConnect() {
+    if (!vncScreen || !isVmRunning) {
+      if (!isVmRunning) { if (window.VP && VP.toast) VP.toast('Start the server first', 'warn'); }
+      return;
+    }
+    const wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const url = wsProto + location.host + '/vncws/<%= vm.id %>?token=' + encodeURIComponent(vpToken());
+
+    function loadRfb() {
+      import('/vendor/novnc/core/rfb.js').then((mod) => {
+        try { vncConnectWith(mod.RFB || mod.default); } catch (e) { tryConnectFail(e); }
+      }).catch((e) => tryConnectFail(e));
+    }
+
+    function tryConnectFail(e) {
+      if (window.VP && VP.toast) VP.toast('Could not load noVNC: ' + e.message, 'error');
+      setVncState('noVNC unavailable', 'pill-red');
+    }
+
+    window.vncConnectWith = function vncConnectWith(RFB) {
+      if (vnc) { try { vnc.disconnect(); } catch (_) {} vnc = null; }
+      if (vncScreen) vncScreen.style.display = 'block';
+      if (vncMsg) vncMsg.style.display = 'none';
+      const rfb = new RFB(vncScreen, url, { credentials: { password: '' } });
+      vnc = rfb;
+      setVncState('connecting', 'pill-yellow');
+      rfb.addEventListener('connect', () => setVncState('connected', 'pill-green'));
+      rfb.addEventListener('disconnect', () => {
+        setVncState('disconnected', 'pill-gray');
+        if (vncMsg) vncMsg.style.display = 'flex';
+        if (vncScreen) vncScreen.style.display = 'none';
+        vnc = null;
+      });
+      rfb.addEventListener('securityfailure', () => setVncState('auth failed', 'pill-red'));
+    };
+
+    loadRfb();
+  };
+
+  window.vncDisconnect = function vncDisconnect() {
+    if (vnc) {
+      try { vnc.disconnect(); } catch (_) {}
+      vnc = null;
+    }
+    if (vncMsg) vncMsg.style.display = 'flex';
+    if (vncScreen) vncScreen.style.display = 'none';
+    setVncState('disconnected', 'pill-gray');
   };
 
   // Check initial tab from query parameter or URL hash
   const urlParams = new URLSearchParams(window.location.search);
-  const initialTab = (urlParams.get('tab') === 'bootlog' || window.location.hash === '#bootlog') ? 'bootlog' : 'terminal';
+  const initialTab = (urlParams.get('tab') === 'bootlog' || window.location.hash === '#bootlog') ? 'bootlog'
+    : (urlParams.get('tab') === 'vnc' || window.location.hash === '#vnc') ? 'vnc'
+    : 'terminal';
 
   initTerm();
   initBootTerm();
   initCornerResizers();
+  initVnc();
 
   if (initialTab === 'bootlog') {
     switchView('bootlog');
+    setupSocket();
+  } else if (initialTab === 'vnc') {
+    switchView('vnc');
     setupSocket();
   } else {
     if (isVmRunning) {

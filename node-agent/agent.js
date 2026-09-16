@@ -6,6 +6,7 @@ const url = require('url');
 const crypto = require('crypto');
 const qemu = require('./lib/qemu');
 const state = require('./lib/state');
+const wsrelay = require('./lib/wsrelay');
 
 // minimal .env loader (zero external deps - built-in modules only)
 (function loadEnv() {
@@ -303,6 +304,17 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     return json(res, 500, { ok: false, error: e.message });
   }
+});
+
+server.on('upgrade', (req, socket, head) => {
+  wsrelay.handleUpgrade(req, socket, head, {
+    auth: (r) => auth(r),
+    getVncPort: (id) => {
+      const vm = state.getVm(id);
+      if (vm && vm.vnc_port && qemu.isRunning(vm)) return vm.vnc_port;
+      return null;
+    },
+  });
 });
 
 server.listen(PORT, HOST, () => {

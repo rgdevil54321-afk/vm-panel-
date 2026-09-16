@@ -309,6 +309,37 @@
   <!-- ============ CUSTOMIZATION & APPEARANCE ============ -->
   <div class="tab-pane" id="tab-customization" style="display:none">
     
+    <!-- 0. THEME PRESET PICKER -->
+    <div class="card mb-4" style="padding:22px">
+      <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="card-title" style="margin:0;font-size:16px">Theme Preset</div>
+          <div class="muted text-sm mt-1">Switch the whole panel color scheme instantly</div>
+        </div>
+        <span class="pill pill-blue mono font-bold" id="activeThemeBadge"><%= all['panel.theme'] || 'dark' %></span>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px" id="themePresetGrid">
+        <% const themes = [
+          { id: 'dark', name: 'Dark Storm', desc: 'Indigo & sky (default)', sw: ['#090d19', '#6366f1', '#38bdf8'] },
+          { id: 'midnight', name: 'Midnight', desc: 'Deep blue, electric cyan', sw: ['#020617', '#06b6d4', '#818cf8'] },
+          { id: 'nord', name: 'Nord', desc: 'Arctic frost', sw: ['#10141d', '#88c0d0', '#b48ead'] },
+          { id: 'aurora', name: 'Aurora', desc: 'Emerald violet aurora', sw: ['#04130f', '#34d399', '#a78bfa'] },
+          { id: 'daylight', name: 'Daylight', desc: 'Crisp light mode', sw: ['#eef2f7', '#4f46e5', '#0891b2'] }
+        ]; %>
+        <% themes.forEach(t => { %>
+        <button type="button" class="theme-swatch" data-theme-id="<%= t.id %>" onclick="setThemePreset('<%= t.id %>')">
+          <div class="swatch-row">
+            <span class="swatch" style="background:<%= t.sw[0] %>"></span>
+            <span class="swatch" style="background:<%= t.sw[1] %>"></span>
+            <span class="swatch" style="background:<%= t.sw[2] %>"></span>
+          </div>
+          <div class="swatch-name"><%= t.name %></div>
+          <div class="muted" style="font-size:11px"><%= t.desc %></div>
+        </button>
+        <% }); %>
+      </div>
+    </div>
+
     <!-- 1. SLIDERS & CONTROLS SECTION -->
     <div class="grid grid-2 mb-4" style="gap:20px">
       <!-- Sliders Column -->
@@ -696,6 +727,14 @@ function showTab(name) {
   const target = document.getElementById('tab-' + name);
   if (target) target.style.display = 'block';
   document.querySelectorAll('#settingsTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  if (name === 'customization') {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    document.querySelectorAll('#themePresetGrid .theme-swatch').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-theme-id') === currentTheme);
+    });
+    const badge = document.getElementById('activeThemeBadge');
+    if (badge) badge.textContent = currentTheme;
+  }
 }
 
 function switchBgSubtab(subtab) {
@@ -914,6 +953,17 @@ function updateLiveOverlay(val) {
   scheduleAutoSave();
 }
 
+function setThemePreset(themeId) {
+  document.documentElement.setAttribute('data-theme', themeId);
+  const badge = document.getElementById('activeThemeBadge');
+  if (badge) badge.textContent = themeId;
+  document.querySelectorAll('#themePresetGrid .theme-swatch').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-theme-id') === themeId);
+  });
+  scheduleAutoSave();
+  if (window.VP) VP.toast('Theme preview saved', 'success');
+}
+
 function scheduleAutoSave() {
   clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(() => {
@@ -933,7 +983,8 @@ function flushAutoSave() {
     const payload = JSON.stringify({
       'panel.bg_blur': document.getElementById('sliderBlur').value,
       'panel.bg_transparency': document.getElementById('sliderTransparency').value,
-      'panel.bg_overlay': document.getElementById('sliderOverlay').value
+      'panel.bg_overlay': document.getElementById('sliderOverlay').value,
+      'panel.theme': document.documentElement.getAttribute('data-theme') || 'dark'
     });
     navigator.sendBeacon('/api/customization/save-beacon', new Blob([payload], { type: 'application/json' }));
   } catch (_) {}
@@ -948,6 +999,7 @@ async function saveCustomizationSettings(showToast = true) {
   const blur = document.getElementById('sliderBlur').value;
   const transparency = document.getElementById('sliderTransparency').value;
   const overlay = document.getElementById('sliderOverlay').value;
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
   try {
     const res = await fetch('/api/customization/save', {
       method: 'POST',
@@ -955,7 +1007,8 @@ async function saveCustomizationSettings(showToast = true) {
       body: JSON.stringify({
         'panel.bg_blur': blur,
         'panel.bg_transparency': transparency,
-        'panel.bg_overlay': overlay
+        'panel.bg_overlay': overlay,
+        'panel.theme': theme
       })
     });
     const d = await res.json();
@@ -973,6 +1026,10 @@ function resetCustomizationDefaults() {
   document.getElementById('sliderBlur').value = 16;
   document.getElementById('sliderTransparency').value = 65;
   document.getElementById('sliderOverlay').value = 0.55;
+  document.documentElement.setAttribute('data-theme', 'dark');
+  document.querySelectorAll('#themePresetGrid .theme-swatch').forEach(b => b.classList.toggle('active', b.getAttribute('data-theme-id') === 'dark'));
+  const badge = document.getElementById('activeThemeBadge');
+  if (badge) badge.textContent = 'dark';
   const bg = document.getElementById('bgLayer');
   if (bg) {
     bg.style.backgroundImage = 'none';
