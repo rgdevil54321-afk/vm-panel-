@@ -881,13 +881,6 @@ do_change_ports() {
 show_menu() {
   while true; do
     safe_clear
-    printf "${MAGENTA}${BOLD}"
-    echo " __      __                _ _       _"
-    echo " \ \    / /_ _  __ _ _  __(_|)_ __  | |__  _   _"
-    echo "  \ \/\/ / _\` | '_\` | || \ / | '  \ | '_ \| | | |"
-    echo "   \_/\_/\__,_|\__, |\_,_/_|_|_|_|_||_| |_|\__, |"
-    echo "               |___/                        |___/"
-    printf "${NC}"
     printf "${CYAN}${BOLD}"
     echo "  ╭───────────────────────────────────────────────────────────╮"
     echo "  │          ⚡  Venlix Nodes Management Suite  ⚡            │"
