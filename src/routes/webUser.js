@@ -417,29 +417,29 @@ router.post('/servers/:id/delete', loadVm, async (req, res) => {
   }
 });
 
-router.get('/profile', (req, res) => {
+router.get('/account', (req, res) => {
   const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
-  render(res, 'profile', { loginHistory });
+  render(res, 'account', { loginHistory, tfaSetup: null });
 });
 
-router.post('/profile', express.urlencoded({ extended: true }), (req, res) => {
+router.get('/profile', (req, res) => res.redirect('/account'));
+router.get('/user-settings', (req, res) => res.redirect('/account'));
+
+router.post('/account', express.urlencoded({ extended: true }), (req, res) => {
   try {
     const data = {};
     if (req.body.name !== undefined) data.name = req.body.name;
     if (req.body.email) data.email = req.body.email;
-    if (req.body.language) data.language = req.body.language;
     authService.updateUser(req.user.id, data);
-    return render(res, 'profile', {
-      success: 'Profile updated!',
-      loginHistory: activity.listLoginHistory({ user_id: req.user.id, limit: 50 }),
-    });
+    const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
+    return render(res, 'account', { success: 'Profile updated!', loginHistory, tfaSetup: null });
   } catch (e) {
-    return render(res, 'profile', {
-      error: e.message,
-      loginHistory: activity.listLoginHistory({ user_id: req.user.id, limit: 50 }),
-    });
+    const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
+    return render(res, 'account', { error: e.message, loginHistory, tfaSetup: null });
   }
 });
+
+router.get('/settings', (req, res) => res.redirect('/account'));
 
 router.post('/profile/avatar', uploadAvatar.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -504,15 +504,18 @@ router.post('/settings', express.urlencoded({ extended: true }), (req, res) => {
     if (req.body.music_volume !== undefined) data.music_volume = Math.max(0, Math.min(100, parseInt(req.body.music_volume, 10) || 35));
     if (req.body.sfx_enabled !== undefined) data.sfx_enabled = req.body.sfx_enabled === 'on' || req.body.sfx_enabled === '1' || req.body.sfx_enabled === 'true' ? 1 : 0;
     authService.updateUser(req.user.id, data);
-    return render(res, 'userSettings', { success: 'Settings saved!' });
+    const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
+    return render(res, 'account', { success: 'Settings saved!', loginHistory, tfaSetup: null });
   } catch (e) {
-    return render(res, 'userSettings', { error: e.message });
+    const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
+    return render(res, 'account', { error: e.message, loginHistory, tfaSetup: null });
   }
 });
 
 router.get('/settings/tfa/setup', (req, res) => {
   const tfaSetup = authService.setupTfa(req.user);
-  return render(res, 'userSettings', { tfaSetup });
+  const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
+  return render(res, 'account', { tfaSetup, loginHistory });
 });
 
 router.post('/settings/tfa/enable', express.json(), (req, res) => {

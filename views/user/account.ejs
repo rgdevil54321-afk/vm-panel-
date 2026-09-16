@@ -1,0 +1,259 @@
+<%- include('../partials/head', { title: 'Account' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+
+<style>
+.tab { display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:600;color:var(--text-dim);cursor:pointer;border:none;background:transparent;transition:all .15s ease; }
+.tab:hover { color:var(--text);background:var(--glass); }
+.tab.active { color:#fff;background:var(--glass-strong);border:1px solid var(--border); }
+</style>
+
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px;margin:0">Account</h2>
+    <a class="btn btn-sm" href="/dashboard">Back to Dashboard</a>
+  </div>
+
+  <% if (typeof error !== 'undefined' && error) { %><div class="alert alert-error"><%= error %></div><% } %>
+  <% if (typeof success !== 'undefined' && success) { %><div class="alert alert-success"><%= success %></div><% } %>
+
+  <!-- Tabs -->
+  <div class="tabs mb-4" id="accountTabs">
+    <button class="tab active" data-tab="account" onclick="showTab('account')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Account
+    </button>
+    <button class="tab" data-tab="security" onclick="showTab('security')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Security
+    </button>
+    <button class="tab" data-tab="api" onclick="showTab('api')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+      API Credentials
+    </button>
+    <button class="tab" data-tab="history" onclick="showTab('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Login History
+    </button>
+  </div>
+
+  <!-- Account Tab -->
+  <div class="tab-pane" id="tab-account">
+    <div class="grid grid-2" style="gap:20px">
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:14px">Profile Information</div>
+        <form method="post" action="/account">
+          <div class="flex mb-3" style="gap:16px;align-items:center">
+            <div class="avatar" style="width:72px;height:72px;font-size:24px">
+              <% if (user.avatar) { %><img src="<%= user.avatar %>"/><% } else { %><%= user.username[0].toUpperCase() %><% } %>
+            </div>
+            <label class="btn btn-sm">
+              Upload avatar
+              <input type="file" id="avatarInput" style="display:none" onchange="uploadAvatar(this.files[0])"/>
+            </label>
+          </div>
+          <div class="form-group"><label>Username</label><input value="<%= user.username %>" disabled style="opacity:0.6"/></div>
+          <div class="form-group"><label>Email</label><input name="email" value="<%= user.email %>"/></div>
+          <div class="form-group"><label>Display Name</label><input name="name" value="<%= user.name || '' %>" placeholder="Optional display name"/></div>
+          <button class="btn btn-primary" type="submit">Update Profile</button>
+        </form>
+      </div>
+
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:14px">Preferences</div>
+        <form method="post" action="/settings">
+          <div class="form-group"><label>Language</label>
+            <select name="language">
+              <option value="en" <%= user.language === 'en' ? 'selected' : '' %>>English</option>
+              <option value="hi" <%= user.language === 'hi' ? 'selected' : '' %>>हिन्दी</option>
+              <option value="es" <%= user.language === 'es' ? 'selected' : '' %>>Español</option>
+              <option value="de" <%= user.language === 'de' ? 'selected' : '' %>>Deutsch</option>
+              <option value="ar" <%= user.language === 'ar' ? 'selected' : '' %>>العربية</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit">Save</button>
+        </form>
+
+        <hr class="hr" style="margin:18px 0"/>
+
+        <div class="card-title" style="margin-bottom:10px">Privacy</div>
+        <p class="muted text-sm mb-2">Blur sensitive information on screen to protect against screen sharing.</p>
+        <div class="flex-between" style="gap:10px">
+          <span class="text-sm" style="font-weight:600">Secret Blur</span>
+          <label class="switch"><input type="checkbox" id="secretBlurToggle" data-sb-toggle <%= (user.secret_blur_set === 1 ? (user.secret_blur === 1 || user.secret_blur === '1' || user.secret_blur === true) : (String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true)) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security Tab -->
+  <div class="tab-pane" id="tab-security" style="display:none">
+    <div class="grid grid-2" style="gap:20px">
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:14px">Change Password</div>
+        <div class="form-group"><label>Current Password</label><input type="password" id="pCurrent"/></div>
+        <div class="form-group"><label>New Password</label><input type="password" id="pNew"/></div>
+        <div class="form-group"><label>Confirm New Password</label><input type="password" id="pNew2"/></div>
+        <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+      </div>
+
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:14px">Two-Factor Authentication</div>
+        <p class="muted mb-3"><%= user.tfa_enabled ? '2FA is currently enabled on your account.' : 'Add an extra layer of security with a TOTP authenticator app (Google Authenticator, Authy, etc).' %></p>
+        <% if (typeof tfaSetup !== 'undefined' && tfaSetup) { %>
+          <div class="alert alert-info">Scan the QR code with your authenticator app, then enter the 6-digit code below.</div>
+          <div class="right mb-2"><img id="qrcode" src="/qrcode?data=<%= encodeURIComponent(tfaSetup.otpauth_url) %>" alt="QR code" style="background:#fff;border-radius:10px;padding:8px"/></div>
+          <div class="form-group"><label>Code</label><input id="tfaCode" inputmode="numeric" placeholder="6-digit code"/></div>
+          <div class="flex"><button class="btn btn-primary" onclick="enableTfa()">Enable 2FA</button><a class="btn" href="/account#security">Cancel</a></div>
+        <% } else if (user.tfa_enabled) { %>
+          <p class="muted mb-2">Enter a current code to disable 2FA.</p>
+          <div class="form-group"><label>Code</label><input id="tfaCode2" inputmode="numeric" placeholder="6-digit code"/></div>
+          <button class="btn btn-danger" onclick="disableTfa()">Disable 2FA</button>
+        <% } else { %>
+          <a class="btn btn-primary" href="/settings/tfa/setup">Set up 2FA</a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Credentials Tab -->
+  <div class="tab-pane" id="tab-api" style="display:none">
+    <div class="card" style="padding:22px">
+      <div class="card-title" style="margin-bottom:4px">API Keys</div>
+      <p class="muted text-sm mb-3">Personal API keys with prefix <code class="mono">vp_live_</code>. Use them with <code class="mono">Authorization: Bearer &lt;key&gt;</code>. Keys are shown once at creation.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Last Used</th><th>Created</th><th class="right">Actions</th></tr></thead>
+          <tbody id="apikeyRows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="grid grid-3 mt-3" style="gap:12px">
+        <div class="form-group" style="margin:0"><label>Name</label><input id="ak_name" class="input" placeholder="e.g. ci-deploy"/></div>
+        <div class="form-group" style="margin:0"><label>Scopes</label><input id="ak_scopes" class="input" placeholder="r_servers" value="r_servers"/></div>
+        <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createApiKey()">Create Key</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login History Tab -->
+  <div class="tab-pane" id="tab-history" style="display:none">
+    <div class="card" style="padding:22px">
+      <div class="card-title" style="margin-bottom:14px">Login History</div>
+      <% if (loginHistory.length === 0) { %>
+        <p class="muted">No login history recorded yet.</p>
+      <% } else { %>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Status</th><th>IP</th><th>When</th></tr></thead>
+          <tbody>
+          <% for (const h of loginHistory) { %>
+            <tr>
+              <td><span class="pill <%= h.status === 'success' ? 'pill-green' : 'pill-red' %>"><%= h.status %></span></td>
+              <td class="mono"><%= h.ip %></td>
+              <td class="muted"><%= new Date(h.created_at).toLocaleString() %></td>
+            </tr>
+          <% } %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab-pane').forEach((p) => p.style.display = 'none');
+  const target = document.getElementById('tab-' + name);
+  if (target) target.style.display = 'block';
+  document.querySelectorAll('#accountTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+}
+
+async function uploadAvatar(file) {
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('avatar', file);
+  const r = await fetch('/profile/avatar', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.ok) { VP.toast('Avatar updated', 'success'); setTimeout(() => location.reload(), 600); }
+  else VP.toast(d.error || 'Upload failed', 'error');
+}
+
+async function changePassword() {
+  if (document.getElementById('pNew').value !== document.getElementById('pNew2').value) return VP.toast('Passwords do not match', 'error');
+  try {
+    await VP.api('/profile/password', { method: 'POST', body: { current: document.getElementById('pCurrent').value, password: document.getElementById('pNew').value } });
+    VP.toast('Password updated', 'success');
+    document.querySelectorAll('#pCurrent, #pNew, #pNew2').forEach(i => i.value = '');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function enableTfa() {
+  const code = document.getElementById('tfaCode').value;
+  try {
+    await VP.api('/settings/tfa/enable', { method: 'POST', body: { code } });
+    VP.toast('2FA enabled', 'success');
+    setTimeout(() => location.href = '/account', 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function disableTfa() {
+  const code = (document.getElementById('tfaCode2') || {}).value;
+  try {
+    await VP.api('/settings/tfa/disable', { method: 'POST', body: { code } });
+    VP.toast('2FA disabled', 'success');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+// API Keys
+async function loadApiKeys() {
+  const rows = document.getElementById('apikeyRows');
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  try {
+    const res = await VP.api('/api-keys');
+    const keys = res.keys || [];
+    if (!keys.length) { rows.innerHTML = '<tr><td colspan="6" class="muted">No API keys yet.</td></tr>'; return; }
+    rows.innerHTML = keys.map((k) => {
+      const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'never';
+      return '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(k.name) + '</td>'
+        + '<td class="mono text-sm">' + esc(k.key_prefix) + '…</td>'
+        + '<td><span class="pill pill-gray">' + esc(k.scopes || 'r_servers') + '</span></td>'
+        + '<td class="text-sm">' + lastUsed + '</td>'
+        + '<td class="text-sm">' + new Date(k.created_at).toLocaleDateString() + '</td>'
+        + '<td class="right"><button class="btn btn-sm btn-danger" onclick="revokeApiKey(' + k.id + ',\'' + esc(k.name || '') + '\')">Revoke</button></td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="6" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+
+async function createApiKey() {
+  const name = document.getElementById('ak_name').value.trim();
+  const scopes = document.getElementById('ak_scopes').value.trim() || 'r_servers';
+  if (!name) { VP.toast('Enter a name', 'warning'); return; }
+  try {
+    const res = await VP.api('/api-keys', { method: 'POST', body: { name, scopes } });
+    const html = '<div style="line-height:1.7">'
+      + '<div style="font-weight:700;margin-bottom:6px;color:var(--red)">Copy this key now — it will not be shown again.</div>'
+      + '<div class="mono" style="padding:10px;border:1px dashed var(--border);border-radius:8px;word-break:break-all;background:var(--glass)">' + res.key + '</div>'
+      + '<div class="muted text-sm mt-2">Prefix: <code class="mono">' + res.prefix + '…</code></div></div>';
+    await VP.confirmDialog(html, { title: 'API Key Created', html: true, danger: false, okText: 'I saved it', width: 'min(560px,92vw)' });
+    loadApiKeys();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function revokeApiKey(id, name) {
+  const ok = await VP.confirmDialog('Revoke API key "' + name + '"? This cannot be undone.', { title: 'Revoke API Key' });
+  if (!ok) return;
+  try { await VP.api('/api-keys/' + id, { method: 'DELETE' }); VP.toast('Revoked', 'success'); loadApiKeys(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+// Check URL hash for tab
+const hash = window.location.hash.replace('#', '');
+if (['account', 'security', 'api', 'history'].includes(hash)) showTab(hash);
+
+loadApiKeys();
+</script>

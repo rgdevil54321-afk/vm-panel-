@@ -48,9 +48,8 @@ const iconWallet = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   <% } %>
 
   <div class="nav-section-title"><%= t('nav.personal') %></div>
-  <a href="/profile" class="nav-link <%= act('profile', page) %>"><span class="v-icon"><%- iconUser %></span><span><%= t('nav.profile') %></span></a>
+  <a href="/account" class="nav-link <%= act('account', page) %>"><span class="v-icon"><%- iconUser %></span><span><%= t('nav.profile') %></span></a>
   <a href="/billing" class="nav-link <%= act('billing', page) %>"><span class="v-icon"><%- iconWallet %></span><span><%= t('nav.billing') %></span></a>
-  <a href="/settings" class="nav-link <%= act('userSettings', page) %>"><span class="v-icon"><%- iconSettings %></span><span><%= t('nav.settings') %></span></a>
   <a href="/activity" class="nav-link <%= act('activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activity') %></span></a>
 
   <% if (isAdmin) { %>
