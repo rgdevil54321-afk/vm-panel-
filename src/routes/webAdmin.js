@@ -336,6 +336,14 @@ router.get('/admin/activity', (req, res) => {
   render(res, 'activity', { logs });
 });
 
+router.get('/admin/storage', (req, res) => {
+  render(res, 'storage', {});
+});
+
+router.get('/admin/network', (req, res) => {
+  render(res, 'network', {});
+});
+
 router.get('/admin/billing', (req, res) => {
   const users = db.prepare('SELECT id, username FROM users ORDER BY username ASC').all();
   render(res, 'billing', { users, plans: require('../services/billingService').listPlans() });

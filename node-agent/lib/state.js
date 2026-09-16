@@ -21,6 +21,7 @@ function defaultState() {
     nextVmId: 1,
     used_ports: [],                // allocated host ports
     os_list: [],
+    infra: { pools: [], vnets: [], isos: [] },   // pushed from panel: storage pools, virtual networks (+firewall rules), ISO library
   };
 }
 
@@ -103,6 +104,22 @@ function joinCode() {
   return get().joinCode;
 }
 
+function setInfra(config) {
+  const s = get();
+  const cur = (s.infra && typeof s.infra === 'object') ? s.infra : { pools: [], vnets: [], isos: [] };
+  if (Array.isArray(config && config.pools)) cur.pools = config.pools;
+  if (Array.isArray(config && config.vnets)) cur.vnets = config.vnets;
+  if (Array.isArray(config && config.isos)) cur.isos = config.isos;
+  s.infra = cur;
+  save();
+  return s.infra;
+}
+
+function infra() {
+  const s = get();
+  return (s.infra && typeof s.infra === 'object') ? s.infra : { pools: [], vnets: [], isos: [] };
+}
+
 function nextId() {
   const s = get();
   const id = s.nextVmId++;
@@ -120,6 +137,8 @@ module.exports = {
   allVms,
   setOsList,
   osList,
+  setInfra,
+  infra,
   setNodeMeta,
   setJoinCode,
   joinCode,

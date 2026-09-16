@@ -31,42 +31,44 @@ const iconKey = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const iconWallet = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h6"/></svg>';
 %>
 <div class="sidebar">
-  <div class="nav-section-title">Menu</div>
-  <a href="/dashboard" class="nav-link <%= act('dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span>Dashboard</span></a>
+  <div class="nav-section-title"><%= t('nav.menu') %></div>
+  <a href="/dashboard" class="nav-link <%= act('dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span><%= t('nav.dashboard') %></span></a>
 
   <% if (hasVm) { %>
-  <div class="nav-section-title">Server Management</div>
-  <%- vmNav(iconOverview, 'Overview', 'overview', page) %>
-  <%- vmNav(iconConsole, 'Terminal', 'console', page) %>
-  <%- vmNav(iconFiles, 'File Manager', 'files', page) %>
-  <%- vmNav(iconBackups, 'Backups', 'backups', page) %>
-  <%- vmNav(iconClock, 'Schedules', 'schedules', page) %>
-  <%- vmNav(iconRocket, 'Startup', 'startup', page) %>
-  <%- vmNav(iconSettings, 'Settings', 'settings', page) %>
-  <%- vmNav(iconUsers, 'Subusers', 'subusers', page) %>
-  <%- vmNav(iconActivity, 'Activity', 'activity', page) %>
+  <div class="nav-section-title"><%= t('nav.server') %></div>
+  <%- vmNav(iconOverview, t('nav.overview'), 'overview', page) %>
+  <%- vmNav(iconConsole, t('nav.terminal'), 'console', page) %>
+  <%- vmNav(iconFiles, t('nav.files'), 'files', page) %>
+  <%- vmNav(iconBackups, t('nav.backups'), 'backups', page) %>
+  <%- vmNav(iconClock, t('nav.schedules'), 'schedules', page) %>
+  <%- vmNav(iconRocket, t('nav.startup'), 'startup', page) %>
+  <%- vmNav(iconSettings, t('nav.settings'), 'settings', page) %>
+  <%- vmNav(iconUsers, t('nav.subusers'), 'subusers', page) %>
+  <%- vmNav(iconActivity, t('nav.activity'), 'activity', page) %>
   <% } %>
 
-  <div class="nav-section-title">Personalization</div>
-  <a href="/profile" class="nav-link <%= act('profile', page) %>"><span class="v-icon"><%- iconUser %></span><span>Profile</span></a>
-  <a href="/billing" class="nav-link <%= act('billing', page) %>"><span class="v-icon"><%- iconWallet %></span><span>Billing</span></a>
-  <a href="/settings" class="nav-link <%= act('userSettings', page) %>"><span class="v-icon"><%- iconSettings %></span><span>Settings</span></a>
-  <a href="/activity" class="nav-link <%= act('activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span>Activity</span></a>
+  <div class="nav-section-title"><%= t('nav.personal') %></div>
+  <a href="/profile" class="nav-link <%= act('profile', page) %>"><span class="v-icon"><%- iconUser %></span><span><%= t('nav.profile') %></span></a>
+  <a href="/billing" class="nav-link <%= act('billing', page) %>"><span class="v-icon"><%- iconWallet %></span><span><%= t('nav.billing') %></span></a>
+  <a href="/settings" class="nav-link <%= act('userSettings', page) %>"><span class="v-icon"><%- iconSettings %></span><span><%= t('nav.settings') %></span></a>
+  <a href="/activity" class="nav-link <%= act('activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activity') %></span></a>
 
   <% if (isAdmin) { %>
-  <div class="nav-section-title">Admin Dashboard</div>
-  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span>Overview</span></a>
-  <a href="/admin/nodes" class="nav-link <%= act('admin-nodes', page) %>"><span class="v-icon"><%- iconServer %></span><span>Nodes &amp; Live Status</span></a>
-  <a href="/admin/servers" class="nav-link <%= act('admin-servers', page) %>"><span class="v-icon"><%- iconServer %></span><span>Server Management</span></a>
-  <a href="/admin/servers/create" class="nav-link <%= act('admin-create', page) %>"><span class="v-icon"><%- iconPlus %></span><span>Create Server</span></a>
-  <a href="/admin/users" class="nav-link <%= act('admin-users', page) %>"><span class="v-icon"><%- iconUsers %></span><span>User Management</span></a>
-  <a href="/admin/billing" class="nav-link <%= act('admin-billing', page) %>"><span class="v-icon"><%- iconWallet %></span><span>Billing &amp; Plans</span></a>
-  <a href="/admin/templates" class="nav-link <%= act('admin-templates', page) %>"><span class="v-icon"><%- iconServer %></span><span>OS Templates</span></a>
-  <a href="/admin/activity" class="nav-link <%= act('admin-activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span>Activity Log</span></a>
-  <a href="/admin/updates" class="nav-link <%= act('admin-updates', page) %>"><span class="v-icon"><%- iconRocket %></span><span>Updates Center</span></a>
-  <a href="/admin/settings" class="nav-link <%= act('admin-settings', page) %>"><span class="v-icon"><%- iconPalette %></span><span>Settings Management</span></a>
+  <div class="nav-section-title"><%= t('nav.admin') %></div>
+  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span><%= t('nav.overview') %></span></a>
+  <a href="/admin/nodes" class="nav-link <%= act('admin-nodes', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.nodes') %></span></a>
+  <a href="/admin/servers" class="nav-link <%= act('admin-servers', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.server') %></span></a>
+  <a href="/admin/servers/create" class="nav-link <%= act('admin-create', page) %>"><span class="v-icon"><%- iconPlus %></span><span><%= t('nav.create') %></span></a>
+  <a href="/admin/users" class="nav-link <%= act('admin-users', page) %>"><span class="v-icon"><%- iconUsers %></span><span><%= t('nav.users') %></span></a>
+  <a href="/admin/billing" class="nav-link <%= act('admin-billing', page) %>"><span class="v-icon"><%- iconWallet %></span><span><%= t('nav.plans') %></span></a>
+  <a href="/admin/templates" class="nav-link <%= act('admin-templates', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.templates') %></span></a>
+  <a href="/admin/storage" class="nav-link <%= act('admin-storage', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.storage') %></span></a>
+  <a href="/admin/network" class="nav-link <%= act('admin-network', page) %>"><span class="v-icon"><%- iconSettings %></span><span><%= t('nav.network') %></span></a>
+  <a href="/admin/activity" class="nav-link <%= act('admin-activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activityLog') %></span></a>
+  <a href="/admin/updates" class="nav-link <%= act('admin-updates', page) %>"><span class="v-icon"><%- iconRocket %></span><span><%= t('nav.updates') %></span></a>
+  <a href="/admin/settings" class="nav-link <%= act('admin-settings', page) %>"><span class="v-icon"><%- iconPalette %></span><span><%= t('nav.settingsMgmt') %></span></a>
   <% } %>
 
-  <div class="nav-section-title">Session</div>
-  <a href="/logout" class="nav-link"><span class="v-icon"><%- iconLogout %></span><span>Logout</span></a>
+  <div class="nav-section-title"><%= t('nav.session') %></div>
+  <a href="/logout" class="nav-link"><span class="v-icon"><%- iconLogout %></span><span><%= t('nav.logout') %></span></a>
 </div>

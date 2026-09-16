@@ -1,0 +1,159 @@
+<%- include('../partials/head', { title: 'Networks & Firewall' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Networks &amp; Firewall</h2>
+    <div class="flex" style="gap:8px">
+      <button class="btn btn-sm" onclick="loadAll()">Refresh</button>
+      <button class="btn btn-sm" onclick="pushInfra()">Push Config to Nodes</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Virtual Networks</div>
+    <p class="muted text-sm mb-2">Define isolated bridged/natted subnetworks per node. Each network's firewall rules are applied VM-side.</p>
+    <div id="vnetCards" class="grid grid-2" style="gap:14px;margin-top:10px"><div class="muted text-sm">Loading…</div></div>
+
+    <div class="card-title mt-3" style="font-size:15px">Create Network</div>
+    <div class="grid grid-4" style="gap:12px;margin-top:10px">
+      <div class="form-group" style="margin:0"><label>Name</label><input id="vn_name" class="input" placeholder="prod-net" /></div>
+      <div class="form-group" style="margin:0"><label>Bridge</label><input id="vn_bridge" class="input" placeholder="br0" /></div>
+      <div class="form-group" style="margin:0"><label>CIDR</label><input id="vn_cidr" class="input" placeholder="10.10.0.0/24" /></div>
+      <div class="form-group" style="margin:0"><label>Gateway</label><input id="vn_gw" class="input" placeholder="10.10.0.1" /></div>
+      <div class="form-group" style="margin:0"><label>Node (blank = any)</label><input id="vn_node" class="input" type="number" placeholder="blank" /></div>
+      <div class="check" style="align-self:center"><input type="checkbox" id="vn_nat"/> NAT</div>
+      <div class="check" style="align-self:center"><input type="checkbox" id="vn_dhcp" checked/> DHCP</div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createVnet()">Add Network</button></div>
+    </div>
+  </div>
+
+  <!-- Rule editor modal -->
+  <div id="ruleModal" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);place-items:center">
+    <div class="modal" style="width:min(560px,92vw);background:var(--glass-strong);border:1px solid var(--border);border-radius:16px;padding:22px">
+      <h3 style="margin-bottom:12px">Firewall Rule — <span id="ruleNetName"></span></h3>
+      <div class="grid grid-3" style="gap:10px">
+        <div class="form-group" style="margin:0"><label>Direction</label><select id="rl_dir" class="input"><option value="in">in (ingress)</option><option value="out">out (egress)</option></select></div>
+        <div class="form-group" style="margin:0"><label>Protocol</label><select id="rl_proto" class="input"><option value="tcp">tcp</option><option value="udp">udp</option><option value="icmp">icmp</option><option value="any">any</option></select></div>
+        <div class="form-group" style="margin:0"><label>Port (e.g. 80, 22-25)</label><input id="rl_port" class="input" placeholder="any" /></div>
+        <div class="form-group" style="margin:0"><label>Source / dest</label><input id="rl_source" class="input" placeholder="0.0.0.0/0" /></div>
+        <div class="form-group" style="margin:0"><label>Action</label><select id="rl_action" class="input"><option value="allow">allow</option><option value="drop">drop</option><option value="reject">reject</option></select></div>
+        <div class="form-group" style="margin:0"><label>Priority</label><input id="rl_prio" class="input" type="number" value="100" /></div>
+        <div class="form-group" style="margin:0;grid-column:1 / -1"><label>Description</label><input id="rl_desc" class="input" placeholder="" /></div>
+      </div>
+      <div class="flex right" style="margin-top:16px;gap:8px">
+        <button class="btn" onclick="closeRuleModal()">Close</button>
+        <button class="btn btn-primary" onclick="saveRule()">Save Rule</button>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+let VNETS = [];
+let EDIT_NET = null;
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function loadAll() {
+  try {
+    const res = await VP.api('/admin/infra/vnets');
+    VNETS = res.vnets || [];
+    const wrap = document.getElementById('vnetCards');
+    if (!VNETS.length) { wrap.innerHTML = '<div class="muted text-sm">No networks yet. Create one below.</div>'; return; }
+    wrap.innerHTML = VNETS.map(vnetCard).join('');
+  } catch (e) {
+    document.getElementById('vnetCards').innerHTML = '<div class="muted text-sm">Failed: ' + esc(e.message) + '</div>';
+  }
+}
+
+function vnetCard(v) {
+  const on = v.enabled === 1 || v.enabled === true;
+  const rules = (v.rules || []).map((r, i) =>
+    '<tr>'
+      + '<td class="mono text-sm">' + esc(r.direction) + '</td>'
+      + '<td class="text-sm"><span class="pill pill-blue">' + esc(r.protocol) + '</span></td>'
+      + '<td class="mono text-sm">' + esc(r.port || 'any') + '</td>'
+      + '<td class="mono text-sm">' + esc(r.source || '0.0.0.0/0') + '</td>'
+      + '<td class="text-sm">' + esc(r.action) + '</td>'
+      + '<td class="mono text-sm">' + esc(r.description || '-') + '</td>'
+      + '<td class="right"><button class="btn btn-sm btn-danger" onclick="deleteRule(' + r.id + ')">Delete</button></td>'
+      + '</tr>'
+  ).join('') || '<tr><td colspan="7" class="muted">No rules (allow all by default).</td></tr>';
+
+  return '<div class="card" style="padding:16px">'
+    + '<div class="flex-between mb-2" style="flex-wrap:wrap;gap:8px">'
+      + '<div><div class="text-sm" style="font-weight:700">' + esc(v.name) + '<span class="muted" style="font-weight:400"> @ ' + esc(v.node_name || 'any node') + '</span></div>'
+      + '<div class="mono text-sm muted">' + esc(v.bridge || 'bridge:auto') + ' · ' + esc(v.cidr || 'cidr:auto') + (v.gateway ? ' · gw ' + esc(v.gateway) : '') + '</div>'
+      + '<div class="text-sm mt-1">' + pill(on) + (v.nat ? ' <span class="pill pill-blue">nat</span>' : '') + (v.dhcp ? ' <span class="pill pill-blue">dhcp</span>' : '') + ' <button class="btn btn-sm" onclick="addRule(' + v.id + ',\'' + esc(v.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')">+ Rule</button>' + '</div></div>'
+      + '<div class="flex" style="gap:6px"><button class="btn btn-sm" onclick="toggleVnet(' + v.id + ',' + (on ? 0 : 1) + ')">' + (on ? 'Disable' : 'Enable') + '</button><button class="btn btn-sm btn-danger" onclick="deleteVnet(' + v.id + ')">Delete</button></div>'
+    + '</div>'
+    + '<div class="table-wrap" style="margin-top:8px"><table>'
+      + '<thead><tr><th>Dir</th><th>Proto</th><th>Port</th><th>Source</th><th>Action</th><th>Description</th><th class="right">Actions</th></tr></thead><tbody>' + rules + '</tbody></table></div>'
+    + '</div>';
+}
+const pill = (on) => (on ? '<span class="pill pill-green">enabled</span>' : '<span class="pill pill-gray">disabled</span>');
+
+async function createVnet() {
+  const body = {
+    name: document.getElementById('vn_name').value.trim(),
+    bridge: document.getElementById('vn_bridge').value.trim(),
+    cidr: document.getElementById('vn_cidr').value.trim(),
+    gateway: document.getElementById('vn_gw').value.trim(),
+    node_id: document.getElementById('vn_node').value.trim() || null,
+    nat: document.getElementById('vn_nat').checked,
+    dhcp: document.getElementById('vn_dhcp').checked,
+  };
+  if (!body.name) { VP.toast('Enter a network name', 'warning'); return; }
+  try { await VP.api('/admin/infra/vnets', { method: 'POST', body }); VP.toast('Network created', 'success'); loadAll(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function toggleVnet(id, enabled) {
+  try { await VP.api('/admin/infra/vnets/' + id, { method: 'PUT', body: { enabled } }); loadAll(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deleteVnet(id) {
+  const ok = await VP.confirmDialog('Delete this network and all its firewall rules?', { title: 'Delete Network' });
+  if (!ok) return;
+  try { await VP.api('/admin/infra/vnets/' + id, { method: 'DELETE' }); loadAll(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deleteRule(id) {
+  const ok = await VP.confirmDialog('Delete this firewall rule?', { title: 'Delete Rule' });
+  if (!ok) return;
+  try { await VP.api('/admin/infra/rules/' + id, { method: 'DELETE' }); loadAll(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+function addRule(netId, name) {
+  EDIT_NET = netId;
+  document.getElementById('ruleNetName').textContent = name;
+  document.getElementById('ruleModal').style.display = 'grid';
+  ['rl_dir','rl_proto','rl_action'].forEach((id) => { document.getElementById(id).selectedIndex = 0; });
+  ['rl_port','rl_source','rl_desc'].forEach((id) => { document.getElementById(id).value = ''; });
+  document.getElementById('rl_prio').value = 100;
+}
+function closeRuleModal() { document.getElementById('ruleModal').style.display = 'none'; EDIT_NET = null; }
+async function saveRule() {
+  if (EDIT_NET == null) return;
+  const body = {
+    direction: document.getElementById('rl_dir').value,
+    protocol: document.getElementById('rl_proto').value,
+    port: document.getElementById('rl_port').value.trim(),
+    source: document.getElementById('rl_source').value.trim(),
+    action: document.getElementById('rl_action').value,
+    priority: document.getElementById('rl_prio').value,
+    description: document.getElementById('rl_desc').value.trim(),
+  };
+  try { await VP.api('/admin/infra/vnets/' + EDIT_NET + '/rules', { method: 'POST', body }); closeRuleModal(); VP.toast('Rule added', 'success'); loadAll(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function pushInfra() {
+  const ok = await VP.confirmDialog('Push storage pools, networks and ISO library to all connected node agents?', { title: 'Push to Nodes', danger: false, okText: 'Push' });
+  if (!ok) return;
+  try {
+    const res = await VP.api('/admin/infra/push', { method: 'POST' });
+    const lines = (res.results || []).map((r) => esc(r.name) + ': ' + esc(r.status) + (r.message ? ' — ' + esc(r.message) : ''));
+    await VP.confirmDialog('<div style="line-height:1.8">' + lines.join('<br/>') + '</div>', { title: 'Push Results', html: true, danger: false, okText: 'OK', width: 'min(480px,92vw)' });
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+loadAll();
+</script>

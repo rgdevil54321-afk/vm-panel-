@@ -40,6 +40,8 @@ function createWebApp() {
   // expose auth for middleware
   const { optionalAuth } = require('./middleware/auth');
   app.use(optionalAuth);
+  const { i18nMiddleware } = require('./lib/i18n');
+  app.use(i18nMiddleware);
 
   app.get('/', (req, res) => res.redirect(req.user ? '/dashboard' : '/login'));
   app.use('/', require('./routes/webAuth'));

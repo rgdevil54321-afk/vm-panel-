@@ -760,4 +760,123 @@ router.delete('/admin/templates/:idx', apiAdmin, (req, res) => {
   res.json({ ok: true, templates: arr });
 });
 
+// ---------- Infra: storage pools ----------
+router.get('/admin/infra/pools', apiAdmin, (req, res) => {
+  const infra = require('../services/infraService');
+  res.json({ ok: true, pools: infra.listPools() });
+});
+router.post('/admin/infra/pools', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    res.json({ ok: true, pool: infra.createPool(req.body || {}) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/admin/infra/pools/:id', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const pool = infra.updatePool(req.params.id, req.body || {});
+    if (!pool) return res.status(404).json({ error: 'Pool not found' });
+    res.json({ ok: true, pool });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/admin/infra/pools/:id', apiAdmin, (req, res) => {
+  const infra = require('../services/infraService');
+  res.json({ ok: infra.deletePool(req.params.id) });
+});
+
+// ---------- Infra: vnets + firewall ----------
+router.get('/admin/infra/vnets', apiAdmin, (req, res) => {
+  const infra = require('../services/infraService');
+  const nets = infra.listVnets().map((n) => ({ ...n, rules: infra.rulesForVnet(n.id) }));
+  res.json({ ok: true, vnets: nets });
+});
+router.post('/admin/infra/vnets', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    res.json({ ok: true, vnet: infra.createVnet(req.body || {}) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/admin/infra/vnets/:id', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const net = infra.updateVnet(req.params.id, req.body || {});
+    if (!net) return res.status(404).json({ error: 'Network not found' });
+    res.json({ ok: true, vnet: net });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/admin/infra/vnets/:id', apiAdmin, (req, res) => {
+  const infra = require('../services/infraService');
+  res.json({ ok: infra.deleteVnet(req.params.id) });
+});
+router.post('/admin/infra/vnets/:id/rules', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const rule = infra.createRule(req.params.id, req.body || {});
+    res.json({ ok: true, rule });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/admin/infra/rules/:id', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const rule = infra.updateRule(req.params.id, req.body || {});
+    if (!rule) return res.status(404).json({ error: 'Rule not found' });
+    res.json({ ok: true, rule });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/admin/infra/rules/:id', apiAdmin, (req, res) => {
+  const infra = require('../services/infraService');
+  res.json({ ok: infra.deleteRule(req.params.id) });
+});
+
+// ---------- Infra: ISO library ----------
+router.get('/admin/infra/isos', apiAdmin, (req, res) => {
+  const infra = require('../services/infraService');
+  res.json({ ok: true, isos: infra.listIsos(), pools: infra.listPools() });
+});
+router.put('/admin/infra/isos', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const isos = infra.saveIsos(Array.isArray(req.body.isos) ? req.body.isos : []);
+    res.json({ ok: true, isos });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/admin/infra/isos', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    res.json({ ok: true, isos: infra.addIso(req.body || {}) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/admin/infra/isos/:idx', apiAdmin, json, (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const arr = infra.updateIso(req.params.idx, req.body || {});
+    if (!arr) return res.status(404).json({ error: 'ISO not found' });
+    res.json({ ok: true, isos: arr });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Push infra config to remote node agents
+router.post('/admin/infra/push', apiAdmin, async (req, res) => {
+  try {
+    const infra = require('../services/infraService');
+    const nodeRegistry = require('../services/nodeRegistry');
+    const config = infra.infraConfig();
+    const nodes = nodeRegistry.allNodes();
+    const results = [];
+    for (const node of nodes) {
+      if (node.id === 1 && node.agent_token === 'local-primary-no-agent') {
+        results.push({ node_id: 1, name: node.name, status: 'skipped', message: 'Local primary node applies infra config on VM create' });
+        continue;
+      }
+      try {
+        const r = await nodeRegistry.agentJson(node, { method: 'POST', path: '/infra', body: JSON.stringify(config) });
+        results.push({ node_id: node.id, name: node.name, status: 'ok', message: (r && r.message) || 'sent' });
+      } catch (e) {
+        results.push({ node_id: node.id, name: node.name, status: 'error', message: e.message });
+      }
+    }
+    res.json({ ok: true, results });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 module.exports = router;

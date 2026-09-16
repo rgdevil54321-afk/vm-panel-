@@ -13,7 +13,7 @@ const navbarTransparent = settings['panel.navbar_transparent'] === '1' || settin
 const navbarBlur = settings['panel.navbar_blur'] === '1' || settings['panel.navbar_blur'] === true;
 const navbarStyle = settings['panel.navbar_style'] || 'glass';
 %><!DOCTYPE html>
-<html lang="en" data-theme="<%= theme %>">
+<html lang="<%= typeof lang !== 'undefined' ? lang : 'en' %>" dir="<%= typeof uiDir !== 'undefined' ? uiDir : 'ltr' %>" data-theme="<%= theme %>">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>

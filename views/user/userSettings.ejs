@@ -15,7 +15,9 @@
           <select name="language">
             <option value="en" <%= user.language === 'en' ? 'selected' : '' %>>English</option>
             <option value="hi" <%= user.language === 'hi' ? 'selected' : '' %>>हिन्दी</option>
-            <option value="bn" <%= user.language === 'bn' ? 'selected' : '' %>>বাংলা</option>
+            <option value="es" <%= user.language === 'es' ? 'selected' : '' %>>Español</option>
+            <option value="de" <%= user.language === 'de' ? 'selected' : '' %>>Deutsch</option>
+            <option value="ar" <%= user.language === 'ar' ? 'selected' : '' %>>العربية</option>
           </select>
         </div>
         <button class="btn btn-primary" type="submit">Save Preferences</button>

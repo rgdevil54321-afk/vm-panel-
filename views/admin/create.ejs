@@ -166,6 +166,11 @@
           </div>
           <div class="form-hint">Format: 20G, 50G, 100G (QEMU QCOW2 dynamic storage)</div>
         </div>
+        <div class="form-group">
+          <label style="font-weight:600;font-size:13px">Storage Pool</label>
+          <select id="fPool" class="input" onchange="updateSummary()"><option value="">Default pool</option></select>
+          <div class="form-hint">Leave empty to use the active default pool.</div>
+        </div>
       </div>
 
       <!-- 3. Identity & Credentials -->
@@ -632,6 +637,7 @@ async function createVm() {
   fd.append('memory', document.getElementById('fMem').value || '2048');
   fd.append('cpus', document.getElementById('fCpus').value || '2');
   fd.append('disk_size', (document.getElementById('fDisk').value || '20G').toUpperCase());
+  fd.append('storage_pool', document.getElementById('fPool').value || '');
   fd.append('ssh_port', document.getElementById('fPort').value || '');
   
   const rawFwds = document.getElementById('fFwdCustom').value || '';
@@ -671,6 +677,18 @@ const targetOwner = urlParams.get('owner_id');
 if (targetOwner && document.getElementById('fOwner')) {
   document.getElementById('fOwner').value = targetOwner;
 }
+(async function loadPools() {
+  try {
+    const res = await VP.api('/admin/infra/pools');
+    const sel = document.getElementById('fPool');
+    (res.pools || []).filter((p) => p.active === 1 || p.active === true).forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name + ' (' + p.type + ')';
+      sel.appendChild(opt);
+    });
+  } catch (_) { /* pools unavailable — default pool is used */ }
+})();
 genPassword();
 updateSummary();
 </script>

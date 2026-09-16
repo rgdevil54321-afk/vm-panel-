@@ -240,6 +240,50 @@ CREATE TABLE IF NOT EXISTS coupon_claims (
   FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS storage_pools (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'dir',
+  path TEXT NOT NULL,
+  node_id INTEGER,
+  active INTEGER NOT NULL DEFAULT 1,
+  options TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS vnets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  node_id INTEGER,
+  bridge TEXT,
+  cidr TEXT,
+  gateway TEXT,
+  nat INTEGER NOT NULL DEFAULT 1,
+  dhcp INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS vnet_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vnet_id INTEGER NOT NULL,
+  direction TEXT NOT NULL DEFAULT 'in',
+  protocol TEXT NOT NULL DEFAULT 'tcp',
+  port TEXT,
+  source TEXT,
+  action TEXT NOT NULL DEFAULT 'allow',
+  priority INTEGER NOT NULL DEFAULT 100,
+  description TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (vnet_id) REFERENCES vnets(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_vnet_rules_net ON vnet_rules(vnet_id);
+CREATE INDEX IF NOT EXISTS idx_storage_pools_node ON storage_pools(node_id);
+CREATE INDEX IF NOT EXISTS idx_vnets_node ON vnets(node_id);
 `);
 
 const defaultSettings = {
@@ -274,6 +318,7 @@ const defaultSettings = {
   'panel.navbar_blur': '1',
   'panel.accent': '#6366f1',
   'panel.theme': 'dark',
+  'panel.language': 'en',
   'panel.wallpapers_api_key': '',
   'mail.host': config.mail.host,
   'mail.port': String(config.mail.port),

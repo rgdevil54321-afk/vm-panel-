@@ -162,6 +162,15 @@ const server = http.createServer(async (req, res) => {
       const s = state.setNodeMeta({ name: data.name, location: data.location });
       return json(res, 200, { ok: true, node: { id: s.nodeId, name: s.name, location: s.location } });
     }
+    if (method === 'POST' && p === '/infra') {
+      const body = await readBody(req);
+      const data = JSON.parse(body.toString() || '{}');
+      const infra = state.setInfra(data);
+      return json(res, 200, { ok: true, message: 'Infra config applied: ' + infra.pools.length + ' pools, ' + infra.vnets.length + ' networks, ' + infra.isos.length + ' ISOs' });
+    }
+    if (method === 'GET' && p === '/infra') {
+      return json(res, 200, { ok: true, infra: state.infra() });
+    }
     if (method === 'POST' && p === '/update') {
       const body = await readBody(req, 1 * 1024 * 1024);
       const data = JSON.parse(body.toString() || '{}');

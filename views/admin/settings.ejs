@@ -340,6 +340,26 @@
       </div>
     </div>
 
+    <!-- Default panel language -->
+    <div class="card mb-4" style="padding:22px">
+      <div class="flex-between mb-3" style="flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="card-title" style="margin:0;font-size:16px">Default Language</div>
+          <div class="muted text-sm mt-1">Used for users who haven't picked a language. Each user can override it in Profile → Settings.</div>
+        </div>
+        <div class="flex" style="gap:8px;align-items:center">
+          <select id="defaultLangSelect" class="input" style="width:180px">
+            <option value="en" <%= (all['panel.language'] || 'en') === 'en' ? 'selected' : '' %>>English</option>
+            <option value="hi" <%= (all['panel.language'] || 'en') === 'hi' ? 'selected' : '' %>>हिन्दी</option>
+            <option value="es" <%= (all['panel.language'] || 'en') === 'es' ? 'selected' : '' %>>Español</option>
+            <option value="de" <%= (all['panel.language'] || 'en') === 'de' ? 'selected' : '' %>>Deutsch</option>
+            <option value="ar" <%= (all['panel.language'] || 'en') === 'ar' ? 'selected' : '' %>>العربية</option>
+          </select>
+          <button class="btn btn-sm btn-primary" onclick="saveDefaultLanguage()">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 1. SLIDERS & CONTROLS SECTION -->
     <div class="grid grid-2 mb-4" style="gap:20px">
       <!-- Sliders Column -->
@@ -962,6 +982,16 @@ function setThemePreset(themeId) {
   });
   scheduleAutoSave();
   if (window.VP) VP.toast('Theme preview saved', 'success');
+}
+
+async function saveDefaultLanguage() {
+  const lang = document.getElementById('defaultLangSelect').value;
+  await fetch('/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 'panel.language': lang })
+  });
+  if (window.VP) VP.toast('Default language saved', 'success');
 }
 
 function scheduleAutoSave() {

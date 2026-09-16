@@ -1,0 +1,134 @@
+<%- include('../partials/head', { title: 'Storage Pools & ISO Library' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Storage Pools &amp; ISO Library</h2>
+    <button class="btn btn-sm" onclick="loadAll()">Refresh</button>
+  </div>
+
+  <!-- Storage Pools -->
+  <div class="card">
+    <div class="card-title">Storage Pools</div>
+    <p class="muted text-sm mb-2">Define disk pools of type <code class="mono">dir</code> (plain folder / NFS mount), <code class="mono">lvm</code> (LVM volume group) or <code class="mono">nfs</code>. The active default pool receives new VMs; VMs can target a specific pool.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Path / VG</th><th>Node</th><th>Status</th><th class="right">Actions</th></tr></thead>
+        <tbody id="poolRows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>Name</label><input id="sp_name" class="input" placeholder="ssd-pool" /></div>
+      <div class="form-group" style="margin:0"><label>Type</label>
+        <select id="sp_type" class="input"><option value="dir">Directory</option><option value="lvm">LVM</option><option value="nfs">NFS</option></select>
+      </div>
+      <div class="form-group" style="margin:0"><label>Path (dir/nfs) or VG name (lvm)</label><input id="sp_path" class="input" placeholder="/data/vm" /></div>
+      <div class="form-group" style="margin:0"><label>Node (blank = any)</label><input id="sp_node" class="input" type="number" placeholder="blank" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createPool()">Add Pool</button></div>
+    </div>
+  </div>
+
+  <!-- ISO Library -->
+  <div class="card mt-3">
+    <div class="card-title">ISO Library</div>
+    <p class="muted text-sm mb-2">OS/utility ISOs usable for boot-from-installer. You can also add ISOs as templates in OS Templates Studio.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Name</th><th>URL</th><th>Pool</th><th>Size</th><th class="right">Actions</th></tr></thead>
+        <tbody id="isoRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>Name</label><input id="iso_name" class="input" placeholder="Ubuntu Server ISO" /></div>
+      <div class="form-group" style="margin:0"><label>Download URL</label><input id="iso_url" class="input" placeholder="https://…/*.iso" /></div>
+      <div class="form-group" style="margin:0"><label>Pool ID (optional)</label><input id="iso_pool" class="input" type="number" placeholder="blank" /></div>
+      <div class="form-group" style="margin:0"><label>Size (MB)</label><input id="iso_size" class="input" type="number" value="0" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createIso()">Add ISO</button></div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pill = (on, t = 'active') => (on ? '<span class="pill pill-green">' + t + '</span>' : '<span class="pill pill-gray">inactive</span>');
+
+async function loadAll() { await Promise.all([loadPools(), loadIsos()]); }
+
+async function loadPools() {
+  const rows = document.getElementById('poolRows');
+  try {
+    const res = await VP.api('/admin/infra/pools');
+    const pools = res.pools || [];
+    if (!pools.length) { rows.innerHTML = '<tr><td colspan="6" class="muted">No storage pools yet.</td></tr>'; return; }
+    rows.innerHTML = pools.map((p) => {
+      const on = p.active === 1 || p.active === true;
+      return '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(p.name) + '</td>'
+        + '<td><span class="pill pill-blue">' + esc(p.type) + '</span></td>'
+        + '<td class="mono text-sm">' + esc(p.path) + '</td>'
+        + '<td class="text-sm">' + esc(p.node_name || 'any') + '</td>'
+        + '<td>' + pill(on) + '</td>'
+        + '<td class="right"><button class="btn btn-sm" onclick="togglePool(' + p.id + ',' + (on ? 0 : 1) + ')">' + (on ? 'Disable' : 'Enable') + '</button> <button class="btn btn-sm btn-danger" onclick="deletePool(' + p.id + ')">Delete</button></td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="6" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+async function createPool() {
+  const body = {
+    name: document.getElementById('sp_name').value.trim(),
+    type: document.getElementById('sp_type').value,
+    path: document.getElementById('sp_path').value.trim(),
+    node_id: document.getElementById('sp_node').value.trim() || null,
+  };
+  if (!body.name || !body.path) { VP.toast('Name and path are required', 'warning'); return; }
+  try { await VP.api('/admin/infra/pools', { method: 'POST', body }); VP.toast('Pool created', 'success'); loadPools(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function togglePool(id, active) {
+  try { await VP.api('/admin/infra/pools/' + id, { method: 'PUT', body: { active } }); loadPools(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deletePool(id) {
+  const ok = await VP.confirmDialog('Delete this storage pool?', { title: 'Delete Pool' });
+  if (!ok) return;
+  try { await VP.api('/admin/infra/pools/' + id, { method: 'DELETE' }); loadPools(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function loadIsos() {
+  const rows = document.getElementById('isoRows');
+  try {
+    const res = await VP.api('/admin/infra/isos');
+    const isos = res.isos || [];
+    if (!isos.length) { rows.innerHTML = '<tr><td colspan="5" class="muted">No ISOs in the library.</td></tr>'; return; }
+    rows.innerHTML = isos.map((iso, i) =>
+      '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(iso.name) + '</td>'
+        + '<td class="mono muted text-sm" style="word-break:break-all;max-width:360px">' + esc(iso.url || '-') + '</td>'
+        + '<td class="text-sm">' + (iso.pool_id ? '#' + iso.pool_id : 'any') + '</td>'
+        + '<td class="mono text-sm">' + (iso.size_mb ? iso.size_mb + ' MB' : '-') + '</td>'
+        + '<td class="right"><button class="btn btn-sm btn-danger" onclick="deleteIso(' + i + ')">Remove</button></td>'
+        + '</tr>'
+    ).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="5" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+async function createIso() {
+  const body = {
+    name: document.getElementById('iso_name').value.trim(),
+    url: document.getElementById('iso_url').value.trim(),
+    pool_id: document.getElementById('iso_pool').value.trim() || null,
+    size_mb: document.getElementById('iso_size').value,
+  };
+  if (!body.name) { VP.toast('Enter an ISO name', 'warning'); return; }
+  try { await VP.api('/admin/infra/isos', { method: 'POST', body }); VP.toast('ISO added', 'success'); loadIsos(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deleteIso(idx) {
+  const ok = await VP.confirmDialog('Remove this ISO from the library?', { title: 'Remove ISO' });
+  if (!ok) return;
+  const res = await VP.api('/admin/infra/isos');
+  const isos = (res.isos || []).slice();
+  isos.splice(idx, 1);
+  try { await VP.api('/admin/infra/isos', { method: 'PUT', body: { isos } }); VP.toast('ISO removed', 'success'); loadIsos(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+loadAll();
+</script>
