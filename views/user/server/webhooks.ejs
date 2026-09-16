@@ -43,12 +43,24 @@
         <input id="wh_url" class="input" placeholder="https://example.com/hook" />
       </div>
       <div class="form-group" style="margin:0">
+        <label>Type</label>
+        <select id="wh_kind" class="input" style="padding:10px">
+          <option value="generic">Generic Webhook (JSON)</option>
+          <option value="discord">Discord Embed</option>
+          <option value="telegram">Telegram Bot</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
         <label>Secret (optional, HMAC-SHA256 signature)</label>
-        <input id="wh_secret" class="input" placeholder="" />
+        <input id="wh_secret" class="input" placeholder="only for Generic" />
       </div>
       <div class="form-group" style="margin:0">
         <label>Events (comma-separated)</label>
         <input id="wh_events" class="input" placeholder="vm:start, vm:stop" value="vm:start, vm:stop" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Telegram chat_id (optional)</label>
+        <input id="wh_chat_id" class="input" placeholder="123456789 or @channel" />
       </div>
     </div>
     <div class="flex right" style="margin-top:14px">
@@ -62,9 +74,13 @@
 async function addHook() {
   const url = document.getElementById('wh_url').value.trim();
   const secret = document.getElementById('wh_secret').value.trim();
+  const kind = document.getElementById('wh_kind').value;
+  const chat_id = document.getElementById('wh_chat_id').value.trim();
   const events = document.getElementById('wh_events').value.split(',').map((s) => s.trim()).filter(Boolean);
+  const body = { url, secret, events, kind };
+  if (chat_id) body.chat_id = chat_id;
   try {
-    await VP.api('/servers/<%= vm.id %>/webhooks', { method: 'POST', body: { url, secret, events } });
+    await VP.api('/servers/<%= vm.id %>/webhooks', { method: 'POST', body });
     VP.toast('Webhook added', 'success');
     setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }

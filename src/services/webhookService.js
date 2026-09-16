@@ -19,17 +19,70 @@ function matches(hook, event) {
   return evts.includes('*') || evts.includes(event);
 }
 
+function buildDiscordBody(event, payload) {
+  const name = payload && payload.name ? payload.name : (payload && payload.id ? String(payload.id) : 'server');
+  const colors = { 'vm:start': 0x10b981, 'vm:stop': 0xf43f5e, 'vm:restart': 0xf59e0b, 'vm:kill': 0xef4444 };
+  const color = colors[event] || 0x6366f1;
+  const fields = [];
+  if (payload) {
+    for (const [k, v] of Object.entries(payload)) {
+      fields.push({ name: k, value: String(v), inline: fields.length < 6 });
+    }
+  }
+  return {
+    embeds: [{
+      title: event,
+      color,
+      fields: fields.slice(0, 12),
+      timestamp: new Date().toISOString(),
+      footer: { text: 'Venlix Nodes' },
+    }],
+    username: 'Venlix Nodes',
+  };
+}
+
+function buildTelegramBody(event, payload) {
+  const lines = ['<b>Venlix Nodes</b>', '<b>Event:</b> <code>' + event + '</code>'];
+  if (payload) {
+    for (const [k, v] of Object.entries(payload)) {
+      lines.push('<b>' + String(k) + ':</b> <code>' + String(v) + '</code>');
+    }
+  }
+  return { text: lines.join('\n'), parse_mode: 'HTML' };
+}
+
 function deliver(hook, event, payload) {
   return new Promise((resolve) => {
     let url;
     try { url = new URL(hook.url); } catch (_) { return resolve(false); }
-    const body = JSON.stringify({
-      event,
-      timestamp: new Date().toISOString(),
-      data: payload || {},
-    });
+
+    const kind = hook.kind || 'generic';
     const isHttps = url.protocol === 'https:';
     const mod = isHttps ? https : http;
+
+    let body;
+    if (kind === 'discord') {
+      body = JSON.stringify(buildDiscordBody(event, payload));
+    } else if (kind === 'telegram') {
+      // url like https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<ID>
+      let chatId = hook.chat_id || url.searchParams.get('chat_id') || '';
+      let tgUrl = url;
+      if (!/sendMessage/.test(url.pathname)) {
+        const botToken = url.pathname.replace(/^\//, '').split('/')[0];
+        tgUrl = new URL(`https://api.telegram.org/bot${botToken}/sendMessage`);
+      }
+      const p = buildTelegramBody(event, payload);
+      if (chatId) p.chat_id = chatId;
+      body = JSON.stringify(p);
+      url = tgUrl;
+    } else {
+      body = JSON.stringify({
+        event,
+        timestamp: new Date().toISOString(),
+        data: payload || {},
+      });
+    }
+
     const opts = {
       hostname: url.hostname,
       port: url.port || (isHttps ? 443 : 80),
@@ -41,10 +94,12 @@ function deliver(hook, event, payload) {
         'User-Agent': 'Venlix-Nodes-Webhook',
       },
     };
-    if (hook.secret) {
+    if (hook.secret && kind === 'generic') {
       opts.headers['X-Venlix-Signature'] = 'sha256=' + crypto.createHmac('sha256', String(hook.secret)).update(body).digest('hex');
     }
     const req = mod.request(opts, (res) => {
+      let buf = '';
+      res.on('data', (d) => { buf += d; });
       res.resume();
       res.on('end', () => resolve(res.statusCode >= 200 && res.statusCode < 300));
     });

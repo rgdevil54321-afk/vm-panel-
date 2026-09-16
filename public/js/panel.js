@@ -66,15 +66,21 @@ window.VP = (() => {
     return new Date(s).toLocaleString();
   }
 
-  function confirmDialog(message, { danger = true, title = 'Are you sure?' } = {}) {
+  function confirmDialog(message, { danger = true, title = 'Are you sure?', html = false, okText = 'Confirm', width = null } = {}) {
     return new Promise((resolve) => {
       const overlay = el('div', { class: 'modal-overlay', style: 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);display:grid;place-items:center;' });
-      const box = el('div', { class: 'modal', style: 'width:min(420px,92vw);background:var(--glass-strong);border:1px solid var(--border);border-radius:16px;padding:22px;backdrop-filter:blur(16px);' });
+      const box = el('div', { class: 'modal', style: 'width:' + (width || 'min(420px,92vw)') + ';background:var(--glass-strong);border:1px solid var(--border);border-radius:16px;padding:22px;backdrop-filter:blur(16px);' });
       box.appendChild(el('h3', { style: 'margin-bottom:10px' }, title));
-      box.appendChild(el('p', { class: 'muted', style: 'margin-bottom:20px' }, message));
-      const row = el('div', { class: 'flex right' });
+      if (html) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = message;
+        box.appendChild(wrap);
+      } else {
+        box.appendChild(el('p', { class: 'muted', style: 'margin-bottom:20px' }, message));
+      }
+      const row = el('div', { class: 'flex right', style: 'margin-top:16px' });
       const cancel = el('button', { class: 'btn' }, 'Cancel');
-      const ok = el('button', { class: `btn ${danger ? 'btn-danger' : 'btn-primary'}` }, 'Confirm');
+      const ok = el('button', { class: `btn ${danger ? 'btn-danger' : 'btn-primary'}` }, okText);
       cancel.onclick = () => { overlay.remove(); resolve(false); };
       ok.onclick = () => { overlay.remove(); resolve(true); };
       row.append(cancel, ok);

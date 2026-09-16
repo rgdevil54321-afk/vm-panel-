@@ -158,6 +158,30 @@ CREATE TABLE IF NOT EXISTS notifications (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,
+  scopes TEXT DEFAULT 'r_servers',
+  last_used_at TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS impersonations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id INTEGER NOT NULL,
+  target_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL,
+  reason TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_vms_owner ON vms(owner_id);
 CREATE INDEX IF NOT EXISTS idx_subusers_vm ON subusers(vm_id);
 CREATE INDEX IF NOT EXISTS idx_subusers_user ON subusers(user_id);
@@ -166,6 +190,9 @@ CREATE INDEX IF NOT EXISTS idx_schedules_vm ON schedules(vm_id);
 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_vm ON activity_logs(vm_id);
 CREATE INDEX IF NOT EXISTS idx_login_ip ON login_attempts(ip);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_impersonations_admin ON impersonations(admin_id);
+CREATE INDEX IF NOT EXISTS idx_impersonations_target ON impersonations(target_id);
 `);
 
 const defaultSettings = {

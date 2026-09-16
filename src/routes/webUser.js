@@ -217,7 +217,10 @@ router.post('/servers/:id/webhooks', loadVm, express.json(), (req, res) => {
     let evts = req.body.events || ['vm:start', 'vm:stop'];
     if (typeof evts === 'string') evts = evts.split(',').map((s) => s.trim()).filter(Boolean);
     const hooks = webhookService.getWebhooks(req.vm);
-    hooks.push({ url: String(req.body.url).trim(), secret: req.body.secret || '', events: evts });
+    const hook = { url: String(req.body.url).trim(), secret: req.body.secret || '', events: evts };
+    if (req.body.kind) hook.kind = String(req.body.kind);
+    if (req.body.chat_id) hook.chat_id = String(req.body.chat_id);
+    hooks.push(hook);
     const updated = webhookService.setWebhooks(req.vm, hooks);
     activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:webhook:create', details: { url: req.body.url } });
     res.json({ ok: true, hooks: updated });

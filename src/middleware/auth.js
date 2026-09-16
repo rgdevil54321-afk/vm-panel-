@@ -17,11 +17,30 @@ function getUserFromReq(req) {
   }
 
   for (const token of candidates) {
+    if (token.startsWith('vp_live_')) {
+      const apiKey = require('../services/apiKeyService');
+      const found = apiKey.findUserByKey(token);
+      if (found) {
+        req.apiKey = found.key;
+        return found.user;
+      }
+      continue;
+    }
     try {
       const payload = authService.verifyToken(token);
       if (!payload || !payload.sub) continue;
       const user = authService.findById(Number(payload.sub));
-      if (user && !user.suspended) return user;
+      if (user && !user.suspended) {
+        if (payload.imp) {
+          const imp = require('../services/impersonationService').resolveImpersonation(user, payload);
+          if (imp) {
+            req.impersonation = imp;
+            return user;
+          }
+          continue;
+        }
+        return user;
+      }
     } catch (_) {}
   }
   return null;

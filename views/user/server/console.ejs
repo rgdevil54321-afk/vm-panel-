@@ -290,6 +290,10 @@
         </button>
         <button class="btn btn-sm" onclick="clearBootDisplay()">Clear Display</button>
         <button class="btn btn-sm" onclick="clearBootServerLog()" title="Clear log file on server">Clear File</button>
+        <button class="btn btn-sm" onclick="aiDiagnoseBoot()" title="Analyze the boot log for common failure causes" style="border-color:color-mix(in srgb, var(--accent) 60%, transparent)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v9a2.5 2.5 0 0 1-5 0v-9A2.5 2.5 0 0 1 9.5 2z"/><path d="M6 10a3.5 3.5 0 0 1-2.5-5.5A3.5 3.5 0 0 0 6 8.5M13 11.5a3.5 3.5 0 0 1 2.5-5.5A3.5 3.5 0 0 0 13 11z"/></svg>
+          AI Diagnose
+        </button>
       </div>
       <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
         <input type="text" id="logSearch" class="log-search-input" placeholder="Filter boot logs..." oninput="onSearchInput(this.value)" />
@@ -890,6 +894,33 @@
       } catch (e) {
         VP.toast(e.message, 'error');
       }
+    }
+  };
+
+window.aiDiagnoseBoot = async function () {
+    try {
+      const res = await VP.api('/servers/<%= vm.id %>/bootlog/diagnose');
+      const f = res.findings || [];
+      let html = '<div style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto">';
+      html += '<div style="font-weight:700;font-size:15px">AI Boot Diagnostics — status: <span style="color:' + (res.state === 'healthy' ? 'var(--green)' : res.state === 'critical' ? 'var(--red)' : 'var(--yellow)') + '">' + res.state + '</span></div>';
+      if (!res.has_log) {
+        html += '<div class="muted text-sm">No boot log found yet. Start the server first.</div>';
+      } else if (!f.length) {
+        html += '<div class="muted text-sm">No common failure patterns detected (' + res.metrics.lines + ' log lines). Under the hood this is a heuristic scan.</div>';
+      } else {
+        f.forEach((item) => {
+          const color = item.severity === 'critical' ? 'var(--red)' : item.severity === 'high' ? 'var(--orange, var(--yellow))' : item.severity === 'medium' ? 'var(--yellow)' : 'var(--green)';
+          html += '<div class="card" style="padding:12px;border-left:3px solid ' + color + ';background:var(--glass)">'
+            + '<div class="flex-between"><b style="color:' + color + '">' + item.label + '</b><span class="pill pill-gray mono" style="font-size:10px">' + Math.round(item.confidence * 100) + '%</span></div>'
+            + '<div class="muted text-sm mt-1" style="line-height:1.5">' + item.hint + '</div>'
+            + (item.match ? '<div class="mono text-sm mt-1" style="font-size:11px;color:var(--text-dim);word-break:break-all">"…' + item.match + '…"</div>' : '')
+            + '</div>';
+        });
+      }
+      html += '</div>';
+      await VP.confirmDialog(html, { title: 'Boot Log AI Diagnose', html: true, danger: false, okText: 'Close', width: 'min(640px,92vw)' });
+    } catch (e) {
+      VP.toast('Diagnostic failed: ' + e.message, 'error');
     }
   };
 

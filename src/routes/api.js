@@ -75,7 +75,49 @@ router.post('/customization/save-beacon', json, (req, res) => {
 // ---------- Authenticated ----------
 router.use(apiAuth);
 
-router.get('/auth/me', (req, res) => res.json({ user: authService.publicUser(req.user) }));
+router.get('/auth/me', (req, res) => res.json({ user: authService.publicUser(req.user), impersonation: req.impersonation ? { admin_id: req.impersonation.admin.id, admin_username: req.impersonation.admin.username } : null }));
+
+// End an admin impersonation session and mint a fresh token for the admin.
+router.post('/impersonation/leave', json, (req, res) => {
+  try {
+    const impSvc = require('../services/impersonationService');
+    if (!req.impersonation) return res.status(400).json({ error: 'Not impersonating' });
+    const adminId = req.impersonation.admin.id;
+    impSvc.endImpersonation(req.impersonation, req.user);
+    const status = db.prepare('SELECT role, root_admin, suspended FROM users WHERE id = ?').get(adminId);
+    if (!status || status.suspended) return res.status(403).json({ error: 'Admin account unavailable' });
+    const admin = db.prepare('SELECT * FROM users WHERE id = ?').get(adminId);
+    const token = authService.signToken(admin);
+    res.json({ ok: true, token });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- API Keys (self-service for each user; admin list endpoint added) ----------
+router.get('/api-keys', (req, res) => {
+  const apiKeyService = require('../services/apiKeyService');
+  res.json({ ok: true, keys: apiKeyService.listApiKeys(req.user.id) });
+});
+
+router.post('/api-keys', json, (req, res) => {
+  try {
+    const apiKeyService = require('../services/apiKeyService');
+    const created = apiKeyService.createApiKey(req.user.id, req.body.name, req.body.scopes || 'r_servers');
+    activity.logActivity({ user_id: req.user.id, event: 'api_key:create', details: { name: req.body.name || 'untitled', prefix: created.prefix } });
+    res.json({ ok: true, key: created.key, prefix: created.prefix });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/api-keys/:id', (req, res) => {
+  const apiKeyService = require('../services/apiKeyService');
+  const ok = apiKeyService.deleteApiKey(req.user.id, req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Key not found' });
+  activity.logActivity({ user_id: req.user.id, event: 'api_key:revoke', details: { id: req.params.id } });
+  res.json({ ok: true });
+});
 
 router.get('/user/activity', (req, res) => {
   const logs = activity.listActivity({ user_id: req.user.id, limit: parseInt(req.query.limit || '100', 10) });
@@ -209,6 +251,14 @@ router.get('/vms/:id/bootlog/stream', loadVm, (req, res) => {
 router.post('/vms/:id/bootlog/clear', loadVm, (req, res) => {
   bootLogService.clearBootLogs(req.vm);
   res.json({ ok: true });
+});
+router.get('/vms/:id/bootlog/diagnose', loadVm, (req, res) => {
+  try {
+    const result = require('../services/bootLogAiService').diagnose(req.vm);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 router.delete('/vms/:id', loadVm, async (req, res) => {
   try {

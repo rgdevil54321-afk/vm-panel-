@@ -83,6 +83,32 @@
       <% } %>
     </div>
   </div>
+
+  <div class="card mt-3">
+    <div class="card-title">API Keys</div>
+    <p class="muted mb-2 text-sm">Personal API keys with prefix <code class="mono">vp_live_</code>. Use them with <code class="mono">Authorization: Bearer &lt;key&gt;</code> for the Venlix REST API. Keys are shown once at creation.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Last Used</th><th>Created</th><th class="right">Actions</th></tr></thead>
+        <tbody id="apikeyRows">
+          <tr><td colspan="6" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid grid-3" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0">
+        <label>Name</label>
+        <input id="ak_name" class="input" placeholder="e.g. ci-deploy" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Scopes (comma-separated)</label>
+        <input id="ak_scopes" class="input" placeholder="r_servers" value="r_servers" />
+      </div>
+      <div class="flex" style="align-items:flex-end">
+        <button class="btn btn-primary" onclick="createApiKey()">Create Key</button>
+      </div>
+    </div>
+  </div>
 </div>
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
@@ -103,4 +129,56 @@ async function disableTfa() {
     setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
+
+// ---------- API Keys ----------
+async function loadApiKeys() {
+  const rows = document.getElementById('apikeyRows');
+  const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  try {
+    const res = await VP.api('/api-keys');
+    const keys = res.keys || [];
+    if (!keys.length) {
+      rows.innerHTML = '<tr><td colspan="6" class="muted">No API keys yet.</td></tr>';
+      return;
+    }
+    rows.innerHTML = keys.map((k) => {
+      const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'never';
+      return '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(k.name) + '</td>'
+        + '<td class="mono text-sm">' + esc(k.key_prefix) + '…</td>'
+        + '<td class="text-sm"><span class="pill pill-gray">' + esc(k.scopes || 'r_servers') + '</span></td>'
+        + '<td class="text-sm">' + lastUsed + '</td>'
+        + '<td class="text-sm">' + new Date(k.created_at).toLocaleDateString() + '</td>'
+        + '<td class="right"><button class="btn btn-sm btn-danger" onclick="revokeApiKey(' + k.id + ',\'' + esc(k.name || '') + '\')">Revoke</button></td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) {
+    rows.innerHTML = '<tr><td colspan="6" class="muted">Failed to load: ' + esc(e.message) + '</td></tr>';
+  }
+}
+async function createApiKey() {
+  const name = document.getElementById('ak_name').value.trim();
+  const scopes = document.getElementById('ak_scopes').value.trim() || 'r_servers';
+  if (!name) { VP.toast('Enter a name for the key', 'warning'); return; }
+  try {
+    const res = await VP.api('/api-keys', { method: 'POST', body: { name, scopes } });
+    const html = '<div style="line-height:1.7">'
+      + '<div style="font-weight:700;margin-bottom:6px;color:var(--red)">Copy this key now — it will not be shown again.</div>'
+      + '<div class="mono" style="padding:10px;border:1px dashed var(--border);border-radius:8px;word-break:break-all;background:var(--glass)">' + res.key + '</div>'
+      + '<div class="muted text-sm mt-2">Prefix: <code class="mono">' + res.prefix + '…</code></div>'
+      + '</div>';
+    await VP.confirmDialog(html, { title: 'API Key Created', html: true, danger: false, okText: 'I saved it', width: 'min(560px,92vw)' });
+    loadApiKeys();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function revokeApiKey(id, name) {
+  const ok = await VP.confirmDialog('Revoke API key' + (name ? ' “' + name + '”' : '') + '? This cannot be undone.', { title: 'Revoke API Key' });
+  if (!ok) return;
+  try {
+    await VP.api('/api-keys/' + id, { method: 'DELETE' });
+    VP.toast('API key revoked', 'success');
+    loadApiKeys();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+loadApiKeys();
 </script>

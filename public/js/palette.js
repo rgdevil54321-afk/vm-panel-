@@ -2,6 +2,40 @@
   if (window.__vpPaletteLoaded) return;
   window.__vpPaletteLoaded = true;
 
+  // Detect impersonation JWT from the token cookie (has "imp": true claim).
+  function tokenIsImpersonation() {
+    try {
+      const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+      if (!m) return false;
+      const payload = JSON.parse(atob(m[1].split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return !!payload.imp;
+    } catch (_) { return false; }
+  }
+
+  function setupImpersonationBanner() {
+    const banner = document.getElementById('impersonationBanner');
+    if (!banner) return;
+    if (tokenIsImpersonation()) {
+      banner.style.display = 'block';
+      document.body.style.paddingTop = '38px';
+    }
+  }
+
+  window.endImpersonation = function endImpersonation() {
+    fetch('/api/impersonation/leave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + vpToken() }
+    }).then((r) => r.json()).then((d) => {
+      if (d.ok && d.token) {
+        document.cookie = 'token=' + d.token + ';path=/;max-age=604800;SameSite=Lax';
+        location.href = '/admin/users';
+      } else {
+        if (window.VP) VP.toast('Could not end impersonation: ' + (d.error || 'unknown'), 'error');
+        location.href = '/logout';
+      }
+    }).catch(() => { location.href = '/logout'; });
+  };
+
   let visible = false;
   let commands = [];
   let activeIdx = 0;
@@ -212,6 +246,7 @@
   }
   exposeVmId();
   window.addEventListener('popstate', () => { exposeVmId(); refresh(); });
+  setupImpersonationBanner();
 
   window.VP_PALETTE = { open, close, toggle, refresh };
 })();

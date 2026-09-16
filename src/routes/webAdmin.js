@@ -232,6 +232,20 @@ router.get('/admin/users/:id', (req, res) => {
   render(res, 'userDetail', { target: authService.publicUser(target), vms, otherVms, loginHistory, logs });
 });
 
+// Admin impersonates a user — returns a short-lived token that signs in as them.
+router.post('/admin/users/:id/impersonate', express.json(), (req, res) => {
+  try {
+    const target = authService.findById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot impersonate yourself' });
+    if (target.suspended) return res.status(400).json({ error: 'Cannot impersonate a suspended user' });
+    const imp = require('../services/impersonationService').createImpersonation(req.user, target, req.body && req.body.reason);
+    res.json({ ok: true, token: imp.token, expires_at: imp.expiresAt });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Quota + credit usage summary for the admin user detail page
 router.get('/admin/users/:id/quota', (req, res) => {
   const target = authService.findById(req.params.id);
