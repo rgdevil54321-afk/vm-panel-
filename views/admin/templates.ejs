@@ -1,0 +1,96 @@
+<%- include('../partials/head', { title: 'OS Templates Studio' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">OS Templates Studio</h2>
+    <button class="btn btn-sm" onclick="loadTemplates()">Refresh</button>
+  </div>
+  <div class="card">
+    <div class="card-title">Cloud Images Catalog</div>
+    <p class="muted text-sm mb-2">These templates power the New Server wizard and admin Create Server page. Rows are stored as <code class="mono">[name, os_type, codename, img_url, username, password]</code> in <code class="mono">vm.os_list</code>.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Name</th><th>OS Type</th><th>Codename</th><th>Image URL</th><th>User</th><th>Pass</th><th class="right">Actions</th></tr></thead>
+        <tbody id="tplRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="flex" style="gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="addTemplate()">Add Template</button>
+      <button class="btn btn-sm" onclick="saveAll()">Save Changes</button>
+      <button class="btn btn-sm btn-warning" onclick="restoreDefaults()">Restore Defaults</button>
+    </div>
+    <div class="muted text-sm mt-2">Edit cells inline, then click <b>Save Changes</b> to persist the whole list.</div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+let TEMPLATES = [];
+
+async function loadTemplates() {
+  const rows = document.getElementById('tplRows');
+  try {
+    const res = await VP.api('/admin/templates');
+    TEMPLATES = res.templates || [];
+    if (!TEMPLATES.length) { rows.innerHTML = '<tr><td colspan="7" class="muted">No templates.</td></tr>'; return; }
+    render();
+  } catch (e) { rows.innerHTML = '<tr><td colspan="7" class="muted">Failed: ' + e.message + '</td></tr>'; }
+}
+
+const escAttr = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function cell(name, idx, val) {
+  return '<input class="input" style="padding:6px;font-size:12px" value="' + escAttr(val) + '" oninput="TEMPLATES[' + idx + '].' + name + '=this.value" />';
+}
+
+function render() {
+  const rows = document.getElementById('tplRows');
+  rows.innerHTML = TEMPLATES.map((t, i) => {
+    const val = (f) => (t[f] == null ? '' : t[f]);
+    return '<tr>'
+      + '<td>' + cell('name', i, val('name')) + '</td>'
+      + '<td>' + cell('os_type', i, val('os_type')) + '</td>'
+      + '<td>' + cell('codename', i, val('codename')) + '</td>'
+      + '<td style="max-width:320px">' + cell('img_url', i, val('img_url')) + '</td>'
+      + '<td>' + cell('username', i, val('username')) + '</td>'
+      + '<td>' + cell('password', i, val('password')) + '</td>'
+      + '<td class="right"><button class="btn btn-sm btn-danger" onclick="removeRow(' + i + ')">Remove</button></td>'
+      + '</tr>';
+  }).join('');
+}
+function removeRow(i) { TEMPLATES.splice(i, 1); render(); }
+function addTemplate() {
+  TEMPLATES.push({ name: 'Custom OS', os_type: 'ubuntu', codename: 'custom', img_url: '', username: 'root', password: 'root' });
+  render();
+}
+async function saveAll() {
+  if (!TEMPLATES.length) { VP.toast('Nothing to save', 'warning'); return; }
+  try {
+    await VP.api('/admin/templates', { method: 'PUT', body: { templates: TEMPLATES } });
+    VP.toast('Templates saved', 'success');
+    loadTemplates();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function restoreDefaults() {
+  const ok = await VP.confirmDialog('Replace the entire catalog with the 9 stock templates?', { title: 'Restore Defaults', danger: false, okText: 'Restore' });
+  if (!ok) return;
+  const defaults = [
+    ['Ubuntu 22.04', 'ubuntu', 'jammy', 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img', 'ubuntu', 'root'],
+    ['Ubuntu 24.04', 'ubuntu', 'noble', 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img', 'ubuntu', 'root'],
+    ['Debian 11', 'debian', 'bullseye', 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2', 'debian', 'root'],
+    ['Debian 12', 'debian', 'bookworm', 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2', 'debian', 'root'],
+    ['Debian 13', 'debian', 'trixie', 'https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-generic-amd64-daily.qcow2', 'debian', 'root'],
+    ['Fedora 40', 'fedora', '40', 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-40-1.14.x86_64.qcow2', 'fedora', 'root'],
+    ['CentOS Stream 9', 'centos', 'stream9', 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2', 'centos', 'root'],
+    ['AlmaLinux 9', 'almalinux', '9', 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2', 'almalinux', 'root'],
+    ['Rocky Linux 9', 'rockylinux', '9', 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2', 'rocky', 'root']
+  ];
+  TEMPLATES = defaults.map((t) => ({ name: t[0], os_type: t[1], codename: t[2], img_url: t[3], username: t[4], password: t[5] }));
+  render();
+  await saveAll();
+}
+
+loadTemplates();
+</script>

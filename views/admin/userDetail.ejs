@@ -41,7 +41,19 @@
         <div class="form-group" style="margin:0"><label>Max disk GB (-1)</label><input id="qDisk" type="number" value="<%= Number(target.max_disk_gb ?? -1) %>"/></div>
       </div>
       <div id="quotaUsage" class="muted text-sm mt-2"></div>
-      <div class="mt-3"><button class="btn btn-primary" onclick="saveQuota()">Save Quotas</button></div>
+      <div class="flex" style="gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveQuota()">Save Quotas</button>
+        <% if (typeof plans !== 'undefined' && plans.length > 0) { %>
+          <label class="text-sm" style="align-self:center">Apply plan:</label>
+          <select id="planSelect" class="input" style="width:auto;padding:8px">
+            <option value="">— select plan —</option>
+            <% for (const p of plans) { %>
+              <option value="<%= p.id %>"><%= p.name %> (<%= p.price %> <%= p.currency %>)</option>
+            <% } %>
+          </select>
+          <button class="btn btn-sm" onclick="applyPlan()">Apply</button>
+        <% } %>
+      </div>
     </div>
 
     <!-- Virtual Machines Owned Card -->
@@ -267,6 +279,16 @@ async function impersonateUser() {
     document.cookie = 'token=' + d.token + ';path=/;max-age=600;SameSite=Lax';
     VP.toast('Impersonating ' + '<%= target.username %>', 'success');
     setTimeout(() => location.href = '/dashboard', 400);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function applyPlan() {
+  const planId = document.getElementById('planSelect').value;
+  if (!planId) { VP.toast('Select a plan first', 'warning'); return; }
+  try {
+    const res = await VP.api('/admin/users/<%= target.id %>/assign-plan', { method: 'POST', body: { plan_id: planId } });
+    VP.toast('Applied plan "' + res.plan.name + '"', 'success');
+    setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 </script>

@@ -229,7 +229,8 @@ router.get('/admin/users/:id', (req, res) => {
   const otherVms = db.prepare('SELECT v.*, u.username as owner_username FROM vms v JOIN users u ON u.id = v.owner_id WHERE v.owner_id != ? ORDER BY v.name').all(target.id).map(vmService.serializeVm);
   const loginHistory = activity.listLoginHistory({ user_id: target.id, limit: 100 });
   const logs = activity.listActivity({ user_id: target.id, limit: 100 });
-  render(res, 'userDetail', { target: authService.publicUser(target), vms, otherVms, loginHistory, logs });
+  const plans = require('../services/billingService').listPlans(true);
+  render(res, 'userDetail', { target: authService.publicUser(target), vms, otherVms, loginHistory, logs, plans });
 });
 
 // Admin impersonates a user — returns a short-lived token that signs in as them.
@@ -333,6 +334,19 @@ router.post('/admin/users/:id/suspend', (req, res) => {
 router.get('/admin/activity', (req, res) => {
   const logs = activity.listActivity({ limit: 500 });
   render(res, 'activity', { logs });
+});
+
+router.get('/admin/billing', (req, res) => {
+  const users = db.prepare('SELECT id, username FROM users ORDER BY username ASC').all();
+  render(res, 'billing', { users, plans: require('../services/billingService').listPlans() });
+});
+
+router.get('/admin/updates', (req, res) => {
+  render(res, 'updates', {});
+});
+
+router.get('/admin/templates', (req, res) => {
+  render(res, 'templates', {});
 });
 
 router.get('/admin/settings', (req, res) => {

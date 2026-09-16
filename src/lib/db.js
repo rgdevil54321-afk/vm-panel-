@@ -193,6 +193,53 @@ CREATE INDEX IF NOT EXISTS idx_login_ip ON login_attempts(ip);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_impersonations_admin ON impersonations(admin_id);
 CREATE INDEX IF NOT EXISTS idx_impersonations_target ON impersonations(target_id);
+
+CREATE TABLE IF NOT EXISTS billing_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT,
+  price REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'credits',
+  max_vms INTEGER NOT NULL DEFAULT -1,
+  max_cpu INTEGER NOT NULL DEFAULT -1,
+  max_mem_mb INTEGER NOT NULL DEFAULT -1,
+  max_disk_gb INTEGER NOT NULL DEFAULT -1,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'credits',
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL,
+  paid_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS coupons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT UNIQUE NOT NULL,
+  type TEXT NOT NULL DEFAULT 'credits',
+  value REAL NOT NULL DEFAULT 0,
+  valid_until TEXT,
+  max_uses INTEGER NOT NULL DEFAULT 0,
+  uses INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS coupon_claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coupon_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  claimed_at TEXT NOT NULL,
+  FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 `);
 
 const defaultSettings = {

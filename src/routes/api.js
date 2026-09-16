@@ -591,4 +591,173 @@ router.post('/admin/nodes/connect-key', apiAdmin, json, async (req, res) => {
   }
 });
 
+// ---------- Billing (admin) ----------
+router.get('/admin/billing/plans', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: true, plans: bs.listPlans() });
+});
+router.post('/admin/billing/plans', apiAdmin, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const plan = bs.createPlan(req.body || {});
+    if (req.user) activity.logActivity({ user_id: req.user.id, event: 'billing:plan_create', details: { name: plan.name } });
+    res.json({ ok: true, plan });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/admin/billing/plans/:id', apiAdmin, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const plan = bs.updatePlan(req.params.id, req.body || {});
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    res.json({ ok: true, plan });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.delete('/admin/billing/plans/:id', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: bs.deletePlan(req.params.id) });
+});
+
+router.get('/admin/billing/coupons', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: true, coupons: bs.listCoupons() });
+});
+router.post('/admin/billing/coupons', apiAdmin, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const coupon = bs.createCoupon(req.body || {});
+    res.json({ ok: true, coupon });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.delete('/admin/billing/coupons/:id', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: bs.deleteCoupon(req.params.id) });
+});
+
+router.get('/admin/billing/invoices', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: true, invoices: bs.listInvoices() });
+});
+router.post('/admin/billing/invoices', apiAdmin, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const target = db.prepare('SELECT id, username FROM users WHERE id = ?').get(Number(req.body.user_id));
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const inv = bs.createInvoice(target.id, req.body || {});
+    activity.logActivity({ user_id: req.user.id, event: 'billing:invoice_create', details: { user_id: target.id, amount: inv.amount } });
+    res.json({ ok: true, invoice: inv });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/admin/billing/invoices/:id/pay', apiAdmin, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const inv = bs.markInvoicePaid(req.params.id, req.user);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    activity.logActivity({ user_id: req.user.id, event: 'billing:invoice_paid', details: { invoice_id: inv.id, user_id: inv.user_id, amount: inv.amount } });
+    res.json({ ok: true, invoice: inv });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.delete('/admin/billing/invoices/:id', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: bs.deleteInvoice(req.params.id) });
+});
+
+router.post('/admin/users/:id/assign-plan', apiAdmin, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const target = authService.findById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const plan = req.body && req.body.plan_id ? bs.getPlan(req.body.plan_id) : null;
+    if (!plan) return res.status(400).json({ error: 'Plan not found' });
+    bs.applyPlanToUser(plan, target);
+    activity.logActivity({ user_id: req.user.id, event: 'billing:plan_assign', details: { user_id: target.id, plan: plan.name } });
+    res.json({ ok: true, plan });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---------- Billing (user self-service) ----------
+router.get('/billing/invoices', apiAuth, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: true, invoices: bs.listInvoices(req.user.id) });
+});
+router.post('/billing/coupon/redeem', apiAuth, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const result = bs.redeemCoupon(req.body && req.body.code, req.user.id);
+    activity.logActivity({ user_id: req.user.id, event: 'billing:coupon_redeem', details: { code: result.code, amount: result.amount, type: result.type } });
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ---------- Updates + Templates (admin) ----------
+router.get('/admin/updates/status', apiAdmin, async (req, res) => {
+  try {
+    const us = require('../services/updatesService');
+    const [current, log, ahead] = await Promise.all([us.gitCurrent(), us.gitLog(), us.statusAhead()]);
+    res.json({ ok: true, current, log, ahead });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+router.post('/admin/updates/fetch', apiAdmin, async (req, res) => {
+  const us = require('../services/updatesService');
+  res.json(await us.fetchUpdates());
+});
+router.post('/admin/updates/update', apiAdmin, async (req, res) => {
+  const us = require('../services/updatesService');
+  res.json(await us.updateNow());
+});
+router.post('/admin/updates/rollback', apiAdmin, async (req, res) => {
+  const us = require('../services/updatesService');
+  res.json(await us.rollback());
+});
+
+router.get('/admin/templates', apiAdmin, (req, res) => {
+  const osList = settings.get('vm.os_list');
+  const templates = Array.isArray(osList)
+    ? osList.map((t) => (Array.isArray(t) ? { name: t[0], os_type: t[1], codename: t[2], img_url: t[3], username: t[4], password: t[5] } : t))
+    : [];
+  res.json({ ok: true, templates });
+});
+router.post('/admin/templates', apiAdmin, json, (req, res) => {
+  try {
+    const osList = settings.get('vm.os_list');
+    const arr = Array.isArray(osList) ? osList : [];
+    const t = req.body || {};
+    if (!t.name || !String(t.name).trim()) return res.status(400).json({ error: 'Template name is required' });
+    arr.push([String(t.name).trim(), String(t.os_type || 'ubuntu'), String(t.codename || ''), String(t.img_url || ''), String(t.username || 'root'), String(t.password || 'root')]);
+    settings.set('vm.os_list', arr);
+    res.json({ ok: true, templates: arr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Replace entire template list in one shot
+router.put('/admin/templates', apiAdmin, json, (req, res) => {
+  try {
+    const incoming = req.body && Array.isArray(req.body.templates) ? req.body.templates : [];
+    const arr = incoming.map((t) => [String(t.name || '').trim(), String(t.os_type || 'ubuntu'), String(t.codename || ''), String(t.img_url || ''), String(t.username || 'root'), String(t.password || 'root')]);
+    settings.set('vm.os_list', arr);
+    res.json({ ok: true, templates: arr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/admin/templates/:idx', apiAdmin, json, (req, res) => {
+  try {
+    const osList = settings.get('vm.os_list');
+    const arr = Array.isArray(osList) ? osList : [];
+    const idx = parseInt(req.params.idx, 10);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= arr.length) return res.status(404).json({ error: 'Template not found' });
+    const t = req.body || {};
+    arr[idx] = [String(t.name).trim(), String(t.os_type || 'ubuntu'), String(t.codename || ''), String(t.img_url || ''), String(t.username || 'root'), String(t.password || 'root')];
+    settings.set('vm.os_list', arr);
+    res.json({ ok: true, templates: arr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.delete('/admin/templates/:idx', apiAdmin, (req, res) => {
+  const osList = settings.get('vm.os_list');
+  const arr = Array.isArray(osList) ? osList : [];
+  const idx = parseInt(req.params.idx, 10);
+  if (!Number.isFinite(idx) || idx < 0 || idx >= arr.length) return res.status(404).json({ error: 'Template not found' });
+  arr.splice(idx, 1);
+  settings.set('vm.os_list', arr);
+  res.json({ ok: true, templates: arr });
+});
+
 module.exports = router;

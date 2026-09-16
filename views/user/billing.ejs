@@ -47,6 +47,28 @@
     <div class="muted">Billing is currently disabled by the administrator.</div>
   </div>
   <% } %>
+
+  <div class="card mt-3">
+    <div class="card-title">Redeem Coupon</div>
+    <p class="muted text-sm mb-2">Enter a coupon code to add credits to your balance. Each code can be used once per account.</p>
+    <div class="flex" style="gap:8px;align-items:flex-end;margin-top:10px">
+      <div class="form-group" style="margin:0">
+        <label>Code</label>
+        <input id="couponCode" class="input" placeholder="WELCOME25" />
+      </div>
+      <button class="btn btn-primary" onclick="redeemCoupon()">Redeem</button>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-title">Your Invoices</div>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>#</th><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody id="invRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
@@ -70,4 +92,35 @@ async function claimBonus() {
   };
   upd(); setInterval(upd, 30000);
 })();
+
+async function redeemCoupon() {
+  const code = document.getElementById('couponCode').value.trim();
+  if (!code) { VP.toast('Enter a coupon code', 'warning'); return; }
+  try {
+    const res = await VP.api('/billing/coupon/redeem', { method: 'POST', body: { code } });
+    VP.toast('+' + res.result.amount + ' credits credited!', 'success');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function loadInvoices() {
+  const rows = document.getElementById('invRows');
+  if (!rows) return;
+  try {
+    const res = await VP.api('/billing/invoices');
+    const inv = res.invoices || [];
+    if (!inv.length) { rows.innerHTML = '<tr><td colspan="5" class="muted">No invoices yet.</td></tr>'; return; }
+    rows.innerHTML = inv.map((i) => {
+      const paid = i.status === 'paid';
+      return '<tr>'
+        + '<td class="mono">#' + i.id + '</td>'
+        + '<td class="text-sm">' + (i.description || '-') + '</td>'
+        + '<td class="mono" style="font-weight:600">' + i.amount + ' ' + (i.currency || 'credits') + '</td>'
+        + '<td>' + (paid ? '<span class="pill pill-green">paid</span>' : '<span class="pill pill-gray">pending</span>') + '</td>'
+        + '<td class="text-sm muted">' + new Date(i.created_at).toLocaleString() + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="5" class="muted">Failed to load invoices.</td></tr>'; }
+}
+loadInvoices();
 </script>
