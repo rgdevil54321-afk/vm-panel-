@@ -276,6 +276,10 @@ if (!userColumns.includes('sfx_volume')) {
 if (!userColumns.includes('secret_blur')) {
   db.exec('ALTER TABLE users ADD COLUMN secret_blur INTEGER NOT NULL DEFAULT 0');
 }
+if (!userColumns.includes('secret_blur_set')) {
+  // 1 = user explicitly chose; 0 = inherit the admin-wide panel.secret_blur default
+  db.exec('ALTER TABLE users ADD COLUMN secret_blur_set INTEGER NOT NULL DEFAULT 0');
+}
 
 // ---- Per-user quotas + credits (billing) ----
 const userQuotaCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
