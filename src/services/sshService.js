@@ -2,7 +2,7 @@ const { Client } = require('ssh2');
 const path = require('path');
 const logger = require('../lib/logger');
 
-function connect(vm, { readyTimeout = 10000 } = {}) {
+function connect(vm, { readyTimeout = 5000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!vm || !vm.ssh_port || !vm.username) {
       return reject(new Error('VM has no SSH configuration'));
@@ -10,7 +10,7 @@ function connect(vm, { readyTimeout = 10000 } = {}) {
     const conn = new Client();
     let settled = false;
     const timer = setTimeout(() => {
-      if (!settled) { settled = true; conn.end(); reject(new Error('SSH connection timed out')); }
+      if (!settled) { settled = true; try { conn.end(); } catch (_) {} reject(new Error('SSH connection timed out')); }
     }, readyTimeout);
     conn.on('ready', () => {
       if (settled) return;
@@ -28,8 +28,8 @@ function connect(vm, { readyTimeout = 10000 } = {}) {
       username: vm.username,
       password: vm.password,
       readyTimeout,
-      keepaliveInterval: 5000,
-      keepaliveCountMax: 10,
+      keepaliveInterval: 3000,
+      keepaliveCountMax: 5,
     });
   });
 }
@@ -71,7 +71,7 @@ function shellStream(vm) {
   });
 }
 
-async function shellStreamWithRetry(vm, { maxRetries = 25, retryDelay = 2000, shouldContinue = () => true } = {}) {
+async function shellStreamWithRetry(vm, { maxRetries = 12, retryDelay = 700, shouldContinue = () => true } = {}) {
   let lastErr;
   for (let i = 0; i < maxRetries; i++) {
     if (!shouldContinue()) {

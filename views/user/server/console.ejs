@@ -64,12 +64,67 @@
   border-color: var(--accent-2);
 }
 
+/* Session tabs inside the terminal pane */
+.session-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.session-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.session-tab:hover { color: #fff; border-color: var(--border-hover); }
+.session-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent-light);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.session-tab.closed { opacity: 0.55; text-decoration: line-through; }
+.session-tab .session-close {
+  width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.session-tab .session-close:hover { background: rgba(248,113,113,0.2); color: #f87171; }
+.btn-add-term {
+  background: transparent;
+  border: 1px dashed var(--border-hover);
+  color: var(--text-muted);
+  width: 30px; height: 28px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.btn-add-term:hover { color: #fff; border-color: var(--accent-2); border-style: solid; background: rgba(56,189,248,0.1); }
+
 /* Resizable Terminal Wrapper & 4-Corner Handles */
 .terminal-wrapper {
   position: relative;
   min-height: 380px;
   min-width: 320px;
-  height: calc(100vh - 350px);
+  height: calc(100vh - 400px);
   width: 100%;
   background: #060913;
   border-radius: 12px;
@@ -89,6 +144,10 @@
   padding: 8px;
   box-sizing: border-box;
 }
+.term-pane {
+  display: none;
+}
+.term-pane.show { display: block; }
 
 /* 4 Corner Resize Handles */
 .resize-handle {
@@ -216,7 +275,7 @@
     </button>
   </div>
 
-  <!-- SSH Terminal Pane -->
+  <!-- SSH Terminal Pane (multi-session) -->
   <div id="paneTerminal" class="card" style="padding:16px">
     <div id="sshBootBanner" style="display:none;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.25);border-radius:10px;padding:10px 14px;margin-bottom:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div class="flex" style="gap:8px;align-items:center">
@@ -228,29 +287,30 @@
       </button>
     </div>
 
+    <div class="flex-between" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div class="session-tabs" id="sessionTabs"></div>
+      <button class="btn-add-term" id="btnNewTerm" onclick="newTerminal()" title="Open a new terminal session">+</button>
+    </div>
+
     <div class="console-toolbar flex-between" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
-        <span id="connState" class="pill <%= vm.status === 'running' ? 'pill-yellow' : 'pill-gray' %>">
-          <%= vm.status === 'running' ? 'connecting...' : 'offline' %>
-        </span>
-        <span id="connStateEta" class="muted text-sm mono" style="font-size:11px;display:<%= vm.status === 'running' ? 'inline' : 'none' %>">booting, ETA ~30-60s</span>
-        <button class="btn btn-sm" id="btnReconnect" onclick="sshConnect()">
+        <span id="connState" class="pill pill-yellow">connecting...</span>
+        <button class="btn btn-sm" id="btnReconnect" onclick="reconnectActive()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           Reconnect
         </button>
-        <button class="btn btn-sm" onclick="clearTerm()">Clear</button>
+        <button class="btn btn-sm" onclick="clearActiveTerm()">Clear</button>
         <button class="btn btn-sm" onclick="sendCtrlC()" title="Send Interrupt Signal (Ctrl+C)">Ctrl+C</button>
         <button class="btn btn-sm" onclick="sendCtrlD()" title="Send EOF (Ctrl+D)">Ctrl+D</button>
       </div>
 
-      <!-- Size Controls: Auto Size vs 4-Corner Custom Resizing -->
       <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
         <span id="termSizeBadge" class="mono muted text-sm" style="font-size:11.5px">Auto Size</span>
-        <button class="btn btn-sm" id="btnTermAutoSize" onclick="resetToAutoSize('termWrapper')" title="Reset to default responsive Auto Size">
+        <button class="btn btn-sm" id="btnTermAutoSize" onclick="resetActiveToAutoSize()" title="Reset to default responsive Auto Size">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
           Auto Size
         </button>
-        <button class="btn btn-sm" onclick="fitTerm()">Fit</button>
+        <button class="btn btn-sm" onclick="fitActiveTerm()">Fit</button>
         <button class="btn btn-sm" onclick="toggleFullscreen('paneTerminal')" title="Toggle Full Screen">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
           Full
@@ -258,16 +318,7 @@
       </div>
     </div>
 
-    <!-- 4-Corner Resizable Wrapper for SSH Terminal -->
-    <div class="terminal-wrapper" id="termWrapper">
-      <div class="terminal" id="terminal"></div>
-      <!-- 4 Corner Mouse Drag Handles -->
-      <div class="resize-handle rh-tl" data-target="termWrapper" data-dir="tl" title="Drag to resize (Top-Left)"></div>
-      <div class="resize-handle rh-tr" data-target="termWrapper" data-dir="tr" title="Drag to resize (Top-Right)"></div>
-      <div class="resize-handle rh-bl" data-target="termWrapper" data-dir="bl" title="Drag to resize (Bottom-Left)"></div>
-      <div class="resize-handle rh-br" data-target="termWrapper" data-dir="br" title="Drag to resize (Bottom-Right)"></div>
-      <div class="resize-handle rh-b" data-target="termWrapper" data-dir="b" title="Drag to resize height (Bottom)"></div>
-    </div>
+    <div id="termPanes"></div>
   </div>
 
   <!-- Live Boot Logs Pane -->
@@ -320,7 +371,7 @@
     <div class="terminal-wrapper" id="bootTermWrapper">
       <div id="bootTerminal" class="terminal"></div>
       <pre id="bootRawContent" style="display:none;width:100%;height:100%;background:#060913;color:#38bdf8;padding:16px;box-sizing:border-box;font-family:JetBrains Mono, Menlo, Monaco, Consolas, monospace;font-size:13px;line-height:1.45;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
-      
+
       <!-- 4 Corner Mouse Drag Handles -->
       <div class="resize-handle rh-tl" data-target="bootTermWrapper" data-dir="tl" title="Drag to resize (Top-Left)"></div>
       <div class="resize-handle rh-tr" data-target="bootTermWrapper" data-dir="tr" title="Drag to resize (Top-Right)"></div>
@@ -363,17 +414,22 @@
 
 <script>
 (function () {
+  const VM_ID = <%= vm.id %>;
   const isVmRunning = <%= vm.status === 'running' ? 'true' : 'false' %>;
-  const termEl = document.getElementById('terminal');
   const bootTermEl = document.getElementById('bootTerminal');
   const rawBootEl = document.getElementById('bootRawContent');
   const stateEl = document.getElementById('connState');
-  const stateEtaEl = document.getElementById('connStateEta');
   const bootStateEl = document.getElementById('bootState');
   const sshBootBanner = document.getElementById('sshBootBanner');
   const termSizeBadge = document.getElementById('termSizeBadge');
+  const sessionTabsEl = document.getElementById('sessionTabs');
+  const termPanesEl = document.getElementById('termPanes');
 
-  let term, fit;
+  // ---------- Session state: multiple terminals per VM ----------
+  const terms = new Map();   // sessionId -> { term, fit, wrapper, tab, closed }
+  const sessionState = new Map(); // sessionId -> { text, cls }
+  let activeSid = null;
+
   let bootTerm, bootFit;
   let socket = null;
   let connected = false;
@@ -383,28 +439,6 @@
   let rawView = false;
   let rawBootBuffer = '';
   let sseSource = null;
-
-  function setState(text, cls) {
-    if (stateEl) {
-      stateEl.textContent = text;
-      stateEl.className = 'pill ' + (cls || 'pill-yellow');
-    }
-    if (stateEtaEl) {
-      stateEtaEl.style.display = cls === 'pill-yellow' ? 'inline' : 'none';
-    }
-    if (cls === 'pill-red' && text.includes('failed')) {
-      if (sshBootBanner) sshBootBanner.style.display = 'flex';
-    } else if (cls === 'pill-green') {
-      if (sshBootBanner) sshBootBanner.style.display = 'none';
-    }
-  }
-
-  function setBootState(text, cls, showPulse = true) {
-    if (bootStateEl) {
-      bootStateEl.innerHTML = (showPulse ? '<span class="pulse-dot"></span> ' : '') + text;
-      bootStateEl.className = 'pill ' + (cls || 'pill-blue');
-    }
-  }
 
   const termTheme = {
     background: '#060913',
@@ -430,20 +464,74 @@
     brightWhite: '#ffffff'
   };
 
-  function updateSizeBadge(isCustom = false) {
+  const HANDLES_HTML =
+    '<div class="resize-handle rh-tl" data-target="{WRAP}" data-dir="tl" title="Drag to resize (Top-Left)"></div>' +
+    '<div class="resize-handle rh-tr" data-target="{WRAP}" data-dir="tr" title="Drag to resize (Top-Right)"></div>' +
+    '<div class="resize-handle rh-bl" data-target="{WRAP}" data-dir="bl" title="Drag to resize (Bottom-Left)"></div>' +
+    '<div class="resize-handle rh-br" data-target="{WRAP}" data-dir="br" title="Drag to resize (Bottom-Right)"></div>' +
+    '<div class="resize-handle rh-b" data-target="{WRAP}" data-dir="b" title="Drag to resize height (Bottom)"></div>';
+
+  function newSid() {
+    return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function setState(text, cls, banner) {
+    if (stateEl) {
+      stateEl.textContent = text;
+      stateEl.className = 'pill ' + (cls || 'pill-yellow');
+    }
+    if (sshBootBanner) {
+      if (banner === true || (cls === 'pill-red' && text.includes('failed'))) {
+        sshBootBanner.style.display = 'flex';
+      } else if (banner === false || cls === 'pill-green') {
+        sshBootBanner.style.display = 'none';
+      }
+    }
+  }
+
+  function setSessionState(sid, text, cls, banner) {
+    sessionState.set(sid, { text, cls });
+    if (sid === activeSid) setState(text, cls, banner);
+  }
+
+  function updateSizeBadge(term, isCustom) {
     if (!termSizeBadge || !term) return;
     if (isCustom) {
-      termSizeBadge.textContent = `Custom (${term.cols}×${term.rows})`;
+      termSizeBadge.textContent = 'Custom (' + term.cols + '×' + term.rows + ')';
       termSizeBadge.style.color = 'var(--accent-2)';
     } else {
-      termSizeBadge.textContent = `Auto (${term.cols}×${term.rows})`;
+      termSizeBadge.textContent = 'Auto (' + term.cols + '×' + term.rows + ')';
       termSizeBadge.style.color = 'var(--text-dim)';
     }
   }
 
-  function initTerm() {
-    if (term) { term.dispose(); term = null; }
-    term = new Terminal({
+  function createTerminalPane(sid) {
+    if (terms.has(sid)) return terms.get(sid);
+    const idx = terms.size + 1;
+
+    // tab button
+    const tab = document.createElement('button');
+    tab.className = 'session-tab';
+    tab.id = 'seesion-tab-' + sid;
+    tab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M4 17l6-5-6-5M12 19h8"/></svg><span>Terminal ' + idx + '</span><span class="session-close" title="Close this session">✕</span>';
+    tab.addEventListener('click', (e) => {
+      if (e.target.classList.contains('session-close')) { killSession(sid); return; }
+      activateSession(sid);
+    });
+    sessionTabsEl.appendChild(tab);
+
+    // wrapper + terminal
+    const wrapId = 'tw-' + sid;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'terminal-wrapper term-pane';
+    wrapper.id = wrapId;
+    const termDiv = document.createElement('div');
+    termDiv.className = 'terminal';
+    wrapper.appendChild(termDiv);
+    wrapper.insertAdjacentHTML('beforeend', HANDLES_HTML.split('{WRAP}').join(wrapId));
+    termPanesEl.appendChild(wrapper);
+
+    const term = new Terminal({
       cursorBlink: true,
       cursorStyle: 'block',
       fontSize: 14,
@@ -454,35 +542,111 @@
       scrollback: 10000,
       convertEol: true,
     });
-    fit = new FitAddon.FitAddon();
+    const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
-    term.open(termEl);
-    setTimeout(() => {
-      try {
-        fit.fit();
-        updateSizeBadge(false);
-      } catch (e) {}
-    }, 100);
+    term.open(termDiv);
+    setTimeout(() => { try { fit.fit(); } catch (_) {} }, 100);
 
     term.onData((data) => {
-      if (connected && socket) socket.emit('console:input', data);
+      if (connected && socket) socket.emit('console:input', { sessionId: sid, data });
     });
-
-    window.addEventListener('resize', () => {
-      if (activeTab === 'terminal') {
-        try { fit.fit(); sshResize(); updateSizeBadge(); } catch (e) {}
-      } else if (activeTab === 'bootlog') {
-        try { bootFit.fit(); } catch (e) {}
-      }
-    });
-
     term.onResize(({ cols, rows }) => {
-      if (socket && connected && activeTab === 'terminal') {
-        socket.emit('console:resize', { cols, rows });
-      }
+      if (connected && socket) socket.emit('console:resize', { sessionId: sid, cols, rows });
     });
+
+    const entry = { term, fit, wrapper, tab, closed: false };
+    terms.set(sid, entry);
+    return entry;
   }
 
+  function activateSession(sid) {
+    const entry = createTerminalPane(sid);
+    activeSid = sid;
+    for (const [id, t] of terms) {
+      t.wrapper.classList.toggle('show', id === sid);
+      t.tab.classList.toggle('active', id === sid);
+    }
+    const st = sessionState.get(sid) || { text: 'connecting...', cls: 'pill-yellow' };
+    setState(st.text, st.cls, st.cls === 'pill-green' ? false : undefined);
+    setTimeout(() => {
+      try { entry.fit.fit(); sendResize(sid); updateSizeBadge(entry.term, false); } catch (_) {}
+      entry.term.focus();
+    }, 80);
+  }
+
+  function removeSession(sid) {
+    const entry = terms.get(sid);
+    if (!entry) return;
+    try { entry.term.dispose(); } catch (_) {}
+    entry.wrapper.remove();
+    entry.tab.remove();
+    terms.delete(sid);
+    sessionState.delete(sid);
+  }
+
+  window.killSession = function (sid) {
+    if (socket && connected) socket.emit('console:kill', { sessionId: sid });
+    removeSession(sid);
+    if (activeSid === sid) {
+      activeSid = null;
+      const first = terms.keys().next();
+      if (!first.done) activateSession(first.value);
+      else {
+        setState('offline', 'pill-gray');
+        if (isVmRunning) window.newTerminal();
+      }
+    }
+  };
+
+  window.newTerminal = function () {
+    const sid = newSid();
+    createTerminalPane(sid);
+    activateSession(sid);
+    joinSession(sid, false);
+  };
+
+  window.reconnectActive = function () {
+    if (activeSid) joinSession(activeSid, true);
+    else if (isVmRunning) window.newTerminal();
+    else setState('offline', 'pill-gray');
+  };
+
+  function joinSession(sid, reattach) {
+    if (!terms.has(sid)) createTerminalPane(sid);
+    if (!socket || !connected) {
+      setupSocket();
+      setTimeout(() => { if (socket && connected) doJoin(sid, reattach); else setTimeout(() => doJoinWhenReady(sid, reattach), 2500); }, 300);
+      return;
+    }
+    doJoin(sid, reattach);
+  }
+
+  function doJoinWhenReady(sid, reattach) {
+    if (connected && socket) doJoin(sid, reattach);
+  }
+
+  function doJoin(sid, reattach) {
+    setSessionState(sid, 'connecting...', 'pill-yellow');
+    socket.emit('console:join', { vmId: VM_ID, terminalId: sid, reattach: !!reattach });
+  }
+
+  function sendResize(sid) {
+    const entry = terms.get(sid);
+    if (entry && socket && connected) {
+      socket.emit('console:resize', { sessionId: sid, cols: entry.term.cols, rows: entry.term.rows });
+    }
+  }
+
+  function markSessionClosed(sid, reason) {
+    const entry = terms.get(sid);
+    if (!entry) return;
+    entry.closed = true;
+    entry.tab.classList.add('closed');
+    entry.term.writeln('\r\n\x1b[33m[Session closed' + (reason === 'server-stopped' ? ' — server stopped' : '') + '. Click Reconnect to start a new one.]\x1b[0m\r\n');
+    setSessionState(sid, 'closed', 'pill-gray', true);
+  }
+
+  // ---------- Boot terminal (unchanged behavior) ----------
   function initBootTerm() {
     if (bootTerm) { bootTerm.dispose(); bootTerm = null; }
     bootTerm = new Terminal({
@@ -499,15 +663,17 @@
     bootFit = new FitAddon.FitAddon();
     bootTerm.loadAddon(bootFit);
     bootTerm.open(bootTermEl);
-    setTimeout(() => { try { bootFit.fit(); } catch (e) {} }, 100);
+    setTimeout(() => { try { bootFit.fit(); } catch (_) {} }, 100);
   }
 
-  function sshResize() {
-    if (term && socket && connected && activeTab === 'terminal') {
-      socket.emit('console:resize', { cols: term.cols, rows: term.rows });
+  function setBootState(text, cls, showPulse = true) {
+    if (bootStateEl) {
+      bootStateEl.innerHTML = (showPulse ? '<span class="pulse-dot"></span> ' : '') + text;
+      bootStateEl.className = 'pill ' + (cls || 'pill-blue');
     }
   }
 
+  // ---------- Socket setup ----------
   function setupSocket() {
     if (socket) return;
     socket = io({
@@ -521,7 +687,11 @@
       connected = true;
       if (activeTab === 'terminal') {
         if (isVmRunning) {
-          sshConnect();
+          if (terms.size === 0) window.newTerminal();
+          else {
+            // re-join all existing tabs after a socket reconnect (lossless via replay)
+            for (const sid of Array.from(terms.keys())) doJoin(sid, true);
+          }
         } else {
           setState('offline', 'pill-gray');
         }
@@ -530,53 +700,57 @@
       }
     });
 
-    // SSH Console events
-    socket.on('console:ready', () => {
-      setState('streaming', 'pill-green');
-      if (term) {
-        term.clear();
-        term.focus();
-      }
-      if (sshBootBanner) sshBootBanner.style.display = 'none';
-      setTimeout(() => {
-        try { fit.fit(); sshResize(); updateSizeBadge(); } catch (e) {}
-      }, 100);
+    socket.on('console:buffer', ({ sessionId, text }) => {
+      const entry = createTerminalPane(sessionId);
+      try { entry.term.clear(); entry.term.write(text || ''); } catch (_) {}
     });
 
-    socket.on('console:data', (d) => {
-      if (term && activeTab === 'terminal') term.write(d);
+    socket.on('console:ready', ({ sessionId, replayed }) => {
+      const entry = createTerminalPane(sessionId);
+      if (activeSid === null) activateSession(sessionId);
+      entry.closed = false;
+      if (!replayed) { try { entry.term.clear(); } catch (_) {} }
+      setSessionState(sessionId, 'streaming', 'pill-green', false);
+      try { entry.fit.fit(); sendResize(sessionId); updateSizeBadge(entry.term, false); } catch (_) {}
+      if (activeSid === sessionId) entry.term.focus();
+    });
+
+    socket.on('console:data', ({ sessionId, text }) => {
+      const entry = terms.get(sessionId);
+      if (entry) entry.term.write(text);
+    });
+
+    socket.on('console:close', ({ sessionId, reason }) => {
+      markSessionClosed(sessionId, reason);
     });
 
     socket.on('console:offline', () => {
-      setState('offline', 'pill-gray');
-      if (sshBootBanner) sshBootBanner.style.display = 'flex';
+      if (activeTab === 'terminal') {
+        setState('offline', 'pill-gray', true);
+        if (terms.has(activeSid)) setSessionState(activeSid, 'offline', 'pill-gray', true);
+      }
     });
 
     socket.on('console:error', (m) => {
-      setState('connection failed', 'pill-red');
-      if (term) term.writeln('\r\n\x1b[31m[Error] ' + m + '\x1b[0m\r\n');
-      if (sshBootBanner) sshBootBanner.style.display = 'flex';
-    });
-
-    socket.on('console:close', () => {
-      setState('stream closed', 'pill-gray');
-      if (term) term.writeln('\r\n\x1b[33m[Session disconnected. Click Reconnect to resume.]\x1b[0m\r\n');
+      if (activeTab === 'terminal') {
+        setState('connection failed', 'pill-red', true);
+        const entry = terms.get(activeSid);
+        if (entry) entry.term.writeln('\r\n\x1b[31m[Error] ' + m + '\x1b[0m\r\n');
+        if (activeSid) setSessionState(activeSid, 'connection failed', 'pill-red', true);
+      }
     });
 
     // Live Boot Log events
-    socket.on('bootlog:ready', (data) => {
+    socket.on('bootlog:ready', () => {
       setBootState('Live Streaming', 'pill-green', true);
       bootStreaming = true;
-      setTimeout(() => { try { bootFit.fit(); } catch (e) {} }, 100);
+      setTimeout(() => { try { bootFit.fit(); } catch (_) {} }, 100);
     });
 
     socket.on('bootlog:data', ({ text, init }) => {
       if (init) {
         rawBootBuffer = text || '';
-        if (bootTerm) {
-          bootTerm.clear();
-          bootTerm.write(rawBootBuffer);
-        }
+        if (bootTerm) { bootTerm.clear(); bootTerm.write(rawBootBuffer); }
         if (rawBootEl) rawBootEl.textContent = rawBootBuffer;
       } else {
         rawBootBuffer += text;
@@ -593,10 +767,10 @@
       rawBootBuffer = '';
       if (bootTerm) bootTerm.clear();
       if (rawBootEl) rawBootEl.textContent = '';
-      VP.toast('Boot logs cleared', 'info');
+      if (window.VP) VP.toast('Boot logs cleared', 'info');
     });
 
-    socket.on('bootlog:error', (m) => {
+    socket.on('bootlog:error', () => {
       setBootState('Stream Error', 'pill-red', false);
     });
 
@@ -608,11 +782,8 @@
     socket.on('disconnect', () => {
       connected = false;
       if (activeTab === 'terminal') {
-        if (isVmRunning) {
-          setState('connecting...', 'pill-yellow');
-        } else {
-          setState('offline', 'pill-gray');
-        }
+        if (isVmRunning) setState('reconnecting...', 'pill-yellow');
+        else setState('offline', 'pill-gray');
       } else {
         setBootState('Connecting stream...', 'pill-blue', true);
       }
@@ -620,11 +791,8 @@
 
     socket.on('connect_error', () => {
       if (activeTab === 'terminal') {
-        if (isVmRunning) {
-          setState('connecting...', 'pill-yellow');
-        } else {
-          setState('offline', 'pill-gray');
-        }
+        if (isVmRunning) setState('reconnecting...', 'pill-yellow');
+        else setState('offline', 'pill-gray');
       } else {
         setBootState('Connecting stream...', 'pill-blue', true);
         if (!sseSource) startSseFallback();
@@ -632,39 +800,18 @@
     });
   }
 
-  window.sshConnect = function sshConnect() {
-    if (!socket || !connected) {
-      setupSocket();
-      return;
-    }
-    setState('connecting...', 'pill-yellow');
-    socket.emit('console:join', { vmId: <%= vm.id %> });
-    setTimeout(() => {
-      try { fit.fit(); sshResize(); updateSizeBadge(); } catch (e) {}
-    }, 200);
-  };
-
+  // ---------- Boot log helpers ----------
   function joinBootLog() {
     if (sseSource) { sseSource.close(); sseSource = null; }
-    if (!socket || !connected) {
-      setupSocket();
-      return;
-    }
+    if (!socket || !connected) { setupSocket(); return; }
     setBootState('Connecting stream...', 'pill-blue', true);
-    socket.emit('bootlog:join', { vmId: <%= vm.id %> });
-    setTimeout(() => {
-      try { bootFit.fit(); } catch (e) {}
-    }, 150);
+    socket.emit('bootlog:join', { vmId: VM_ID });
+    setTimeout(() => { try { bootFit.fit(); } catch (_) {} }, 150);
   }
 
   function leaveBootLog() {
-    if (socket && connected) {
-      socket.emit('bootlog:leave');
-    }
-    if (sseSource) {
-      sseSource.close();
-      sseSource = null;
-    }
+    if (socket && connected) socket.emit('bootlog:leave');
+    if (sseSource) { sseSource.close(); sseSource = null; }
   }
 
   function startSseFallback() {
@@ -694,34 +841,36 @@
     });
   }
 
-  window.clearTerm = function () {
-    if (term) term.clear();
+  // ---------- Window / actions ----------
+  window.addEventListener('resize', () => {
+    if (activeTab === 'terminal') {
+      const entry = terms.get(activeSid);
+      if (entry) { try { entry.fit.fit(); sendResize(activeSid); } catch (_) {} }
+    } else if (activeTab === 'bootlog') {
+      try { bootFit.fit(); } catch (_) {}
+    }
+  });
+
+  window.clearActiveTerm = function () {
+    const entry = terms.get(activeSid);
+    if (entry) entry.term.clear();
   };
 
-  window.fitTerm = function () {
-    if (fit && term) {
-      try { fit.fit(); sshResize(); term.focus(); updateSizeBadge(); } catch (e) {}
-    }
+  window.fitActiveTerm = function () {
+    const entry = terms.get(activeSid);
+    if (entry) { try { entry.fit.fit(); sendResize(activeSid); entry.term.focus(); updateSizeBadge(entry.term, false); } catch (_) {} }
   };
 
   window.fitBootTerm = function () {
-    if (bootFit && bootTerm) {
-      try { bootFit.fit(); } catch (e) {}
-    }
+    if (bootFit && bootTerm) { try { bootFit.fit(); } catch (_) {} }
   };
 
   window.sendCtrlC = function () {
-    if (connected && socket) {
-      socket.emit('console:input', '\x03');
-      if (term) term.focus();
-    }
+    if (connected && socket && activeSid) { socket.emit('console:input', { sessionId: activeSid, data: '\x03' }); const e = terms.get(activeSid); if (e) e.term.focus(); }
   };
 
   window.sendCtrlD = function () {
-    if (connected && socket) {
-      socket.emit('console:input', '\x04');
-      if (term) term.focus();
-    }
+    if (connected && socket && activeSid) { socket.emit('console:input', { sessionId: activeSid, data: '\x04' }); const e = terms.get(activeSid); if (e) e.term.focus(); }
   };
 
   window.toggleFullscreen = function (paneId) {
@@ -729,120 +878,100 @@
     if (!pane) return;
     pane.classList.toggle('fullscreen-pane');
     setTimeout(() => {
-      if (paneId === 'paneTerminal' && fit) {
-        fit.fit();
-        sshResize();
-        if (term) { term.focus(); updateSizeBadge(); }
+      if (paneId === 'paneTerminal') {
+        const entry = terms.get(activeSid);
+        if (entry) { try { entry.fit.fit(); sendResize(activeSid); entry.term.focus(); updateSizeBadge(entry.term, false); } catch (_) {} }
       } else if (paneId === 'paneBootLog' && bootFit) {
         bootFit.fit();
       }
     }, 150);
   };
 
-  // ---------------- 4-Corner Custom Mouse Resizing ----------------
   window.resetToAutoSize = function (wrapperId) {
     const wrapper = document.getElementById(wrapperId);
     if (!wrapper) return;
     wrapper.style.width = '100%';
-    wrapper.style.height = 'calc(100vh - 350px)';
+    wrapper.style.height = wrapperId === 'bootTermWrapper' ? 'calc(100vh - 400px)' : 'calc(100vh - 400px)';
     setTimeout(() => {
-      if (wrapperId === 'termWrapper') {
-        if (fit) { fit.fit(); sshResize(); updateSizeBadge(false); }
-        if (term) term.focus();
-      } else if (wrapperId === 'bootTermWrapper') {
+      if (wrapperId === 'bootTermWrapper') {
         if (bootFit) bootFit.fit();
+      } else {
+        const entry = terms.get(activeSid);
+        if (entry) { try { entry.fit.fit(); sendResize(activeSid); updateSizeBadge(entry.term, false); } catch (_) {} entry.term.focus(); }
       }
-      VP.toast('Reset to default Auto Size', 'info');
+      if (window.VP) VP.toast('Reset to default Auto Size', 'info');
     }, 50);
   };
 
-  function initCornerResizers() {
-    const handles = document.querySelectorAll('.resize-handle');
-    handles.forEach(handle => {
-      handle.addEventListener('mousedown', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
+  window.resetActiveToAutoSize = function () {
+    window.resetToAutoSize('tw-' + activeSid);
+  };
 
-        const targetId = this.dataset.target;
-        const dir = this.dataset.dir;
-        const wrapper = document.getElementById(targetId);
-        if (!wrapper) return;
+  // 4-corner resizing, event delegation (works for dynamically added panes)
+  document.addEventListener('mousedown', function (e) {
+    const handle = e.target.closest('.resize-handle');
+    if (!handle) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-        wrapper.classList.add('is-resizing');
+    const targetId = handle.dataset.target;
+    const dir = handle.dataset.dir;
+    const wrapper = document.getElementById(targetId);
+    if (!wrapper) return;
 
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const startWidth = wrapper.offsetWidth;
-        const startHeight = wrapper.offsetHeight;
+    wrapper.classList.add('is-resizing');
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = wrapper.offsetWidth;
+    const startHeight = wrapper.offsetHeight;
 
-        function onMouseMove(moveEvent) {
-          moveEvent.preventDefault();
-          const deltaX = moveEvent.clientX - startX;
-          const deltaY = moveEvent.clientY - startY;
+    function onMouseMove(moveEvent) {
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      let newWidth = startWidth;
+      let newHeight = startHeight;
 
-          let newWidth = startWidth;
-          let newHeight = startHeight;
+      if (dir === 'br') { newWidth = startWidth + deltaX; newHeight = startHeight + deltaY; }
+      else if (dir === 'bl') { newWidth = startWidth - deltaX; newHeight = startHeight + deltaY; }
+      else if (dir === 'tr') { newWidth = startWidth + deltaX; newHeight = startHeight - deltaY; }
+      else if (dir === 'tl') { newWidth = startWidth - deltaX; newHeight = startHeight - deltaY; }
+      else if (dir === 'b') { newHeight = startHeight + deltaY; }
 
-          if (dir === 'br') {
-            newWidth = startWidth + deltaX;
-            newHeight = startHeight + deltaY;
-          } else if (dir === 'bl') {
-            newWidth = startWidth - deltaX;
-            newHeight = startHeight + deltaY;
-          } else if (dir === 'tr') {
-            newWidth = startWidth + deltaX;
-            newHeight = startHeight - deltaY;
-          } else if (dir === 'tl') {
-            newWidth = startWidth - deltaX;
-            newHeight = startHeight - deltaY;
-          } else if (dir === 'b') {
-            newHeight = startHeight + deltaY;
-          }
+      const minW = 320, minH = 260;
+      const maxW = window.innerWidth - 60, maxH = window.innerHeight - 100;
+      newWidth = Math.max(minW, Math.min(maxW, newWidth));
+      newHeight = Math.max(minH, Math.min(maxH, newHeight));
 
-          // Bounds constraints
-          const minW = 320;
-          const minH = 260;
-          const maxW = window.innerWidth - 60;
-          const maxH = window.innerHeight - 100;
+      if (dir !== 'b') wrapper.style.width = newWidth + 'px';
+      wrapper.style.height = newHeight + 'px';
 
-          newWidth = Math.max(minW, Math.min(maxW, newWidth));
-          newHeight = Math.max(minH, Math.min(maxH, newHeight));
+      const sid = targetId.slice(3); // strip 'tw-'
+      if (targetId !== 'bootTermWrapper' && terms.has(sid)) {
+        const entry = terms.get(sid);
+        if (entry) { try { entry.fit.fit(); sendResize(sid); updateSizeBadge(entry.term, true); } catch (_) {} }
+      } else if (targetId === 'bootTermWrapper' && bootFit) {
+        bootFit.fit();
+      }
+    }
 
-          if (dir !== 'b') {
-            wrapper.style.width = newWidth + 'px';
-          }
-          wrapper.style.height = newHeight + 'px';
+    function onMouseUp() {
+      wrapper.classList.remove('is-resizing');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
 
-          // Dynamically fit terminal
-          if (targetId === 'termWrapper' && fit) {
-            fit.fit();
-            sshResize();
-            updateSizeBadge(true);
-          } else if (targetId === 'bootTermWrapper' && bootFit) {
-            bootFit.fit();
-          }
-        }
+      const sid = targetId.slice(3);
+      if (targetId !== 'bootTermWrapper' && terms.has(sid)) {
+        const entry = terms.get(sid);
+        if (entry) { try { entry.fit.fit(); sendResize(sid); updateSizeBadge(entry.term, true); entry.term.focus(); } catch (_) {} }
+      } else if (targetId === 'bootTermWrapper' && bootFit) {
+        bootFit.fit();
+      }
+    }
 
-        function onMouseUp() {
-          wrapper.classList.remove('is-resizing');
-          window.removeEventListener('mousemove', onMouseMove);
-          window.removeEventListener('mouseup', onMouseUp);
-
-          if (targetId === 'termWrapper' && fit) {
-            fit.fit();
-            sshResize();
-            updateSizeBadge(true);
-            if (term) term.focus();
-          } else if (targetId === 'bootTermWrapper' && bootFit) {
-            bootFit.fit();
-          }
-        }
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-      });
-    });
-  }
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
 
   // ---------------- Boot Logs Actions ----------------
   window.toggleAutoScroll = function () {
@@ -878,26 +1007,24 @@
     if (bootTerm) bootTerm.clear();
     if (rawBootEl) rawBootEl.textContent = '';
     rawBootBuffer = '';
-    VP.toast('Boot terminal display cleared', 'info');
+    if (window.VP) VP.toast('Boot terminal display cleared', 'info');
   };
 
   window.clearBootServerLog = async function () {
     const ok = await VP.confirmDialog('Clear boot log files on server?', { title: 'Clear Server Logs' });
     if (!ok) return;
     if (socket && connected) {
-      socket.emit('bootlog:clear', { vmId: <%= vm.id %> });
+      socket.emit('bootlog:clear', { vmId: VM_ID });
     } else {
       try {
         await VP.api('/servers/<%= vm.id %>/bootlog/clear', { method: 'POST' });
         clearBootDisplay();
         VP.toast('Boot logs cleared on server', 'success');
-      } catch (e) {
-        VP.toast(e.message, 'error');
-      }
+      } catch (e) { VP.toast(e.message, 'error'); }
     }
   };
 
-window.aiDiagnoseBoot = async function () {
+  window.aiDiagnoseBoot = async function () {
     try {
       const res = await VP.api('/servers/<%= vm.id %>/bootlog/diagnose');
       const f = res.findings || [];
@@ -919,26 +1046,18 @@ window.aiDiagnoseBoot = async function () {
       }
       html += '</div>';
       await VP.confirmDialog(html, { title: 'Boot Log AI Diagnose', html: true, danger: false, okText: 'Close', width: 'min(640px,92vw)' });
-    } catch (e) {
-      VP.toast('Diagnostic failed: ' + e.message, 'error');
-    }
+    } catch (e) { VP.toast('Diagnostic failed: ' + e.message, 'error'); }
   };
 
   window.copyBootLog = function () {
-    if (!rawBootBuffer) {
-      VP.toast('No boot log output to copy', 'warning');
-      return;
-    }
+    if (!rawBootBuffer) { VP.toast('No boot log output to copy', 'warning'); return; }
     navigator.clipboard.writeText(rawBootBuffer)
       .then(() => VP.toast('Boot logs copied to clipboard!', 'success'))
       .catch(() => VP.toast('Failed to copy', 'error'));
   };
 
   window.downloadBootLog = function () {
-    if (!rawBootBuffer) {
-      VP.toast('No boot log output to download', 'warning');
-      return;
-    }
+    if (!rawBootBuffer) { VP.toast('No boot log output to download', 'warning'); return; }
     const blob = new Blob([rawBootBuffer], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -962,10 +1081,7 @@ window.aiDiagnoseBoot = async function () {
       if (pill) { pill.textContent = 'running'; pill.className = 'pill pill-green'; }
       if (btn) btn.style.display = 'none';
       joinBootLog();
-    } catch (e) {
-      VP.toast(e.message, 'error');
-      if (btn) btn.disabled = false;
-    }
+    } catch (e) { VP.toast(e.message, 'error'); if (btn) btn.disabled = false; }
   };
 
   window.onSearchInput = function (query) {
@@ -977,11 +1093,11 @@ window.aiDiagnoseBoot = async function () {
     if (rawView && rawBootEl) {
       const lines = rawBootBuffer.split('\n');
       const filtered = lines.filter(l => l.toLowerCase().includes(q));
-      rawBootEl.textContent = filtered.join('\n') || `[No lines matching "${query}"]`;
+      rawBootEl.textContent = filtered.join('\n') || '[No lines matching "' + query + '"]';
     }
   };
 
-  // ---------------- Tab Switching ----------------
+  // ---------------- View switching ----------------
   window.switchView = function switchView(tab) {
     activeTab = tab;
     document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
@@ -999,25 +1115,17 @@ window.aiDiagnoseBoot = async function () {
     if (tab === 'terminal') {
       window.vncDisconnect && window.vncDisconnect();
       leaveBootLog();
-      setTimeout(() => {
-        try { fit.fit(); sshResize(); term.focus(); updateSizeBadge(); } catch (e) {}
-      }, 100);
-      if (isVmRunning) {
-        sshConnect();
+      if (terms.size === 0) {
+        if (isVmRunning) window.newTerminal();
+        else setState('offline', 'pill-gray');
+      } else {
+        activateSession(activeSid || Array.from(terms.keys())[0]);
       }
     } else if (tab === 'bootlog') {
       window.vncDisconnect && window.vncDisconnect();
-      if (socket && connected) {
-        socket.emit('console:leave');
-      }
-      setTimeout(() => {
-        try { bootFit.fit(); } catch (e) {}
-      }, 100);
+      setTimeout(() => { try { bootFit.fit(); } catch (_) {} }, 100);
       joinBootLog();
     } else if (tab === 'vnc') {
-      if (socket && connected) {
-        socket.emit('console:leave');
-      }
       leaveBootLog();
       window.vncConnect && window.vncConnect();
     }
@@ -1081,24 +1189,19 @@ window.aiDiagnoseBoot = async function () {
   };
 
   window.vncDisconnect = function vncDisconnect() {
-    if (vnc) {
-      try { vnc.disconnect(); } catch (_) {}
-      vnc = null;
-    }
+    if (vnc) { try { vnc.disconnect(); } catch (_) {} vnc = null; }
     if (vncMsg) vncMsg.style.display = 'flex';
     if (vncScreen) vncScreen.style.display = 'none';
     setVncState('disconnected', 'pill-gray');
   };
 
-  // Check initial tab from query parameter or URL hash
+  // ---------------- Init ----------------
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = (urlParams.get('tab') === 'bootlog' || window.location.hash === '#bootlog') ? 'bootlog'
     : (urlParams.get('tab') === 'vnc' || window.location.hash === '#vnc') ? 'vnc'
     : 'terminal';
 
-  initTerm();
   initBootTerm();
-  initCornerResizers();
   initVnc();
 
   if (initialTab === 'bootlog') {
@@ -1111,11 +1214,11 @@ window.aiDiagnoseBoot = async function () {
     if (isVmRunning) {
       setupSocket();
     } else {
-      setState('offline', 'pill-gray');
-      if (term) {
-        term.writeln('\r\n\x1b[33m[Notice] Server is offline. Start the server to launch SSH session or monitor Live Boot Logs.\x1b[0m\r\n');
-      }
-      if (sshBootBanner) sshBootBanner.style.display = 'flex';
+      const sid0 = 't' + newSid();
+      const entry0 = createTerminalPane(sid0);
+      setSessionState(sid0, 'offline', 'pill-gray', true);
+      activateSession(sid0);
+      entry0.term.writeln('\r\n\x1b[33m[Notice] Server is offline. Start the server to launch SSH session or monitor Live Boot Logs.\x1b[0m\r\n');
       setupSocket();
     }
   }

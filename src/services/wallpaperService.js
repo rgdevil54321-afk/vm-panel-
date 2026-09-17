@@ -186,6 +186,24 @@ function getCuratedFallback(category, page, query, errMsg) {
     { id: '26347', title: 'Mars Red Planet 5K', tags: ['Space', 'Astronomy'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/26347.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/26347.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/26347.jpg' },
     { id: '26348', title: 'Jupiter Great Red Spot 5K', tags: ['Space', 'Cosmos'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/26348.png', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/26348.png', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/26348.png' },
     { id: '26864', title: 'Solo Leveling Jinwoo 4K', tags: ['Anime', 'Action'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/26864.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/26864.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/26864.jpg' },
+    { id: '25994', title: 'Porsche 911 GT3 RS', tags: ['Cars', 'Racing'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25994.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25994.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25994.jpg' },
+    { id: '26161', title: 'Neon City Nightscape', tags: ['City', 'Neon'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/26161.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/26161.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/26161.jpg' },
+    { id: '26015', title: 'Cyberpunk 2077 Night City', tags: ['Gaming', 'Cyberpunk'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/26015.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/26015.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/26015.jpg' },
+    { id: '25865', title: 'Mount Fuji Sunset', tags: ['Nature', 'Japan'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25865.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25865.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25865.jpg' },
+    { id: '25694', title: 'Lamborghini Huracan', tags: ['Cars', 'Dark'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25694.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25694.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25694.jpg' },
+    { id: '25534', title: 'Nebula Deep Space 5K', tags: ['Space', 'Nebula'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25534.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25534.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25534.jpg' },
+    { id: '25417', title: 'Abstract Neon Flow', tags: ['Abstract', 'Neon'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25417.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25417.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25417.jpg' },
+    { id: '25219', title: 'Cyber Samurai Anime', tags: ['Anime', 'Cyberpunk'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25219.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25219.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25219.jpg' },
+    { id: '25001', title: 'Andromeda Galaxy 5K', tags: ['Space', 'Galaxy'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/25001.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/25001.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/25001.jpg' },
+    { id: '24890', title: 'Northern Lights Iceland', tags: ['Nature', 'Aurora'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/24890.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/24890.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/24890.jpg' },
+    { id: '24776', title: 'Minimal Dark Gradient', tags: ['Minimal', 'Dark'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/24776.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/24776.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/24776.jpg' },
+    { id: '24603', title: 'Ferrari SF90 Stradale', tags: ['Cars', 'Red'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/24603.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/24603.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/24603.jpg' },
+    { id: '24451', title: 'Tokyo Streets Neon Rain', tags: ['City', 'Japan'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/24451.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/24451.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/24451.jpg' },
+    { id: '24299', title: 'Witcher Geralt 4K', tags: ['Games', 'Fantasy'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/24299.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/24299.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/24299.jpg' },
+    { id: '24100', title: 'Sacred Geometry 5K', tags: ['Abstract', 'Geometric'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/24100.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/24100.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/24100.jpg' },
+    { id: '23885', title: 'Black Hole Accretion', tags: ['Space', 'Science'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/23885.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/23885.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/23885.jpg' },
+    { id: '23776', title: 'Forest Pathway Morning', tags: ['Nature', 'Forest'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/23776.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/23776.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/23776.jpg' },
+    { id: '23601', title: 'GTAV Los Santos Sunset', tags: ['Gaming', 'City'], thumb: 'https://4kwallpapers.com/images/walls/thumbs/23601.jpg', preview: 'https://4kwallpapers.com/images/walls/thumbs_2t/23601.jpg', full: 'https://4kwallpapers.com/images/walls/thumbs_3t/23601.jpg' },
   ];
 
   return {
@@ -198,7 +216,7 @@ function getCuratedFallback(category, page, query, errMsg) {
     total: fallbackList.length,
     categories: CATEGORIES,
     wallpapers: fallbackList,
-    note: errMsg ? `Using curated library (${errMsg})` : undefined,
+    note: errMsg ? `Showing curated library (${errMsg})` : 'Curated collection',
   };
 }
 

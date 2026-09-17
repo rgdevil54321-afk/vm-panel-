@@ -84,6 +84,64 @@ function createApiApp() {
   return app;
 }
 
+// ---------------- Persistent multi-terminal sessions ----------------
+// Sessions live server-side and survive client reconnects: output is buffered
+// and replayed on attach, so refreshing the page or switching tabs never loses
+// the running shell. Multiple terminal tabs per VM are supported.
+const terminalSessions = new Map(); // vmId -> Map(sessionId -> session)
+const MAX_SESSIONS_PER_VM = 4;
+const BUFFER_MAX_BYTES = 256 * 1024;
+const IDLE_CLOSE_MS = 15 * 60 * 1000;
+
+function sessionsFor(vmId) {
+  if (!terminalSessions.has(vmId)) terminalSessions.set(vmId, new Map());
+  return terminalSessions.get(vmId);
+}
+
+function findSession(sessionId) {
+  for (const m of terminalSessions.values()) {
+    const s = m.get(sessionId);
+    if (s) return s;
+  }
+  return null;
+}
+
+function closeSession(session, reason) {
+  if (!session || session.closed) return;
+  session.closed = true;
+  try { if (session.stream) session.stream.end(); } catch (_) {}
+  try { if (session.conn) session.conn.end(); } catch (_) {}
+  for (const s of session.clients) {
+    try { s.emit('console:close', { sessionId: session.id, reason: reason || 'closed' }); } catch (_) {}
+    if (s.data.sessions) s.data.sessions.delete(session.id);
+  }
+  session.clients.clear();
+  const m = terminalSessions.get(session.vmId);
+  if (m) {
+    m.delete(session.id);
+    if (m.size === 0) terminalSessions.delete(session.vmId);
+  }
+}
+
+function gcTerminalSessions() {
+  const now = Date.now();
+  for (const [vmId, m] of Array.from(terminalSessions.entries())) {
+    let running = false;
+    try {
+      const vm = vmService.getVm(vmId);
+      running = vm ? vmService.isRunning(vm) : false;
+    } catch (_) { running = false; }
+    for (const session of Array.from(m.values())) {
+      const idle = now - session.lastActivity;
+      if (session.closed || !running || (session.clients.size === 0 && idle > IDLE_CLOSE_MS)) {
+        closeSession(session, !running ? 'server-stopped' : 'idle-timeout');
+      }
+    }
+    if (m.size === 0) terminalSessions.delete(vmId);
+  }
+}
+setInterval(gcTerminalSessions, 30 * 1000).unref();
+
 function attachConsoleSocket(io) {
   io.use((socket, next) => {
     try {
@@ -99,21 +157,35 @@ function attachConsoleSocket(io) {
   });
 
   io.on('connection', (socket) => {
-    socket.on('console:join', ({ vmId }) => {
-      // Cancel previous pending join
-      socket.data.isLeaving = false;
+    socket.data.sessions = new Set(); // session ids this socket is attached to
 
-      // Clean up any existing stream on this socket
-      if (socket.data.stream) {
-        try { socket.data.stream.end(); } catch (_) {}
-        socket.data.stream = null;
-      }
-      if (socket.data.conn) {
-        try { socket.data.conn.end(); } catch (_) {}
-        socket.data.conn = null;
-      }
+    function detachFrom(session) {
+      if (!session) return;
+      session.clients.delete(socket);
+      socket.data.sessions.delete(session.id);
+      session.lastActivity = Date.now();
+    }
 
-      const vm = vmService.getVm(parseInt(vmId, 10));
+    function attach(session, { replay = true } = {}) {
+      session.clients.add(socket);
+      socket.data.sessions.add(session.id);
+      session.lastActivity = Date.now();
+      const hasBuffer = replay && session.buffer.length > 0;
+      if (hasBuffer) {
+        socket.emit('console:buffer', { sessionId: session.id, text: session.buffer.join('') });
+      }
+      socket.emit('console:ready', {
+        sessionId: session.id,
+        cols: session.cols || socket.data.cols || 80,
+        rows: session.rows || socket.data.rows || 24,
+        replayed: !!hasBuffer,
+      });
+      try { session.stream.setWindow(session.rows || 24, session.cols || 80); } catch (_) {}
+    }
+
+    socket.on('console:join', ({ vmId, terminalId, reattach }) => {
+      const vid = parseInt(vmId, 10);
+      const vm = vmService.getVm(vid);
       if (!vm || !vmService.canAccess(socket.data.user, vm, 'console')) {
         socket.emit('console:error', 'Access denied or server not found');
         return;
@@ -123,35 +195,92 @@ function attachConsoleSocket(io) {
         return;
       }
 
+      const m = sessionsFor(vid);
+
+      // 1) Reattach: same terminal id, or any live session for this VM.
+      //    This is what makes reconnects instant and lossless.
+      if (reattach) {
+        let session = (terminalId && m.get(terminalId)) || null;
+        if (!session) {
+          for (const s of m.values()) {
+            if (!s.closed) { session = s; break; }
+          }
+        }
+        if (session && !session.closed) {
+          attach(session, { replay: true });
+          return;
+        }
+      } else if (terminalId && m.get(terminalId) && !m.get(terminalId).closed) {
+        // Explicit re-join of a known session (e.g. switching tabs)
+        attach(m.get(terminalId), { replay: true });
+        return;
+      }
+
+      // 2) Create a brand new session
+      if (m.size >= MAX_SESSIONS_PER_VM) {
+        let evicted = false;
+        for (const s of Array.from(m.values())) {
+          if (s.clients.size === 0) { closeSession(s, 'evicted'); evicted = true; break; }
+        }
+        if (!evicted) {
+          socket.emit('console:error', 'Maximum terminal sessions reached for this server');
+          return;
+        }
+      }
+
+      const sid = terminalId || ('t' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+      const joinToken = sid + ':' + Date.now();
+      socket.data.joining = joinToken;
+
       sshService.shellStreamWithRetry(vm, {
-        maxRetries: 30,
-        retryDelay: 1500,
-        shouldContinue: () => socket.connected && !socket.data.isLeaving && vmService.isRunning(vm),
+        maxRetries: 12,
+        retryDelay: 700,
+        shouldContinue: () => socket.connected && socket.data.joining === joinToken && vmService.isRunning(vm),
       })
         .then(({ conn, stream }) => {
-          if (socket.data.isLeaving || !socket.connected) {
+          if (socket.data.joining !== joinToken || !socket.connected) {
             try { stream.end(); } catch (_) {}
             try { conn.end(); } catch (_) {}
             return;
           }
-          socket.data.stream = stream;
-          socket.data.conn = conn;
-          socket.emit('console:ready', { cols: socket.data.cols || 80, rows: socket.data.rows || 24 });
-          stream.on('data', (d) => socket.emit('console:data', d.toString('utf8')));
-          stream.on('close', () => {
-            socket.emit('console:close');
-            socket.data.stream = null;
-            socket.data.conn = null;
+          socket.data.joining = null;
+          const session = {
+            id: sid,
+            vmId: vid,
+            conn,
+            stream,
+            buffer: [],
+            bufferBytes: 0,
+            rows: socket.data.rows || 24,
+            cols: socket.data.cols || 80,
+            clients: new Set(),
+            lastActivity: Date.now(),
+            closed: false,
+          };
+          sessionsFor(vid).set(sid, session);
+          stream.on('data', (d) => {
+            if (session.closed) return;
+            const text = d.toString('utf8');
+            session.buffer.push(text);
+            session.bufferBytes += Buffer.byteLength(text);
+            while (session.bufferBytes > BUFFER_MAX_BYTES && session.buffer.length > 1) {
+              session.bufferBytes -= Buffer.byteLength(session.buffer[0]);
+              session.buffer.shift();
+            }
+            session.lastActivity = Date.now();
+            for (const c of session.clients) {
+              try { c.emit('console:data', { sessionId: sid, text }); } catch (_) {}
+            }
           });
-          stream.on('error', () => {
-            socket.emit('console:close');
-            socket.data.stream = null;
-            socket.data.conn = null;
-          });
-          stream.setWindow(socket.data.rows || 24, socket.data.cols || 80);
+          const onEnd = () => closeSession(session, 'stream-closed');
+          stream.on('close', onEnd);
+          stream.on('error', onEnd);
+          try { stream.setWindow(session.rows, session.cols); } catch (_) {}
+          attach(session, { replay: false });
         })
         .catch((e) => {
-          if (socket.data.isLeaving || !socket.connected) return;
+          socket.data.joining = null;
+          if (!socket.connected) return;
           if (!vmService.isRunning(vm)) {
             socket.emit('console:offline');
           } else {
@@ -161,25 +290,36 @@ function attachConsoleSocket(io) {
     });
 
     socket.on('console:leave', () => {
-      socket.data.isLeaving = true;
-      if (socket.data.stream) {
-        try { socket.data.stream.end(); } catch (_) {}
-        socket.data.stream = null;
-      }
-      if (socket.data.conn) {
-        try { socket.data.conn.end(); } catch (_) {}
-        socket.data.conn = null;
+      for (const sid of Array.from(socket.data.sessions)) {
+        detachFrom(findSession(sid));
       }
     });
 
-    socket.on('console:input', (data) => {
-      if (socket.data.stream) socket.data.stream.write(data);
+    socket.on('console:kill', ({ sessionId }) => {
+      const s = sessionId && findSession(sessionId);
+      if (s) closeSession(s, 'killed');
     });
 
-    socket.on('console:resize', ({ cols, rows }) => {
+    socket.on('console:input', ({ sessionId, data }) => {
+      if (!sessionId || typeof data !== 'string' || !data) return;
+      const s = findSession(sessionId);
+      if (s && !s.closed && s.clients.has(socket)) {
+        try { s.stream.write(data); } catch (_) {}
+        s.lastActivity = Date.now();
+      }
+    });
+
+    socket.on('console:resize', ({ sessionId, cols, rows }) => {
+      cols = Math.max(20, Math.min(500, parseInt(cols, 10) || 80));
+      rows = Math.max(5, Math.min(300, parseInt(rows, 10) || 24));
       socket.data.cols = cols;
       socket.data.rows = rows;
-      if (socket.data.stream) socket.data.stream.setWindow(rows, cols);
+      const s = sessionId && findSession(sessionId);
+      if (s && !s.closed && s.clients.has(socket)) {
+        s.cols = cols;
+        s.rows = rows;
+        try { s.stream.setWindow(rows, cols); } catch (_) {}
+      }
     });
 
     socket.on('bootlog:join', ({ vmId }) => {
@@ -229,8 +369,11 @@ function attachConsoleSocket(io) {
     });
 
     socket.on('disconnect', () => {
-      if (socket.data.stream) socket.data.stream.end();
-      if (socket.data.conn) socket.data.conn.end();
+      socket.data.joining = null;
+      // Detach but KEEP sessions alive so reconnects replay the buffer.
+      for (const sid of Array.from(socket.data.sessions)) {
+        detachFrom(findSession(sid));
+      }
       if (socket.data.bootLogStream) {
         socket.data.bootLogStream.close();
         socket.data.bootLogStream = null;
