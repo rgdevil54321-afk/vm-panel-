@@ -29,6 +29,7 @@ const iconLogout = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const iconShield = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
 const iconKey = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>';
 const iconWallet = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h6"/></svg>';
+const iconTerminal = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
 %>
 <div class="sidebar">
   <div class="nav-section-title"><%= t('nav.menu') %></div>
@@ -65,6 +66,7 @@ const iconWallet = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   <a href="/admin/network" class="nav-link <%= act('admin-network', page) %>"><span class="v-icon"><%- iconSettings %></span><span><%= t('nav.network') %></span></a>
   <a href="/admin/activity" class="nav-link <%= act('admin-activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activityLog') %></span></a>
   <a href="/admin/updates" class="nav-link <%= act('admin-updates', page) %>"><span class="v-icon"><%- iconRocket %></span><span><%= t('nav.updates') %></span></a>
+  <a href="/admin/neofetch" class="nav-link <%= act('admin-neofetch', page) %>"><span class="v-icon"><%- iconTerminal %></span><span>Neofetch</span></a>
   <a href="/admin/settings" class="nav-link <%= act('admin-settings', page) %>"><span class="v-icon"><%- iconPalette %></span><span><%= t('nav.settingsMgmt') %></span></a>
   <% } %>
 

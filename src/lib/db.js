@@ -288,6 +288,9 @@ CREATE INDEX IF NOT EXISTS idx_vnets_node ON vnets(node_id);
 
 const defaultSettings = {
   'panel.name': 'Venlix Nodes',
+  'panel.hostname': 'Venlix Nodes',
+  'panel.cpu_name': '',
+  'panel.gpu_name': '',
   'panel.logo_mode': 'url',
   'panel.logo_url': '',
   'panel.logo_file': '',

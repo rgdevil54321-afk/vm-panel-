@@ -26,6 +26,7 @@ function render(res, view, vars = {}) {
 }
 
 const nodeService = require('../services/nodeService');
+const neofetchService = require('../services/neofetchService');
 
 router.get('/admin', (req, res) => {
   const vms = vmService.dbVms().map(vmService.serializeVm);
@@ -357,6 +358,19 @@ router.get('/admin/templates', (req, res) => {
   render(res, 'templates', {});
 });
 
+router.get('/admin/neofetch', (req, res) => {
+  const info = neofetchService.collect();
+  const bannerColor = neofetchService.renderColor();
+  const bannerPlain = neofetchService.renderPlain();
+  const stats = nodeService.getNodeLiveStats();
+  render(res, 'neofetch', { info, bannerColor, bannerPlain, stats });
+});
+
+router.get('/admin/neofetch/raw', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(neofetchService.renderPlain());
+});
+
 router.get('/admin/settings', (req, res) => {
   const all = settings.all();
   let wallpapers = [];
@@ -389,6 +403,7 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
     'panel.music_loop', 'panel.music_volume', 'panel.navbar_style', 'panel.navbar_transparent',
     'panel.navbar_blur', 'panel.accent', 'panel.theme',
     'panel.discord_url', 'panel.discord_enabled', 'panel.discord_code', 'panel.secret_blur',
+    'panel.hostname', 'panel.cpu_name', 'panel.gpu_name',
   ]) save(key);
   save('panel.wallpapers_api_key');
   for (const key of ['mail.host', 'mail.port', 'mail.secure', 'mail.user', 'mail.pass', 'mail.from']) save(key);

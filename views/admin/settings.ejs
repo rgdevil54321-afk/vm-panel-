@@ -153,6 +153,37 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
+        <!-- 1b. Host Identity (Neofetch) -->
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">1.5. Host Identity (Neofetch)</label>
+          <div class="muted text-sm mb-2">Customise the machine's display name, CPU and GPU shown in the <a href="/admin/neofetch" style="color:var(--accent-2)">neofetch banner</a>, admin dashboard and node telemetry. Fakes welcome — it never has to match the real hardware.</div>
+          <div class="grid grid-2" style="gap:16px">
+            <div class="form-group">
+              <label>Display Host Name</label>
+              <input name="panel.hostname" value="<%= all['panel.hostname'] || 'Venlix Nodes' %>" placeholder="Venlix Nodes"/>
+              <div class="form-hint mt-1">Default: <b>Venlix Nodes</b>. Shown everywhere the machine is named.</div>
+            </div>
+            <div class="form-group">
+              <label>CPU Display Name</label>
+              <input name="panel.cpu_name" value="<%= all['panel.cpu_name'] || '' %>" placeholder="(auto-detected)"/>
+              <div class="form-hint mt-1">Leave empty to auto-detect the real CPU. e.g. <i>AMD Ryzen 9 7950X @ 16 Cores</i></div>
+            </div>
+            <div class="form-group">
+              <label>GPU Display Name</label>
+              <input name="panel.gpu_name" value="<%= all['panel.gpu_name'] || '' %>" placeholder="(auto-detected)"/>
+              <div class="form-hint mt-1">Leave empty to auto-detect via <code>lspci</code>. e.g. <i>NVIDIA GeForce RTX 4090 24GB</i></div>
+            </div>
+            <div class="form-group">
+              <label>Preview</label>
+              <a class="btn btn-sm" href="/admin/neofetch" style="padding:10px 14px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                View Neofetch Banner
+              </a>
+              <div class="form-hint mt-1">Live preview + copy the neofetch output as text.</div>
+            </div>
+          </div>
+        </div>
+
         <!-- 2. Discord Community -->
         <div class="form-group mb-4">
           <label style="font-size:14px;font-weight:700;color:#fff">2. Discord Community</label>

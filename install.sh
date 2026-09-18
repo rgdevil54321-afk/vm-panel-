@@ -178,6 +178,21 @@ EOF
   CREATEUSER_ROLE=admin \
   node scripts/createuser.js >/dev/null 2>&1 || true
 
+  # Customise system identity (host name / CPU / GPU shown in neofetch + UI)
+  echo ""
+  read -r -p "Display Host Name [default: Venlix Nodes]: " IN_HOST
+  IN_HOST="${IN_HOST:-Venlix Nodes}"
+  read -r -p "Custom CPU name (blank = auto-detect, e.g. AMD Ryzen 9 7950X): " IN_CPU
+  read -r -p "Custom GPU name (blank = auto-detect, e.g. RTX 4090 24GB): " IN_GPU
+  log_info "Setting host identity to '${IN_HOST}'..."
+  BRAND_HOST="$IN_HOST" BRAND_CPU="$IN_CPU" BRAND_GPU="$IN_GPU" node -e "
+    const { settings } = require('./src/lib/db');
+    settings.set('panel.hostname', process.env.BRAND_HOST || 'Venlix Nodes');
+    if (process.env.BRAND_CPU) settings.set('panel.cpu_name', process.env.BRAND_CPU);
+    if (process.env.BRAND_GPU) settings.set('panel.gpu_name', process.env.BRAND_GPU);
+    console.log('[✔] Host Identity applied: ' + (settings.get('panel.hostname')));
+  " || log_warn "Could not apply host identity (you can set it later from Panel > Settings > General)."
+
   # Step 7: Setup PM2 Daemon
   if ! command -v pm2 >/dev/null 2>&1; then
     log_info "Installing PM2 Process Manager globally..."
@@ -528,6 +543,14 @@ do_status() {
   local PANEL_PORT
   PANEL_PORT="${PANEL_PORT:-3001}"
   curl -s -m 3 -o /dev/null -w "  Web panel  (127.0.0.1:${PANEL_PORT}/login)  : %{http_code}\n" "http://127.0.0.1:${PANEL_PORT}/login" 2>/dev/null || echo "  Web panel  : 000"
+
+  echo ""
+  echo "  --- Neofetch (host identity) ---"
+  if [ -f "$APP_DIR/src/services/neofetchService.js" ] && command -v node >/dev/null 2>&1; then
+    (cd "$APP_DIR" && node -e "process.stdout.write(require('./src/services/neofetchService').renderPlain())" 2>/dev/null || echo "  (unavailable)")
+  else
+    echo "  (panel not installed yet — run option 1 first)"
+  fi
   echo ""
   read -r -p "  Press Enter to return..." _
 }
@@ -876,6 +899,58 @@ do_change_ports() {
 }
 
 # =============================================================================
+# 12. CHANGE HOST IDENTITY (hostname / CPU / GPU for neofetch + UI)
+# =============================================================================
+do_identity() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "                🎭  Host Identity (Neofetch)                      "
+  echo "================================================================="
+  printf "${NC}\n"
+  echo "  Customise the display host name, CPU and GPU shown in the panel's"
+  echo "  neofetch banner, admin dashboard and node telemetry. Values are"
+  echo "  cosmetic — they never have to match the real hardware."
+  echo ""
+
+  if [ ! -f "$APP_DIR/data/vpanel.db" ]; then
+    log_err "Panel database not found. Install the panel first (menu option 1)."
+    read -r -p "Press Enter to continue..." _
+    return 1
+  fi
+
+  local CUR_HOST CUR_CPU CUR_GPU
+  CUR_HOST="$(cd "$APP_DIR" && node -e "const {settings}=require('./src/lib/db'); process.stdout.write(settings.get('panel.hostname')||'Venlix Nodes')" 2>/dev/null || echo 'Venlix Nodes')"
+  CUR_CPU="$(cd "$APP_DIR" && node -e "const {settings}=require('./src/lib/db'); process.stdout.write(settings.get('panel.cpu_name')||'(auto-detect)')" 2>/dev/null || echo '(auto-detect)')"
+  CUR_GPU="$(cd "$APP_DIR" && node -e "const {settings}=require('./src/lib/db'); process.stdout.write(settings.get('panel.gpu_name')||'(auto-detect)')" 2>/dev/null || echo '(auto-detect)')"
+
+  echo "  Current:"
+  echo "    Host name : ${CUR_HOST}"
+  echo "    CPU       : ${CUR_CPU}"
+  echo "    GPU       : ${CUR_GPU}"
+  echo ""
+
+  read -r -p "  New display host name (Enter to keep '${CUR_HOST}'): " N_HOST
+  N_HOST="${N_HOST:-${CUR_HOST:-Venlix Nodes}}"
+  read -r -p "  New CPU name (blank = auto-detect, Enter to keep): " N_CPU
+  [ -z "$N_CPU" ] && N_CPU="$CUR_CPU"
+  read -r -p "  New GPU name (blank = auto-detect, Enter to keep): " N_GPU
+  [ -z "$N_GPU" ] && N_GPU="$CUR_GPU"
+
+  (cd "$APP_DIR" && BRAND_HOST="$N_HOST" BRAND_CPU="$N_CPU" BRAND_GPU="$N_GPU" node -e "
+    const { settings } = require('./src/lib/db');
+    settings.set('panel.hostname', process.env.BRAND_HOST || 'Venlix Nodes');
+    if (process.env.BRAND_CPU && process.env.BRAND_CPU !== '(auto-detect)') settings.set('panel.cpu_name', process.env.BRAND_CPU);
+    if (process.env.BRAND_GPU && process.env.BRAND_GPU !== '(auto-detect)') settings.set('panel.gpu_name', process.env.BRAND_GPU);
+    console.log('OK');
+  ") && log_ok "Host identity updated to '${N_HOST}'." || log_err "Failed to update host identity."
+
+  echo ""
+  log_info "Preview it at: Panel > Admin > Neofetch"
+  read -r -p "Press Enter to continue..." _
+}
+
+# =============================================================================
 # MAIN INTERACTIVE MENU
 # =============================================================================
 show_menu() {
@@ -905,11 +980,12 @@ show_menu() {
     echo "   ${CYAN}[10]${NC} 🖥️ Node Management    Status · tunnel · key"
     echo "   ${CYAN}[11]${NC} 🔐 SSL / HTTPS        Free auto-SSL via Caddy"
     echo "   ${CYAN}[12]${NC} 🔧 Change Ports       Panel / API / agent"
+    echo "   ${CYAN}[13]${NC} 🎭 Host Identity      Hostname / CPU / GPU (neofetch)"
     echo ""
     echo "   ${RED}[0]${NC} 🚪 Exit"
     echo ""
     printf "${CYAN}─────────────────────────────────────────────────────────────${NC}\n"
-    read -r -p "  Select option ${BOLD}[0-12]${NC} › " CHOICE
+    read -r -p "  Select option ${BOLD}[0-13]${NC} › " CHOICE
 
     case "$CHOICE" in
       1)
@@ -953,6 +1029,10 @@ show_menu() {
       12)
         do_change_ports
         ;;
+      13)
+        do_identity
+        read -r -p "Press Enter to return to menu..." _
+        ;;
       0)
         log_info "Exiting Venlix Nodes Installer. Goodbye!"
         exit 0
@@ -984,6 +1064,7 @@ if [ $# -gt 0 ]; then
     10|--nodes|node-mgmt) do_node_menu ;;
     11|--ssl|--https|caddy) do_ssl ;;
     12|--ports|change-ports) do_change_ports ;;
+    13|--identity|identity) do_identity ;;
     *) show_menu ;;
   esac
 else

@@ -184,6 +184,20 @@ function getNodeLiveStats() {
   const swapStats = getSwapStats();
   pushHistoryPoint(cpuStats.overall, memPct, netStats.rx_kbps, netStats.tx_kbps);
 
+  // Branded overlay: the panel's "host name" / CPU / GPU are admin-configurable
+  // (default "Venlix Nodes"). If a custom value is set it overrides the real
+  // hardware everywhere in the UI and in the neofetch banner.
+  const displayHost = settings.get('panel.hostname') || 'Venlix Nodes';
+  const realCpu = cpus[0] ? cpus[0].model : 'x86_64 Processor';
+  const customCpu = settings.get('panel.cpu_name');
+  const customGpu = settings.get('panel.gpu_name');
+  const realGpu = (() => {
+    try {
+      const out = execSync("lspci 2>/dev/null | grep -iE 'vga|3d controller|display controller' | head -1", { encoding: 'utf8', timeout: 4000 }).trim();
+      return out.replace(/^[0-9a-f:. ]+/, '').replace(/\[[^\]]*\]/g, '').trim() || 'Unknown GPU';
+    } catch (_) { return 'Unknown GPU'; }
+  })();
+
   const allVms = db.prepare('SELECT * FROM vms').all().map(vmService.serializeVm);
   const runningVms = allVms.filter((v) => vmService.isRunning(v));
   let totalAllocatedMem = 0;
@@ -200,14 +214,15 @@ function getNodeLiveStats() {
   return {
     id: 1,
     name: 'Primary Node',
-    hostname: os.hostname(),
+    hostname: displayHost,
     status: 'online',
     location: 'Primary Datacenter',
     ip: '127.0.0.1',
     uptime_seconds: Math.floor(os.uptime()),
     process_uptime: Math.floor(process.uptime()),
     os: { type: os.type(), release: os.release(), arch: os.arch(), platform: os.platform() },
-    cpu: { model: cpus[0] ? cpus[0].model : 'x86_64 Processor', cores_count: cpus.length, percent: cpuStats.overall, per_core: cpuStats.cores, load_avg: [load[0].toFixed(2), load[1].toFixed(2), load[2].toFixed(2)] },
+    cpu: { model: customCpu || realCpu, cores_count: cpus.length, percent: cpuStats.overall, per_core: cpuStats.cores, load_avg: [load[0].toFixed(2), load[1].toFixed(2), load[2].toFixed(2)] },
+    gpu: { name: customGpu || realGpu },
     memory: { total_mb: Math.round(totalMem / 1024 / 1024), used_mb: Math.round(usedMem / 1024 / 1024), free_mb: Math.round(freeMem / 1024 / 1024), percent: memPct, host_total_mb: Math.round(hostTotalMb), host_free_mb: Math.round(hostFreeMb), cgroup_limit_mb: cgroupLimitMb ? Math.round(cgroupLimitMb) : null, container_capped: !!cgroupLimitMb },
     swap: swapStats,
     disk: diskInfo,
