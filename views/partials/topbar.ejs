@@ -21,6 +21,7 @@ else if (settings['panel.logo_mode'] === 'url' && settings['panel.logo_url']) lo
       </div>
     <% } %>
     <span class="brand-text"><%= panelName %></span>
+    <% if (typeof admin !== 'undefined' && admin) { %><span class="admin-badge">ADMIN</span><% } %>
   </a>
 
   <div class="topbar-right">

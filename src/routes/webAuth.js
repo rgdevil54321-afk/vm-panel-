@@ -19,6 +19,38 @@ router.get('/login', (req, res) => {
   render(res, 'login');
 });
 
+// ---- Dedicated Admin Portal entry ----
+router.get('/admin/login', (req, res) => {
+  if (req.user) {
+    if (req.user.role === 'admin' || req.user.root_admin) return res.redirect('/admin');
+    return res.redirect('/dashboard');
+  }
+  render(res, 'adminLogin');
+});
+
+router.post('/admin/login', express.urlencoded({ extended: true }), (req, res) => {
+  const { username, password, code } = req.body;
+  const ip = req.ip || req.socket.remoteAddress;
+  const result = authService.attemptLogin(String(username || '').trim(), String(password || ''), ip);
+  if (!result.ok) {
+    return render(res, 'adminLogin', { error: result.error, username });
+  }
+  const { user } = result;
+  if (result.tfaRequired) {
+    if (!code) {
+      return render(res, 'adminLogin', { tfa: true, tfaUser: user.username });
+    }
+    const check = authService.confirmTfa(user, code);
+    if (!check.ok) return render(res, 'adminLogin', { tfa: true, tfaUser: user.username, error: check.error });
+  }
+  if (user.role !== 'admin' && !user.root_admin) {
+    return render(res, 'adminLogin', { error: 'This account is not an administrator.', username });
+  }
+  const { token } = authService.finishLogin(user, ip);
+  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+  res.redirect('/admin');
+});
+
 router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
   const { username, password, code } = req.body;
   const ip = req.ip || req.socket.remoteAddress;

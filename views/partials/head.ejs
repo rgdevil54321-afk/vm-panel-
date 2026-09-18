@@ -46,4 +46,4 @@ function vpToken() {
 }
 </script>
 </head>
-<body class="<%= navbarStyle === 'glass' ? '' : 'nav-' + navbarStyle %> <%= navbarTransparent ? 'nav-transparent' : '' %> <%= navbarBlur ? 'nav-blur' : '' %> <%= settings['panel.bg_mode'] !== 'color' ? 'bg-visible' : '' %>">
+<body class="<%= navbarStyle === 'glass' ? '' : 'nav-' + navbarStyle %> <%= navbarTransparent ? 'nav-transparent' : '' %> <%= navbarBlur ? 'nav-blur' : '' %> <%= settings['panel.bg_mode'] !== 'color' ? 'bg-visible' : '' %> <%= typeof admin !== 'undefined' && admin ? 'admin-portal' : '' %>">

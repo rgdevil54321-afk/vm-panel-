@@ -1510,3 +1510,47 @@ html { scroll-behavior: smooth; }
   .vx-fx-blob, .brand-icon, .auth-logo div, .vx-login-glow { animation: none !important; }
   .btn::after { display: none; }
 }
+
+/* ================================================================
+   Admin Portal theme — distinct look for the admin side
+   ================================================================ */
+.admin-badge {
+  font-size: 10px; font-weight: 800; letter-spacing: 1.5px;
+  padding: 3px 8px; border-radius: 6px; margin-left: 8px;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #12060a;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+  animation: vxAdminPulse 2.8s ease-in-out infinite;
+}
+@keyframes vxAdminPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.65); }
+}
+
+body.admin-portal { --admin-edge: rgba(245, 158, 11, 0.18); }
+body.admin-portal .topbar { border-bottom: 1px solid var(--admin-edge); }
+body.admin-portal .sidebar {
+  background: linear-gradient(180deg, #0a0e1a 0%, #0c1020 100%);
+  border-right: 1px solid var(--admin-edge);
+}
+body.admin-portal .sidebar .nav-section-title { color: #f59e0b; letter-spacing: 1px; }
+body.admin-portal .nav-link.active {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), transparent);
+}
+body.admin-portal .nav-link.active::before { background: linear-gradient(180deg, #f59e0b, #ef4444); }
+
+/* Admin login page */
+.vx-login-glow--admin {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+}
+.auth-card--admin {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(245, 158, 11, 0.12);
+}
+.auth-card--admin::before {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), transparent 45%);
+}
+.auth-card--admin .admin-input:focus {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22), 0 0 18px rgba(245, 158, 11, 0.16);
+}

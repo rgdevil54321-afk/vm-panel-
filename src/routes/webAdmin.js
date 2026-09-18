@@ -14,6 +14,9 @@ const fs2 = require('fs');
 const createUpload = multer({ dest: config.root + '/data/tmp' });
 const router = express.Router();
 
+// Flag admin-portal pages so the layout renders the distinct admin theme.
+router.use((req, res, next) => { res.locals.admin = true; next(); });
+
 router.use(requireAdmin);
 
 function render(res, view, vars = {}) {

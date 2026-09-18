@@ -69,7 +69,7 @@ function requireAdmin(req, res, next) {
     if (req.xhr || req.path.startsWith('/api') || req.headers.accept?.includes('application/json')) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
-    return res.redirect('/login');
+    return res.redirect('/admin/login');
   }
   if (user.role !== 'admin' && !user.root_admin) {
     if (req.xhr || req.path.startsWith('/api') || req.headers.accept?.includes('application/json')) {
