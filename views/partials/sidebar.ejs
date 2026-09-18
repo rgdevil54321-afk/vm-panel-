@@ -30,6 +30,13 @@ const iconShield = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const iconKey = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>';
 const iconWallet = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M16 12h6"/></svg>';
 const iconTerminal = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+const iconCpu = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>';
+const iconStorage = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>';
+const iconNetwork = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+const iconBox = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>';
+const iconGrid = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
+const iconChart = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>';
+const iconBolt = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
 %>
 <div class="sidebar">
   <div class="nav-section-title"><%= t('nav.menu') %></div>
@@ -54,18 +61,24 @@ const iconTerminal = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   <a href="/activity" class="nav-link <%= act('activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activity') %></span></a>
 
   <% if (isAdmin) { %>
-  <div class="nav-section-title"><%= t('nav.admin') %></div>
-  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconHome %></span><span><%= t('nav.overview') %></span></a>
-  <a href="/admin/nodes" class="nav-link <%= act('admin-nodes', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.nodes') %></span></a>
-  <a href="/admin/servers" class="nav-link <%= act('admin-servers', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.server') %></span></a>
+  <div class="nav-section-title">Overview</div>
+  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconGrid %></span><span><%= t('nav.overview') %></span></a>
+
+  <div class="nav-section-title">Manage</div>
+  <a href="/admin/servers" class="nav-link <%= act('admin-servers', page) %>"><span class="v-icon"><%- iconServer %></span><span>Servers</span></a>
   <a href="/admin/servers/create" class="nav-link <%= act('admin-create', page) %>"><span class="v-icon"><%- iconPlus %></span><span><%= t('nav.create') %></span></a>
   <a href="/admin/users" class="nav-link <%= act('admin-users', page) %>"><span class="v-icon"><%- iconUsers %></span><span><%= t('nav.users') %></span></a>
   <a href="/admin/billing" class="nav-link <%= act('admin-billing', page) %>"><span class="v-icon"><%- iconWallet %></span><span><%= t('nav.plans') %></span></a>
-  <a href="/admin/templates" class="nav-link <%= act('admin-templates', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.templates') %></span></a>
-  <a href="/admin/storage" class="nav-link <%= act('admin-storage', page) %>"><span class="v-icon"><%- iconServer %></span><span><%= t('nav.storage') %></span></a>
-  <a href="/admin/network" class="nav-link <%= act('admin-network', page) %>"><span class="v-icon"><%- iconSettings %></span><span><%= t('nav.network') %></span></a>
-  <a href="/admin/activity" class="nav-link <%= act('admin-activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activityLog') %></span></a>
-  <a href="/admin/updates" class="nav-link <%= act('admin-updates', page) %>"><span class="v-icon"><%- iconRocket %></span><span><%= t('nav.updates') %></span></a>
+
+  <div class="nav-section-title">Infrastructure</div>
+  <a href="/admin/nodes" class="nav-link <%= act('admin-nodes', page) %>"><span class="v-icon"><%- iconCpu %></span><span><%= t('nav.nodes') %></span></a>
+  <a href="/admin/templates" class="nav-link <%= act('admin-templates', page) %>"><span class="v-icon"><%- iconBox %></span><span><%= t('nav.templates') %></span></a>
+  <a href="/admin/storage" class="nav-link <%= act('admin-storage', page) %>"><span class="v-icon"><%- iconStorage %></span><span><%= t('nav.storage') %></span></a>
+  <a href="/admin/network" class="nav-link <%= act('admin-network', page) %>"><span class="v-icon"><%- iconNetwork %></span><span><%= t('nav.network') %></span></a>
+
+  <div class="nav-section-title">System</div>
+  <a href="/admin/activity" class="nav-link <%= act('admin-activity', page) %>"><span class="v-icon"><%- iconChart %></span><span><%= t('nav.activityLog') %></span></a>
+  <a href="/admin/updates" class="nav-link <%= act('admin-updates', page) %>"><span class="v-icon"><%- iconBolt %></span><span><%= t('nav.updates') %></span></a>
   <a href="/admin/neofetch" class="nav-link <%= act('admin-neofetch', page) %>"><span class="v-icon"><%- iconTerminal %></span><span>Neofetch</span></a>
   <a href="/admin/settings" class="nav-link <%= act('admin-settings', page) %>"><span class="v-icon"><%- iconPalette %></span><span><%= t('nav.settingsMgmt') %></span></a>
   <% } %>

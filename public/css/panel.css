@@ -1385,3 +1385,128 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   .card { box-shadow: none; border: 1px solid #ddd; }
   body { background: #fff; color: #000; }
 }
+
+/* ================================================================
+   Venlix FX & Polish
+   ================================================================ */
+
+/* Smooth scrolling + tasteful custom scrollbars */
+html { scroll-behavior: smooth; }
+* { scrollbar-width: thin; scrollbar-color: var(--accent) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
+
+/* Accent selection color */
+::selection { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- Aurora FX layer (markup injected by ambient.ejs) ---- */
+.vx-fx {
+  position: fixed; inset: 0; z-index: 0;
+  overflow: hidden; pointer-events: none;
+  filter: saturate(1.1);
+}
+.vx-fx-blob {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--accent), transparent 70%);
+  opacity: 0.5; mix-blend-mode: screen;
+  will-change: transform;
+}
+.vx-fx-blob.b1 { width: 55vmax; height: 55vmax; top: -18vmax; left: -12vmax; animation: vxBlobA 34s ease-in-out infinite alternate; }
+.vx-fx-blob.b2 { width: 45vmax; height: 45vmax; bottom: -15vmax; right: -10vmax; background: radial-gradient(circle at 60% 40%, var(--accent-2), transparent 70%); animation: vxBlobB 42s ease-in-out infinite alternate; }
+.vx-fx-blob.b3 { width: 30vmax; height: 30vmax; top: 55%; left: 45%; background: radial-gradient(circle at 50% 50%, var(--accent), transparent 70%); opacity: 0.3; animation: vxBlobC 50s ease-in-out infinite alternate; }
+@keyframes vxBlobA { from { transform: translate(0,0) scale(1); } to { transform: translate(9vmax,6vmax) scale(1.15); } }
+@keyframes vxBlobB { from { transform: translate(0,0) scale(1.05); } to { transform: translate(-8vmax,-7vmax) scale(0.92); } }
+@keyframes vxBlobC { from { transform: translate(0,0) rotate(0deg); } to { transform: translate(-6vmax,4vmax) rotate(60deg); } }
+
+/* Content must render above the aurora layer */
+.main, .auth-wrap { position: relative; z-index: 1; }
+
+/* ---- Entrance + micro-interactions ---- */
+.main .stat { animation: vpCardIn 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.main > .grid .stat:nth-child(1) { animation-delay: 0.03s; }
+.main > .grid .stat:nth-child(2) { animation-delay: 0.07s; }
+.main > .grid .stat:nth-child(3) { animation-delay: 0.11s; }
+.main > .grid .stat:nth-child(4) { animation-delay: 0.15s; }
+.main > .card:nth-child(4) { animation-delay: 0.12s; }
+.main > .card:nth-child(5) { animation-delay: 0.17s; }
+.main > .card:nth-child(6) { animation-delay: 0.22s; }
+
+.stat { transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease; }
+.stat:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.stat:hover .stat-icon { transform: scale(1.08) rotate(-3deg); }
+.stat-icon { transition: transform 0.22s ease; }
+
+/* Button hover shine sweep */
+.btn { position: relative; overflow: hidden; }
+.btn::after {
+  content: ""; position: absolute; top: 0; left: -120%;
+  width: 60%; height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.5s ease;
+  pointer-events: none;
+}
+.btn:hover::after { left: 130%; }
+.btn:active::after { left: 160%; }
+.icon-btn { overflow: visible; }
+
+/* Nav links: icon nudge + active glow */
+.nav-link { transition: background 0.18s ease, padding-left 0.18s ease; }
+.nav-link .v-icon { transition: transform 0.18s ease, filter 0.18s ease; }
+.nav-link:hover .v-icon { transform: translateX(3px) scale(1.08); filter: drop-shadow(0 0 6px var(--accent-glow)); }
+.nav-link.active { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent); }
+.nav-link.active .v-icon { filter: drop-shadow(0 0 6px var(--accent-glow)); }
+
+/* Brand icon gentle pulse */
+.brand-icon, .auth-logo div { animation: vxBrandPulse 3.2s ease-in-out infinite; }
+@keyframes vxBrandPulse {
+  0%, 100% { box-shadow: 0 0 16px var(--accent-glow); }
+  50% { box-shadow: 0 0 26px var(--accent-glow), 0 0 40px color-mix(in srgb, var(--accent) 40%, transparent); }
+}
+
+/* Input focus glow */
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus,
+.topbar-search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent),
+              0 0 18px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Table row hover */
+.table-wrap tbody tr { transition: background 0.15s ease; }
+.table-wrap tbody tr:hover td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.table-wrap tbody td { transition: background 0.15s ease; }
+
+/* Login: animated glow + entrance */
+.auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.auth-card { animation: vpCardIn 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.vx-login-glow {
+  position: absolute; top: -70px; left: 50%; transform: translateX(-50%);
+  width: 220px; height: 140px; border-radius: 50%;
+  background: var(--accent); filter: blur(80px); opacity: 0.4; pointer-events: none;
+  animation: vxLoginGlow 6s ease-in-out infinite;
+}
+@keyframes vxLoginGlow {
+  0%, 100% { opacity: 0.35; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.65; transform: translateX(-50%) scale(1.25); }
+}
+.auth-card::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 45%);
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  .vx-fx-blob, .brand-icon, .auth-logo div, .vx-login-glow { animation: none !important; }
+  .btn::after { display: none; }
+}

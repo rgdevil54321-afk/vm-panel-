@@ -33,6 +33,12 @@ const vid = settings['panel.bg_video_file'] || settings['panel.bg_video_url'] ||
 
 <div id="bgOverlay" class="bg-overlay" style="background:rgba(5,8,18,var(--bg-overlay-val));<%= (bgMode === 'color' && parseFloat(overlay) < 0.01) ? 'display:none;' : '' %>"></div>
 
+<div class="vx-fx" aria-hidden="true">
+  <i class="vx-fx-blob b1"></i>
+  <i class="vx-fx-blob b2"></i>
+  <i class="vx-fx-blob b3"></i>
+</div>
+
 <% const discordUrl = settings['panel.discord_url'] || 'https://discord.gg/venlixnodes';
    const discordOn = settings['panel.discord_enabled'] !== '0' && settings['panel.discord_enabled'] !== 0 && settings['panel.discord_enabled'] !== false;
    const discordCode = settings['panel.discord_code'] !== undefined ? settings['panel.discord_code'] : '.gg/venlixnodes'; %>

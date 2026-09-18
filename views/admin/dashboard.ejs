@@ -14,6 +14,25 @@
     </a>
   </div>
 
+  <!-- Quick Actions -->
+  <div class="card vx-quick mb-4" style="padding:14px 18px">
+    <div class="flex-between mb-2" style="flex-wrap:wrap;gap:8px">
+      <div class="card-title" style="margin:0;font-size:14px">Quick Actions</div>
+      <a class="btn btn-sm" href="/admin"><%= t('nav.overview') %> ↗</a>
+    </div>
+    <div class="flex" style="gap:10px;flex-wrap:wrap">
+      <a class="btn btn-sm btn-primary" href="/admin/servers/create">＋ Create VM</a>
+      <a class="btn btn-sm" href="/admin/nodes">Nodes</a>
+      <a class="btn btn-sm" href="/admin/users">Users</a>
+      <a class="btn btn-sm" href="/admin/billing">Billing</a>
+      <a class="btn btn-sm" href="/admin/templates">Templates</a>
+      <a class="btn btn-sm" href="/admin/storage">Storage</a>
+      <a class="btn btn-sm" href="/admin/network">Network</a>
+      <a class="btn btn-sm" href="/admin/neofetch">Neofetch</a>
+      <a class="btn btn-sm" href="/admin/settings">Settings</a>
+    </div>
+  </div>
+
   <!-- Admin Stats Grid -->
   <div class="grid grid-4 mb-4">
     <div class="stat">
@@ -21,7 +40,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= vms.length %></div>
+        <div class="stat-value"><span class="count" data-count="<%= vms.length %>"><%= vms.length %></span></div>
         <div class="stat-label">Total Virtual Machines</div>
       </div>
     </div>
@@ -31,7 +50,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       </div>
       <div>
-        <div class="stat-value" style="color:#34d399"><%= running %></div>
+        <div class="stat-value" style="color:#34d399"><span class="count" data-count="<%= running %>"><%= running %></span></div>
         <div class="stat-label">Running Online</div>
       </div>
     </div>
@@ -41,7 +60,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= users.length %></div>
+        <div class="stat-value"><span class="count" data-count="<%= users.length %>"><%= users.length %></span></div>
         <div class="stat-label">Registered Users</div>
       </div>
     </div>
@@ -51,7 +70,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= totalDisk %> <span style="font-size:13px;color:var(--text-dim)">GB</span></div>
+        <div class="stat-value"><span class="count" data-count="<%= totalDisk %>"><%= totalDisk %></span> <span style="font-size:13px;color:var(--text-dim)">GB</span></div>
         <div class="stat-label">Total Allocated Storage</div>
       </div>
     </div>
@@ -222,6 +241,19 @@
 <%- include('../partials/foot') %>
 
 <script>
+function animateCount(el) {
+  const target = parseInt(el.dataset.count, 10) || 0;
+  const dur = 750, t0 = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(target * eased).toLocaleString();
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+document.querySelectorAll('.stat .count').forEach(animateCount);
+
 async function action(id, a) {
   try {
     VP.toast(`Executing ${a}...`, 'info');
