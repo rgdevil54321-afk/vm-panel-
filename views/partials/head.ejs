@@ -9,8 +9,8 @@ if (!favicon) {
 }
 const accent = settings['panel.accent'] || '#6366f1';
 const theme = settings['panel.theme'] || 'dark';
-const navbarTransparent = settings['panel.navbar_transparent'] === '1' || settings['panel.navbar_transparent'] === true;
-const navbarBlur = settings['panel.navbar_blur'] === '1' || settings['panel.navbar_blur'] === true;
+const navbarTransparent = settings['panel.navbar_transparent'] === '1' || settings['panel.navbar_transparent'] === 1 || settings['panel.navbar_transparent'] === true;
+const navbarBlur = settings['panel.navbar_blur'] === '1' || settings['panel.navbar_blur'] === 1 || settings['panel.navbar_blur'] === true;
 const navbarStyle = settings['panel.navbar_style'] || 'glass';
 %><!DOCTYPE html>
 <html lang="<%= typeof lang !== 'undefined' ? lang : 'en' %>" dir="<%= typeof uiDir !== 'undefined' ? uiDir : 'ltr' %>" data-theme="<%= theme %>">

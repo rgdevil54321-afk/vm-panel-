@@ -483,15 +483,17 @@ function seedSettings() {
 }
 seedSettings();
 
-// Rebrand to Venlix Nodes: force the panel name to 'Venlix Nodes'
-// regardless of the value that shipped with the original vpanel install.
-db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('Venlix Nodes', 'panel.name');
-
 const S = {
+  // Normalise scalar values so flag-type settings stored as '0'/'1'/'true' round-trip
+  // as strings (not numbers/booleans). Toggle keys are compared with strict '=== "0"'
+  // style checks across views; leaving them as parsed numbers silently breaks them.
+  rubric(v) {
+    return (typeof v === 'number' || typeof v === 'boolean') ? String(v) : v;
+  },
   get(key, fallback = null) {
     const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
     if (!row) return fallback;
-    try { return JSON.parse(row.value); } catch (_) { return row.value; }
+    try { return this.rubric(JSON.parse(row.value)); } catch (_) { return row.value; }
   },
   set(key, value) {
     db.prepare(
@@ -502,10 +504,18 @@ const S = {
     const rows = db.prepare('SELECT key, value FROM settings').all();
     const out = {};
     for (const r of rows) {
-      try { out[r.key] = JSON.parse(r.value); } catch (_) { out[r.key] = r.value; }
+      try { out[r.key] = this.rubric(JSON.parse(r.value)); } catch (_) { out[r.key] = r.value; }
     }
     return out;
   },
 };
+
+// Rebrand to Venlix Nodes: one-time migration for installs that pre-date the
+// fork. Runs ONCE (gated by a marker) so a name the admin sets in settings can
+// never be clobbered again on a later boot.
+if (S.get('_meta.branded') !== '1') {
+  S.set('panel.name', 'Venlix Nodes');
+  S.set('_meta.branded', '1');
+}
 
 module.exports = { db, settings: S };
