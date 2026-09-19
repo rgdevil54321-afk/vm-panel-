@@ -995,6 +995,14 @@ async function create({ user, data }) {
   const exists = db.prepare('SELECT id FROM vms WHERE name = ? AND owner_id = ?').get(vmName, user.id);
   if (exists) throw new Error(`VM "${vmName}" already exists`);
 
+  // ---- Block creation while the user's plan is suspended/expired ----
+  const blocked = db.prepare(
+    "SELECT * FROM user_plans WHERE user_id = ? AND status IN ('suspended','expired') ORDER BY id DESC LIMIT 1"
+  ).get(user.id);
+  if (blocked) {
+    throw new Error('Your plan is currently suspended or expired. Restore it to create new VMs.');
+  }
+
   // ---- Quota + credit enforcement ----
   const { q, wantMem, wantDiskGb } = checkQuota(user, data);
   const cost = billingCost(wantMem, wantDiskGb);
@@ -1351,6 +1359,10 @@ async function create({ user, data }) {
 
 async function start(vm, { user = null } = {}) {
   if (isRunning(vm)) return { ok: true, message: 'already running', status: 'running' };
+
+  if (vm.suspended_at && (!user || (user.role !== 'admin' && !user.root_admin))) {
+    throw new Error('This VM is suspended because its plan requirement was not met. Restore your plan (invites / boost / renewal) to continue.');
+  }
 
   if (isRemoteVm(vm)) {
     const node = remoteNodeFor(vm);
@@ -1947,6 +1959,31 @@ async function liveStatsRemote(vm) {
   };
 }
 
+// Suspension enforcement for plan violations. Stops every running VM of a user
+// and flips a per-VM flag so normal users cannot start them again until restored.
+async function setUserVmsSuspended(userId, reason) {
+  const vms = db.prepare('SELECT * FROM vms WHERE owner_id = ?').all(userId);
+  const nowIso = now();
+  for (const vm of vms) {
+    db.prepare('UPDATE vms SET suspended_at = ?, updated_at = ? WHERE id = ?')
+      .run(nowIso, nowIso, vm.id);
+    try { await stop(vm, {}); } catch (_) {}
+  }
+  return vms.length;
+}
+
+async function setUserVmsUnsuspended(userId) {
+  const vms = db.prepare('SELECT * FROM vms WHERE owner_id = ?').all(userId);
+  const nowIso = now();
+  for (const vm of vms) {
+    if (vm.suspended_at) {
+      db.prepare('UPDATE vms SET suspended_at = NULL, updated_at = ? WHERE id = ?')
+        .run(nowIso, vm.id);
+    }
+  }
+  return vms.length;
+}
+
 module.exports = {
   VM_DIR, vmDir, dbVms, getVm, create, start, stop, restart, remove, update,
   resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, allocPort, allocVncPort, allocAgentPort,
@@ -1954,4 +1991,5 @@ module.exports = {
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
   addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,
+  setUserVmsSuspended, setUserVmsUnsuspended,
 };

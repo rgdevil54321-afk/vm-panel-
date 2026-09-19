@@ -12,9 +12,13 @@ function getPlan(id) {
   return db.prepare('SELECT * FROM billing_plans WHERE id = ?').get(Number(id));
 }
 
+// ---------- Plans ----------
+const PLAN_KINDS = ['invite', 'booster', 'paid', 'free'];
+
 function createPlan(data) {
+  const kind = PLAN_KINDS.includes(data.kind) ? data.kind : 'paid';
   db.prepare(
-    'INSERT INTO billing_plans (name, description, price, currency, max_vms, max_cpu, max_mem_mb, max_disk_gb, active, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO billing_plans (name, description, price, currency, max_vms, max_cpu, max_mem_mb, max_disk_gb, active, created_at, kind, invites_required, boost_required, grace_days, duration_days, ip_include, renewable) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
   ).run(
     String(data.name || '').trim(),
     String(data.description || ''),
@@ -25,7 +29,14 @@ function createPlan(data) {
     data.max_mem_mb !== undefined && data.max_mem_mb !== '' ? parseInt(data.max_mem_mb, 10) : -1,
     data.max_disk_gb !== undefined && data.max_disk_gb !== '' ? parseInt(data.max_disk_gb, 10) : -1,
     data.active === undefined || data.active === true || data.active === 1 || data.active === '1' ? 1 : 0,
-    new Date().toISOString()
+    new Date().toISOString(),
+    kind,
+    parseInt(data.invites_required, 10) > 0 ? parseInt(data.invites_required, 10) : 0,
+    data.boost_required === true || data.boost_required === 1 || data.boost_required === '1' ? 1 : 0,
+    parseInt(data.grace_days, 10) > 0 ? parseInt(data.grace_days, 10) : 5,
+    parseInt(data.duration_days, 10) > 0 ? parseInt(data.duration_days, 10) : 30,
+    String(data.ip_include || 'ipv4_shared').slice(0, 64),
+    data.renewable === false || data.renewable === 0 || data.renewable === '0' ? 0 : 1
   );
   return db.prepare('SELECT * FROM billing_plans ORDER BY id DESC LIMIT 1').get();
 }
@@ -34,7 +45,7 @@ function updatePlan(id, data) {
   const plan = getPlan(id);
   if (!plan) return null;
   db.prepare(
-    'UPDATE billing_plans SET name = ?, description = ?, price = ?, currency = ?, max_vms = ?, max_cpu = ?, max_mem_mb = ?, max_disk_gb = ?, active = ? WHERE id = ?'
+    'UPDATE billing_plans SET name = ?, description = ?, price = ?, currency = ?, max_vms = ?, max_cpu = ?, max_mem_mb = ?, max_disk_gb = ?, active = ?, kind = ?, invites_required = ?, boost_required = ?, grace_days = ?, duration_days = ?, ip_include = ?, renewable = ? WHERE id = ?'
   ).run(
     String(data.name !== undefined ? data.name : plan.name).trim(),
     String(data.description !== undefined ? data.description : plan.description || ''),
@@ -45,6 +56,13 @@ function updatePlan(id, data) {
     data.max_mem_mb !== undefined && data.max_mem_mb !== '' ? parseInt(data.max_mem_mb, 10) : plan.max_mem_mb,
     data.max_disk_gb !== undefined && data.max_disk_gb !== '' ? parseInt(data.max_disk_gb, 10) : plan.max_disk_gb,
     data.active === undefined || data.active === true || data.active === 1 || data.active === '1' ? 1 : 0,
+    data.kind !== undefined ? (PLAN_KINDS.includes(data.kind) ? data.kind : 'paid') : plan.kind,
+    data.invites_required !== undefined ? (parseInt(data.invites_required, 10) > 0 ? parseInt(data.invites_required, 10) : 0) : plan.invites_required,
+    data.boost_required !== undefined ? (data.boost_required === true || data.boost_required === 1 || data.boost_required === '1' ? 1 : 0) : plan.boost_required,
+    data.grace_days !== undefined ? (parseInt(data.grace_days, 10) > 0 ? parseInt(data.grace_days, 10) : 5) : plan.grace_days,
+    data.duration_days !== undefined ? (parseInt(data.duration_days, 10) > 0 ? parseInt(data.duration_days, 10) : 30) : plan.duration_days,
+    data.ip_include !== undefined ? String(data.ip_include).slice(0, 64) : plan.ip_include,
+    data.renewable !== undefined ? (data.renewable === false || data.renewable === 0 || data.renewable === '0' ? 0 : 1) : plan.renewable,
     id
   );
   return getPlan(id);
@@ -168,8 +186,97 @@ function redeemCoupon(code, userId) {
   return { amount, type: coupon.type, code: coupon.code };
 }
 
+// ---------- Plan assignments (invite / booster / paid sectors) ----------
+function getUserPlanRow(id) {
+  return db.prepare('SELECT * FROM user_plans WHERE id = ?').get(Number(id));
+}
+
+function listUserPlans() {
+  return db.prepare(
+    `SELECT up.*, u.username, u.email, u.discord_id, u.discord_name,
+            p.name AS plan_name, p.kind AS plan_kind, p.invites_required, p.boost_required,
+            p.grace_days, p.duration_days, p.ip_include, p.renewable, p.price
+     FROM user_plans up
+     JOIN users u ON u.id = up.user_id
+     JOIN billing_plans p ON p.id = up.plan_id
+     ORDER BY up.id DESC LIMIT 500`
+  ).all();
+}
+
+function getActiveUserPlan(userId) {
+  return db.prepare(
+    `SELECT up.*, p.name AS plan_name, p.kind AS plan_kind, p.invites_required, p.boost_required,
+            p.grace_days, p.duration_days, p.ip_include, p.renewable
+     FROM user_plans up JOIN billing_plans p ON p.id = up.plan_id
+     WHERE up.user_id = ? ORDER BY up.id DESC LIMIT 1`
+  ).get(Number(userId)) || null;
+}
+
+function assignPlanToUser(user, plan, { assignedBy = null, days = null, inviteCode = null, note = '' } = {}) {
+  if (!plan || !user) throw new Error('User and plan are required');
+  applyPlanToUser(plan, user);
+  const kind = plan.kind || 'paid';
+  const dur = days && days > 0 ? days : (plan.duration_days > 0 ? plan.duration_days : parseInt(require('./db').settings.get('plans.default_renew_days') || '30', 10));
+  const expires = kind === 'paid' ? new Date(Date.now() + dur * 86400000).toISOString() : null;
+  db.prepare(
+    `INSERT INTO user_plans (user_id, plan_id, assigned_by, assigned_at, expires_at, renewals, status, note, invite_code)
+     VALUES (?,?,?,?,?,0,'active',?,?)`
+  ).run(user.id, plan.id, assignedBy, new Date().toISOString(), expires, String(note || ''), inviteCode ? String(inviteCode).trim() : null);
+  const id = Number(db.prepare('SELECT last_insert_rowid() AS id').get().id);
+  db.prepare('UPDATE users SET plan_id = ? WHERE id = ?').run(plan.id, user.id);
+  // A fresh assignment always lifts any previous suspension.
+  require('./vmService').setUserVmsUnsuspended(user.id).catch(() => {});
+  return getUserPlanRow(id);
+}
+
+function renewUserPlan(userPlanId, days = null, operatorId = null) {
+  const up = getUserPlanRow(userPlanId);
+  if (!up) return null;
+  const plan = getPlan(up.plan_id);
+  const addDays = days && days > 0 ? days : (plan && plan.duration_days > 0 ? plan.duration_days : parseInt(require('./db').settings.get('plans.default_renew_days') || '30', 10));
+  let base = up.expires_at ? new Date(up.expires_at) : new Date();
+  if (base.getTime() < Date.now()) base = new Date();
+  base.setDate(base.getDate() + addDays);
+  db.prepare(
+    `UPDATE user_plans SET expires_at = ?, status = 'active', warned_at = NULL, suspended_at = NULL,
+       renewals = renewals + 1, assigned_by = COALESCE(?, assigned_by), last_check_ok = 1,
+       last_check_detail = 'renewed for ' || ? || ' days'
+     WHERE id = ?`
+  ).run(base.toISOString(), operatorId, addDays, userPlanId);
+  require('./vmService').setUserVmsUnsuspended(up.user_id).catch(() => {});
+  return getUserPlanRow(userPlanId);
+}
+
+function cancelUserPlan(userPlanId) {
+  const up = getUserPlanRow(userPlanId);
+  if (!up) return false;
+  db.prepare("UPDATE user_plans SET status = 'cancelled' WHERE id = ?").run(userPlanId);
+  return true;
+}
+
+function setUserPlanStatus(userPlanId, status, detail = '') {
+  const up = getUserPlanRow(userPlanId);
+  if (!up) return false;
+  db.prepare('UPDATE user_plans SET status = ?, last_check_at = ?, last_check_detail = ? WHERE id = ?')
+    .run(status, new Date().toISOString(), String(detail).slice(0, 200), userPlanId);
+}
+
+function logPlanCheck(userPlanId, userId, ok, detail) {
+  db.prepare('INSERT INTO plan_checks (user_plan_id, user_id, ok, detail, created_at) VALUES (?,?,?,?,?)')
+    .run(userPlanId, Number(userId), ok ? 1 : 0, String(detail || '').slice(0, 300), new Date().toISOString());
+}
+
+function notifyUser(userId, title, body) {
+  try {
+    db.prepare('INSERT INTO notifications (user_id, title, body, created_at) VALUES (?,?,?,?)')
+      .run(Number(userId), String(title), String(body), new Date().toISOString());
+  } catch (_) {}
+}
+
 module.exports = {
   listPlans, getPlan, createPlan, updatePlan, deletePlan, applyPlanToUser,
   listInvoices, createInvoice, markInvoicePaid, deleteInvoice,
   listCoupons, getCoupon, createCoupon, deleteCoupon, redeemCoupon,
+  listUserPlans, getActiveUserPlan, getUserPlanRow, assignPlanToUser, renewUserPlan,
+  cancelUserPlan, setUserPlanStatus, logPlanCheck, notifyUser,
 };

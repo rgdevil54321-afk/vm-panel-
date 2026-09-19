@@ -30,6 +30,32 @@
     </div>
   </div>
 
+  <!-- Plan assignments (sectors) -->
+  <div class="card mt-3">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div class="card-title" style="margin:0">Plan Assignments</div>
+      <div class="flex" style="gap:6px">
+        <button class="btn btn-sm" id="tabInvite" onclick="setSector('invite')">Invite</button>
+        <button class="btn btn-sm" id="tabBooster" onclick="setSector('booster')">Booster</button>
+        <button class="btn btn-sm" id="tabPaid" onclick="setSector('paid')">Paid</button>
+      </div>
+    </div>
+    <p class="muted text-sm mb-2">PlanGuard sweeps these every <code class="mono">bot.check_interval_min</code> min: unmet invite/boost requirements warn first, then suspend after the plan's grace period. Paid plans suspend once past expiry + grace. Assigning a paid plan sets its expiry; invite/booster plans rely on the linked Discord account.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Invite Code</th><th>Renewals</th><th>Last Check</th><th class="right">Actions</th></tr></thead>
+        <tbody id="sectorRows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>User</label><select id="s_user" class="input"><% for (const u of (users || [])) { %><option value="<%= u.id %>"><%= u.username %></option><% } %></select></div>
+      <div class="form-group" style="margin:0"><label>Plan</label><select id="s_plan" class="input"><% for (const p of (plans || [])) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.kind %>)</option><% } %></select></div>
+      <div class="form-group" style="margin:0"><label>Days (paid only)</label><input id="s_days" class="input" type="number" value="30" /></div>
+      <div class="form-group" style="margin:0"><label>Invite code (discord)</label><input id="s_code" class="input" placeholder="e.g. venlix" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="assignPlan()">Assign Plan</button></div>
+    </div>
+  </div>
+
   <!-- Coupons -->
   <div class="card mt-3">
     <div class="card-title">Coupons</div>
@@ -215,6 +241,78 @@ async function deleteInvoice(id) {
   try { await VP.api('/admin/billing/invoices/' + id, { method: 'DELETE' }); loadInvoices(); } catch (e) { VP.toast(e.message, 'error'); }
 }
 
+let sector = 'invite';
+function setSector(k) {
+  sector = k;
+  document.getElementById('tabInvite').classList.toggle('btn-primary', k === 'invite');
+  document.getElementById('tabBooster').classList.toggle('btn-primary', k === 'booster');
+  document.getElementById('tabPaid').classList.toggle('btn-primary', k === 'paid');
+  loadSectors();
+}
+function sectorOf(p) {
+  if (p.plan_kind === 'invite') return 'invite';
+  if (p.plan_kind === 'booster') return 'booster';
+  return 'paid';
+}
+async function loadSectors() {
+  const rows = document.getElementById('sectorRows');
+  try {
+    const res = await VP.api('/admin/billing/user-plans');
+    const all = (res.plans || []).filter((p) => sectorOf(p) === sector);
+    if (!all.length) { rows.innerHTML = '<tr><td colspan="8" class="muted">No assignments in this sector.</td></tr>'; return; }
+    rows.innerHTML = all.map((p) => {
+      const st = p.status;
+      const pill = st === 'active' ? 'pill-green' : st === 'warned' ? 'pill-yellow' : st === 'suspended' ? 'pill-red' : 'pill-gray';
+      const need = sector === 'invite' ? p.invites_required : (sector === 'booster' ? 'boost' : p.duration_days + 'd');
+      return '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(p.username || ('#' + p.user_id)) + ' <span class="muted" style="font-weight:400">' + (p.discord_name ? '@' + esc(p.discord_name) : '') + '</span></td>'
+        + '<td class="text-sm muted">' + esc(p.plan_name) + ' <span class="muted text-sm">/' + esc(p.plan_kind) + '</span></td>'
+        + '<td><span class="pill ' + pill + '">' + esc(st) + '</span></td>'
+        + '<td class="text-sm muted">' + (p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '-') + '</td>'
+        + '<td class="mono text-sm">' + esc(p.invite_code || '-') + (sector === 'invite' ? ' <span class="muted">/ ' + esc(need) + '</span>' : '') + '</td>'
+        + '<td class="text-sm">' + p.renewals + '</td>'
+        + '<td class="text-sm muted">' + (p.last_check_at ? new Date(p.last_check_at).toLocaleString() : 'never') + '<br/><span class="muted text-sm">' + esc(p.last_check_detail || '') + '</span></td>'
+        + '<td class="right">'
+        + (sector === 'paid' && p.expires_at ? '<button class="btn btn-sm" onclick="renewPlan(' + p.id + ')">Renew</button> ' : '')
+        + (st === 'suspended' ? '<button class="btn btn-sm" onclick="setPlanStatus(' + p.id + ',\'active\')">Reactivate</button> ' : (st === 'active' ? '<button class="btn btn-sm btn-warning" onclick="setPlanStatus(' + p.id + ',\'suspended\')">Suspend</button> ' : ''))
+        + (st !== 'cancelled' ? '<button class="btn btn-sm btn-danger" onclick="cancelPlan(' + p.id + ')">Cancel</button>' : '')
+        + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="8" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+async function assignPlan() {
+  const body = {
+    user_id: document.getElementById('s_user').value,
+    plan_id: document.getElementById('s_plan').value,
+    days: document.getElementById('s_days').value,
+    invite_code: document.getElementById('s_code').value.trim(),
+  };
+  if (!body.user_id || !body.plan_id) { VP.toast('Pick a user and a plan', 'warning'); return; }
+  try {
+    await VP.api('/admin/billing/user-plans', { method: 'POST', body });
+    VP.toast('Plan assigned', 'success');
+    loadSectors();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function renewPlan(id) {
+  const ok = await VP.confirmDialog('Renew this assignment now (extends from today) and clear any suspension?', { title: 'Renew Plan', okText: 'Renew', danger: false });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/user-plans/' + id + '/renew', { method: 'POST', body: {} }); VP.toast('Plan renewed', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function setPlanStatus(id, status) {
+  const label = status === 'active' ? 'Reactivate' : 'Suspend';
+  const ok = await VP.confirmDialog(label + ' this assignment? ' + (status === 'active' ? 'Its VMs will be unlocked.' : 'Its VMs will be stopped and locked.'), { title: label, okText: label });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/user-plans/' + id + '/status', { method: 'POST', body: { status } }); VP.toast(label + 'd', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function cancelPlan(id) {
+  const ok = await VP.confirmDialog('Cancel this assignment entirely? VMs keep their quotas until reassigned; the row will be marked cancelled.', { title: 'Cancel Plan' });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/user-plans/' + id + '/cancel', { method: 'POST' }); VP.toast('Plan cancelled', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+setSector('invite');
 loadPlans();
 loadCoupons();
 loadInvoices();

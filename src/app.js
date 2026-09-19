@@ -12,6 +12,7 @@ const vmService = require('./services/vmService');
 const sshService = require('./services/sshService');
 const bootLogService = require('./services/bootLogService');
 const scheduleService = require('./services/scheduleService');
+const planGuardService = require('./services/planGuardService');
 const activity = require('./services/activityService');
 const { attachVncProxy } = require('./services/vncService');
 
@@ -47,6 +48,9 @@ function createWebApp() {
   app.use('/', require('./routes/webAuth'));
   app.use('/', require('./routes/webUser'));
   app.use('/', require('./routes/webAdmin'));
+  // Admin views call JSON endpoints without an /api prefix (VP.api('/admin/...')).
+  // Mount the API router at the root as well; page routes above take precedence.
+  app.use('/', require('./routes/api'));
   app.use('/api', require('./routes/api'));
 
   app.use((req, res) => {
@@ -394,6 +398,7 @@ function bootstrap() {
   }
 
   scheduleService.loadAll();
+  planGuardService.start();
   const nodeRegistry = require('./services/nodeRegistry');
   nodeRegistry.startHeartbeat(parseInt(process.env.NODE_HEARTBEAT_MS || '8000', 10));
 

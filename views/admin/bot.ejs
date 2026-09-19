@@ -1,0 +1,146 @@
+<%- include('../partials/head', { title: 'Discord Bot' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Discord Bot</h2>
+    <div class="flex" style="gap:8px">
+      <button class="btn btn-sm" onclick="loadStatus()">Refresh</button>
+      <button class="btn btn-sm btn-primary" onclick="runGuard()">Run PlanGuard Now</button>
+      <a class="btn btn-sm" href="/admin/settings?tab=general">Bot Settings</a>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="gap:16px">
+    <div class="card">
+      <div class="card-title">Connection</div>
+      <div id="botStatus" class="muted text-sm">Checking…</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Test Discord</div>
+      <p class="muted text-sm mb-2">Send a DM from the bot to the logged-in user (or a custom Discord ID), verify the token works, or fetch feature data.</p>
+      <div class="grid grid-2" style="gap:10px">
+        <div class="form-group" style="margin:0"><label>Discord user ID (optional)</label><input id="bt_user" class="input" placeholder="blank = you" /></div>
+        <div class="form-group" style="margin:0"><label>Message</label><input id="bt_msg" class="input" value="Venlix panel bot test ✔" /></div>
+      </div>
+      <div class="flex" style="gap:8px;margin-top:12px">
+        <button class="btn btn-primary" onclick="testBot()">Send Test DM</button>
+        <button class="btn" onclick="loadGuilds()">Fetch Guilds</button>
+        <button class="btn" onclick="loadInvites()">Fetch Invites</button>
+        <button class="btn" onclick="lookupMember()">Look up Member</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table>
+          <thead><tr><th>Guild</th><th>ID</th><th>Members</th><th></th><th></th></tr></thead>
+          <tbody id="guildRows"><tr><td colspan="5" class="muted">—</td></tr></tbody>
+        </table>
+      </div>
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Invite Code</th><th>Channel</th><th>Uses</th><th>Max</th></tr></thead>
+          <tbody id="inviteRows"><tr><td colspan="4" class="muted">—</td></tr></tbody>
+        </table>
+      </div>
+      <div id="memberBox" class="muted text-sm" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let GUILD_ID = '';
+
+async function loadStatus() {
+  const box = document.getElementById('botStatus');
+  try {
+    const res = await VP.api('/admin/bot/status');
+    box.innerHTML = res.configured
+      ? (res.ok
+        ? '<span class="pill pill-green">connected</span> <span class="mono">' + esc(res.me.username) + '</span><span class="muted">#' + esc(res.me.discriminator || res.me.id) + '</span>'
+        : '<span class="pill pill-red">token error</span> ' + esc(res.me_error || ''))
+      + '<br/><span class="muted text-sm">guild: ' + esc(res.guild_id || 'not set') + ' · guard every ' + esc(res.check_interval_min) + ' min · ' + (res.enabled ? 'enabled' : 'paused') + '</span>'
+      : '<span class="pill pill-red">not configured</span> Set a bot token in the Bot section of <a href="/admin/settings?tab=general">Settings</a>.';
+  } catch (e) { box.textContent = 'Failed: ' + e.message; }
+}
+
+async function testBot() {
+  const userId = document.getElementById('bt_user').value.trim();
+  const message = document.getElementById('bt_msg').value.trim();
+  try {
+    const res = await VP.api('/admin/bot/test', { method: 'POST', body: { user_id: userId, message } });
+    if (!res.ok) throw new Error(res.error || 'Bot test failed');
+    VP.toast('Bot is alive' + (res.dm ? (res.dm.ok ? ' — DM sent' : ' — DM failed: ' + res.dm.error) : ' — no DM target'), 'success');
+    loadStatus();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function loadGuilds() {
+  try {
+    const res = await VP.api('/admin/bot/guilds');
+    if (!res.ok) throw new Error(res.error || 'Failed to load guilds');
+    const rows = document.getElementById('guildRows');
+    if (!res.guilds || !res.guilds.length) { rows.innerHTML = '<tr><td colspan="5" class="muted">Bot is not in any server.</td></tr>'; return; }
+    rows.innerHTML = res.guilds.map((g) =>
+      '<tr><td style="font-weight:600">' + esc(g.name) + '</td>'
+      + '<td class="mono text-sm">' + esc(g.id) + '</td>'
+      + '<td class="text-sm">' + (g.member_count || '?') + '</td>'
+      + '<td><button class="btn btn-sm" onclick="copyText(\'' + esc(g.id) + '\', this)">Copy</button></td>'
+      + '<td><button class="btn btn-sm" onclick="useGuild(\'' + esc(g.id) + '\')">Invites</button></td>'
+      + '</tr>').join('');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+function copyText(t, btn) {
+  navigator.clipboard.writeText(t).then(() => { if (btn) { const o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => (btn.textContent = o), 1200); } });
+}
+
+async function useGuild(gid) {
+  GUILD_ID = gid;
+  VP.toast('Selected guild: ' + gid);
+  loadInvites(gid);
+}
+
+async function loadInvites(gid) {
+  const target = gid || GUILD_ID || document.getElementById('bt_user').value.trim();
+  if (!target) { VP.toast('Run "Fetch Guilds" first and pick one', 'warning'); return; }
+  try {
+    const res = await VP.api('/admin/bot/guilds/' + target + '/invites');
+    if (!res.ok) throw new Error(res.error || 'Failed to load invites');
+    const rows = document.getElementById('inviteRows');
+    if (!res.invites || !res.invites.length) { rows.innerHTML = '<tr><td colspan="4" class="muted">No server invites — create one for invite plans to count.</td></tr>'; return; }
+    rows.innerHTML = res.invites.map((i) =>
+      '<tr><td class="mono text-sm" style="font-weight:600">' + esc(i.code) + '</td>'
+      + '<td class="text-sm muted">' + esc(i.channel || '-') + '</td>'
+      + '<td class="text-sm">' + i.uses + '</td>'
+      + '<td class="text-sm">' + (i.max_uses || '∞') + '</td>'
+      + '</tr>').join('');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function lookupMember() {
+  const gid = GUILD_ID || document.getElementById('bt_user').value.trim();
+  const uid = document.getElementById('bt_msg').value.trim();
+  if (!gid || !uid) { VP.toast('Pick a guild (Invites) and put the Discord user ID in the message box', 'warning'); return; }
+  try {
+    const res = await VP.api('/admin/bot/guilds/' + gid + '/member/' + uid);
+    const box = document.getElementById('memberBox');
+    if (!res.ok) box.innerHTML = '<span class="pill pill-red">not found</span> ' + esc(res.error || 'member lookup failed');
+    else box.innerHTML = '<span class="pill ' + (res.member.premium_since ? 'pill-green' : 'pill-gray') + '">' + (res.member.premium_since ? 'boosting' : 'not boosting') + '</span> '
+      + '<span class="mono">' + esc((res.member.user && (res.member.user.username + '#' + (res.member.user.discriminator || res.member.user.id))) || uid) + '</span> '
+      + '<span class="muted text-sm">roles ' + (res.member.roles || []).length + ' · joined ' + (res.member.joined_at ? new Date(res.member.joined_at).toLocaleDateString() : '?') + '</span>';
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function runGuard() {
+  const ok = await VP.confirmDialog('Run a PlanGuard sweep right now? It checks every active plan assignment (invite uses, boost status, expiry) and applies warns/suspensions.', { title: 'Run PlanGuard', okText: 'Run Now', danger: false });
+  if (!ok) return;
+  try {
+    const res = await VP.api('/admin/bot/run-guard', { method: 'POST' });
+    VP.toast(res.skipped ? 'PlanGuard skipped: ' + res.skipped : 'Checked ' + res.checked + '/' + res.total + ' plan assignments', res.ok ? 'success' : 'error');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+loadStatus();
+</script>

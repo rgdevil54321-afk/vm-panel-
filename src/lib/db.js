@@ -241,6 +241,40 @@ CREATE TABLE IF NOT EXISTS coupon_claims (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Active plan assignment for a user. status: active | warned | suspended | expired | cancelled
+CREATE TABLE IF NOT EXISTS user_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  plan_id INTEGER NOT NULL,
+  assigned_by INTEGER,
+  assigned_at TEXT NOT NULL,
+  expires_at TEXT,
+  renewals INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  warned_at TEXT,
+  suspended_at TEXT,
+  last_check_at TEXT,
+  last_check_ok INTEGER,
+  last_check_detail TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (plan_id) REFERENCES billing_plans(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_plans_user ON user_plans(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_plans_status ON user_plans(status);
+
+-- Log of automated plan-compliance checks (invite/booster verification etc.)
+CREATE TABLE IF NOT EXISTS plan_checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_plan_id INTEGER,
+  user_id INTEGER,
+  ok INTEGER NOT NULL DEFAULT 0,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plan_checks_up ON plan_checks(user_plan_id);
+
 CREATE TABLE IF NOT EXISTS storage_pools (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -365,6 +399,17 @@ const defaultSettings = {
   'billing.disk_price': '0',
   'billing.signup_credits': '0',
   'billing.daily_bonus': '0',
+  // ---- Plan sectors (invite / booster / paid) ----
+  'plans.default_renew_days': '30',
+  'plans.grace_days': '5',
+  // ---- Discord bot (REST-only integration, token from a bot account) ----
+  'bot.token': '',
+  'bot.guild_id': '',
+  'bot.enabled': '0',
+  'bot.check_interval_min': '5',
+  'bot.dm_warn': 'Heads up {name}! Your {plan} plan is not being satisfied. You need {need} but we currently see {have}. Fix it within {grace} days or your VPS will be suspended.',
+  'bot.dm_suspend': 'Your VPS has been suspended because the {plan} requirement was not met. Bring it back up and your server will be restored automatically.',
+  'bot.dm_restore': 'Great news {name}! Your {plan} requirement is satisfied again — everything has been restored.',
   // ---- Neofetch host identity overrides (CPU / GPU / RAM / DISK shown in banner) ----
   'panel.ram_name': '',
   'panel.disk_name': '',
@@ -493,6 +538,7 @@ const vmNetColumns = {
   neofetch_cpu: 'TEXT',
   neofetch_mem: 'TEXT',
   neofetch_disk: 'TEXT',
+  suspended_at: 'TEXT',
 };
 const vmNetColNames = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 for (const [col, type] of Object.entries(vmNetColumns)) {
@@ -500,6 +546,31 @@ for (const [col, type] of Object.entries(vmNetColumns)) {
     db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
   }
 }
+
+// ---- Billing plans get plan-sector + renewal fields ----
+const planColNames = db.prepare('PRAGMA table_info(billing_plans)').all().map((c) => c.name);
+const addPlanCol = (name, ddl) => { if (!planColNames.includes(name)) db.exec(`ALTER TABLE billing_plans ADD COLUMN ${name} ${ddl}`); };
+addPlanCol('kind', "TEXT NOT NULL DEFAULT 'paid'");        // invite | booster | paid
+addPlanCol('invites_required', 'INTEGER NOT NULL DEFAULT 0');
+addPlanCol('boost_required', 'INTEGER NOT NULL DEFAULT 0');
+addPlanCol('grace_days', 'INTEGER NOT NULL DEFAULT 5');
+addPlanCol('duration_days', 'INTEGER NOT NULL DEFAULT 30');
+addPlanCol('ip_include', "TEXT NOT NULL DEFAULT 'ipv4_shared'");
+addPlanCol('renewable', 'INTEGER NOT NULL DEFAULT 1');
+
+// user_plans extra runtime columns (set via migrations for existing installs)
+const userPlanCols = db.prepare('PRAGMA table_info(user_plans)').all().map((c) => c.name);
+const addUserPlanCol = (name, ddl) => { if (!userPlanCols.includes(name)) db.exec(`ALTER TABLE user_plans ADD COLUMN ${name} ${ddl}`); };
+addUserPlanCol('invite_code', 'TEXT');
+addUserPlanCol('note', 'TEXT');
+
+// ---- Users: Discord link + active plan ref ----
+const userPlanDiscordCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+const addUserExtraCol = (name, ddl) => { if (!userPlanDiscordCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
+addUserExtraCol('plan_id', 'INTEGER');
+addUserExtraCol('discord_id', 'TEXT');
+addUserExtraCol('discord_name', 'TEXT');
+addUserExtraCol('discord_linked_at', 'TEXT');
 
 function seedSettings() {
   const stmt = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

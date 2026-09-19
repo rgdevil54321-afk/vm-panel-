@@ -465,11 +465,13 @@ router.get('/billing', (req, res) => {
   const bonusEnabled = String(settings.get('billing.enabled') || '0') === '1' && (parseFloat(settings.get('billing.daily_bonus') || '0') || 0) > 0;
   const lastBonus = req.user.last_bonus_at ? new Date(req.user.last_bonus_at) : null;
   const canClaim = bonusEnabled && (!lastBonus || Date.now() - lastBonus.getTime() >= 24 * 3600 * 1000);
+  const activePlan = require('../services/billingService').getActiveUserPlan(req.user.id);
   render(res, 'billing', {
     q,
     billingEnabled: String(settings.get('billing.enabled') || '0') === '1',
     bonusEnabled, canClaim,
     nextBonusAt: lastBonus ? new Date(lastBonus.getTime() + 24 * 3600 * 1000).toISOString() : null,
+    activePlan,
     prices: {
       base: parseFloat(settings.get('billing.base_price') || '0') || 0,
       ram: parseFloat(settings.get('billing.ram_price') || '0') || 0,

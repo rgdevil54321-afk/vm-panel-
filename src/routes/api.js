@@ -690,6 +690,140 @@ router.post('/billing/coupon/redeem', apiAuth, json, (req, res) => {
   }
 });
 
+// ---------- Discord bot (admin) ----------
+router.get('/admin/bot/status', apiAdmin, async (req, res) => {
+  const d = require('../services/discordService');
+  const base = {
+    configured: d.botConfigured(),
+    guild_id: String(settings.get('bot.guild_id') || ''),
+    enabled: String(settings.get('bot.enabled') || '0') === '1',
+    check_interval_min: String(settings.get('bot.check_interval_min') || '5'),
+  };
+  if (!base.configured) return res.json({ ok: true, ...base, me: null });
+  const me = await d.getBotUser();
+  res.json({ ok: true, ...base, me: me.ok ? me.data : null, me_error: me.ok ? null : (me.error || 'discord api unreachable') });
+});
+
+router.get('/admin/bot/guilds', apiAdmin, async (req, res) => {
+  const d = require('../services/discordService');
+  if (!d.botConfigured()) return res.status(400).json({ ok: false, guilds: [], error: 'Bot token not configured' });
+  const r = await d.getGuilds();
+  res.json({ ok: r.ok, guilds: r.guilds, error: r.ok ? null : (r.error || 'discord api error') });
+});
+
+router.get('/admin/bot/guilds/:gid/invites', apiAdmin, async (req, res) => {
+  const d = require('../services/discordService');
+  if (!d.botConfigured()) return res.status(400).json({ ok: false, invites: [], error: 'Bot token not configured' });
+  const r = await d.getGuildInvites(req.params.gid);
+  res.json({ ok: r.ok, guild_id: req.params.gid, invites: r.invites, error: r.ok ? null : (r.error || 'discord api error') });
+});
+
+router.get('/admin/bot/guilds/:gid/member/:uid', apiAdmin, async (req, res) => {
+  const d = require('../services/discordService');
+  if (!d.botConfigured()) return res.status(400).json({ ok: false, member: null, error: 'Bot token not configured' });
+  const r = await d.getGuildMember(req.params.gid, req.params.uid);
+  res.json({ ok: r.ok, guild_id: req.params.gid, user_id: req.params.uid, member: r.ok ? r.data : null, error: r.ok ? null : (r.error || 'discord api error') });
+});
+
+router.post('/admin/bot/test', apiAdmin, json, async (req, res) => {
+  const d = require('../services/discordService');
+  if (!d.botConfigured()) return res.status(400).json({ ok: false, error: 'Bot token not configured' });
+  const me = await d.getBotUser();
+  if (!me.ok) return res.status(502).json({ ok: false, error: me.error || 'Discord API unreachable' });
+  let dm = null;
+  const userId = String(req.body && req.body.user_id || '').trim();
+  if (userId) {
+    const msg = String(req.body && req.body.message || 'Venlix panel bot test').trim();
+    dm = await d.sendDm(userId, msg);
+  }
+  res.json({ ok: true, me: me.data, dm: dm ? { ok: dm.ok, error: dm.error } : null });
+});
+
+router.post('/admin/bot/run-guard', apiAdmin, async (req, res) => {
+  const pg = require('../services/planGuardService');
+  res.json(await pg.run());
+});
+
+// ---------- Billing: user plan assignments (admin) ----------
+router.get('/admin/billing/user-plans', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  res.json({ ok: true, plans: bs.listUserPlans() });
+});
+
+router.post('/admin/billing/user-plans', apiAdmin, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const target = db.prepare('SELECT id, username FROM users WHERE id = ?').get(Number(req.body.user_id));
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const plan = bs.getPlan(req.body.plan_id);
+    if (!plan) return res.status(400).json({ error: 'Plan not found' });
+    const up = bs.assignPlanToUser(target, plan, {
+      assignedBy: req.user.id,
+      days: req.body.days,
+      inviteCode: req.body.invite_code,
+      note: req.body.note,
+    });
+    activity.logActivity({ user_id: req.user.id, event: 'billing:user_plan_assign', details: { target: target.id, plan: plan.name } });
+    res.json({ ok: true, plan: up });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/admin/billing/user-plans/:id/renew', apiAdmin, json, async (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const up = bs.renewUserPlan(Number(req.params.id), req.body.days, req.user.id);
+    if (!up) return res.status(404).json({ error: 'Plan assignment not found' });
+    activity.logActivity({ user_id: req.user.id, event: 'billing:user_plan_renew', details: { user_plan_id: up.id, user_id: up.user_id } });
+    res.json({ ok: true, plan: up });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/admin/billing/user-plans/:id/cancel', apiAdmin, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const up = bs.getUserPlanRow(Number(req.params.id));
+    if (!up) return res.status(404).json({ error: 'Plan assignment not found' });
+    bs.cancelUserPlan(up.id);
+    activity.logActivity({ user_id: req.user.id, event: 'billing:user_plan_cancel', details: { user_plan_id: up.id, user_id: up.user_id } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/admin/billing/user-plans/:id/status', apiAdmin, json, async (req, res) => {
+  const st = String(req.body && req.body.status || '');
+  if (!['active', 'warned', 'suspended'].includes(st)) return res.status(400).json({ error: 'Invalid status' });
+  const bs = require('../services/billingService');
+  const up = bs.getUserPlanRow(Number(req.params.id));
+  if (!up) return res.status(404).json({ error: 'Plan assignment not found' });
+  bs.setUserPlanStatus(up.id, st, String(req.body.detail || 'manual override').slice(0, 200));
+  if (st === 'active') await vmService.setUserVmsUnsuspended(up.user_id).catch(() => {});
+  res.json({ ok: true, plan: bs.getUserPlanRow(up.id) });
+});
+
+// ---------- Discord link + self-renewal (user) ----------
+router.post('/billing/discord-link', apiAuth, json, (req, res) => {
+  const id = String(req.body && req.body.discord_id || '').trim();
+  const name = String(req.body && req.body.discord_name || '').trim().slice(0, 64);
+  if (!id) return res.status(400).json({ error: 'Discord ID is required' });
+  db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
+    .run(id, name, new Date().toISOString(), new Date().toISOString(), req.user.id);
+  activity.logActivity({ user_id: req.user.id, event: 'account:discord_link', details: { discord_id: id, discord_name: name } });
+  res.json({ ok: true });
+});
+
+router.post('/billing/plan/renew', apiAuth, json, (req, res) => {
+  try {
+    const bs = require('../services/billingService');
+    const up = bs.getActiveUserPlan(req.user.id);
+    if (!up) return res.status(400).json({ error: 'No active plan' });
+    const plan = bs.getPlan(up.plan_id);
+    if (!plan || !plan.renewable) return res.status(400).json({ error: 'This plan is not renewable' });
+    const days = Number(req.body && req.body.days) > 0 ? Number(req.body.days) : (plan.duration_days > 0 ? plan.duration_days : 30);
+    const renewed = bs.renewUserPlan(up.id, days, req.user.id);
+    res.json({ ok: true, plan: renewed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ---------- Updates + Templates (admin) ----------
 router.get('/admin/updates/status', apiAdmin, async (req, res) => {
   try {

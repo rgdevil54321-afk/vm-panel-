@@ -349,8 +349,13 @@ router.get('/admin/network', (req, res) => {
 });
 
 router.get('/admin/billing', (req, res) => {
-  const users = db.prepare('SELECT id, username FROM users ORDER BY username ASC').all();
-  render(res, 'billing', { users, plans: require('../services/billingService').listPlans() });
+  const users = db.prepare('SELECT id, username, email FROM users ORDER BY username').all();
+  const plans = require('../services/billingService').listPlans();
+  render(res, 'billing', { users, plans });
+});
+
+router.get('/admin/bot', (req, res) => {
+  render(res, 'bot', {});
 });
 
 router.get('/admin/updates', (req, res) => {
@@ -413,6 +418,8 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
   for (const key of ['security.allow_register', 'security.require_verify', 'security.force_tfa', 'vm.auto_port_min', 'vm.auto_port_max', 'vm.vnc_port_min', 'vm.vnc_port_max', 'vm.agent_port_min', 'vm.agent_port_max', 'vm.default_memory', 'vm.default_cpus', 'vm.default_disk', 'vm.default_os']) save(key);
   save('billing.enabled');
   save('billing.base_price'); save('billing.ram_price'); save('billing.disk_price'); save('billing.signup_credits'); save('billing.daily_bonus');
+  for (const key of ['plans.default_renew_days', 'plans.grace_days']) save(key);
+  for (const key of ['bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min', 'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore']) save(key);
   if (req.body.vm_os_list) {
     try {
       settings.set('vm.os_list', JSON.stringify(JSON.parse(req.body.vm_os_list)));

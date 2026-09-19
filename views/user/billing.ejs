@@ -49,6 +49,57 @@
   <% } %>
 
   <div class="card mt-3">
+    <div class="card-title">Your Plan &amp; Discord</div>
+    <div class="grid grid-2" style="gap:18px;margin-top:6px">
+      <div>
+        <% if (activePlan) { %>
+          <% const st = activePlan.status; %>
+          <div>
+            <span class="pill <%= st === 'active' ? 'pill-green' : st === 'warned' ? 'pill-yellow' : st === 'suspended' ? 'pill-red' : 'pill-gray' %>"><%= st %></span>
+            <span style="font-weight:700;font-size:18px"><%= activePlan.plan_name %></span>
+            <span class="muted text-sm">/ <%= activePlan.plan_kind %></span>
+          </div>
+          <div class="muted text-sm" style="margin-top:8px;line-height:1.7">
+            <% if (activePlan.plan_kind === 'invite') { %>
+              Invite <code class="mono"><%= activePlan.invite_code || '—' %></code> must reach <b><%= activePlan.invites_required %></b> uses from your linked Discord account.
+            <% } else if (activePlan.plan_kind === 'booster') { %>
+              Your linked Discord account must be boosting the server.
+            <% } else if (activePlan.expires_at) { %>
+              Paid until <b><%= new Date(activePlan.expires_at).toLocaleDateString() %></b> · <%= activePlan.renewals %> renewal(s).
+            <% } else { %>
+              No expiry.
+            <% } %>
+          </div>
+          <% if (st === 'warned') { %><p class="muted text-sm" style="color:var(--yellow)">Warning: meeting your plan requirement keeps servers running. Suspension happens after the grace period.</p>
+          <% } else if (st === 'suspended') { %><p class="muted text-sm" style="color:var(--red)">Your servers are suspended until the plan requirement is met again.</p>
+          <% } %>
+          <% if (activePlan.plan_kind === 'paid' && activePlan.renewable === 1 && activePlan.duration_days) { %>
+            <button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="renewPlan()">Renew +<%= activePlan.duration_days %> days</button>
+          <% } %>
+        <% } else { %>
+          <p class="muted text-sm">No plan assigned yet. Contact an administrator to activate invite, booster or paid perks.</p>
+        <% } %>
+      </div>
+      <div>
+        <div class="form-group" style="margin:0">
+          <label>Link Discord account</label>
+          <p class="muted text-sm" style="margin:2px 0 8px">Required for invite &amp; booster plans, and so the bot can DM you about plan warnings. Open Discord → Settings → <b>Advanced</b> → enable <b>Developer Mode</b>, then right-click your username → <b>Copy User ID</b>.</p>
+        </div>
+        <div class="grid grid-2" style="gap:10px">
+          <div class="form-group" style="margin:0"><label>Discord user ID</label><input id="dc_id" class="input" value="<%= user.discord_id || '' %>" placeholder="123456789012345678" /></div>
+          <div class="form-group" style="margin:0"><label>Username (optional)</label><input id="dc_name" class="input" value="<%= user.discord_name || '' %>" placeholder="yourname" /></div>
+        </div>
+        <div class="flex" style="gap:10px;justify-content:space-between;align-items:center;margin-top:12px">
+          <button class="btn btn-primary" onclick="saveDiscord()">Save Link</button>
+          <% if (user.discord_id) { %>
+            <span class="muted text-sm">Linked: <b><%= user.discord_name || user.discord_id %></b><% if (user.discord_linked_at) { %> · <%= new Date(user.discord_linked_at).toLocaleDateString() %><% } %></span>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-3">
     <div class="card-title">Redeem Coupon</div>
     <p class="muted text-sm mb-2">Enter a coupon code to add credits to your balance. Each code can be used once per account.</p>
     <div class="flex" style="gap:8px;align-items:flex-end;margin-top:10px">
@@ -100,6 +151,27 @@ async function redeemCoupon() {
     const res = await VP.api('/billing/coupon/redeem', { method: 'POST', body: { code } });
     VP.toast('+' + res.result.amount + ' credits credited!', 'success');
     setTimeout(() => location.reload(), 800);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function saveDiscord() {
+  const discord_id = document.getElementById('dc_id').value.trim();
+  const discord_name = document.getElementById('dc_name').value.trim();
+  if (!discord_id) { VP.toast('Enter your Discord user ID', 'warning'); return; }
+  try {
+    await VP.api('/billing/discord-link', { method: 'POST', body: { discord_id, discord_name } });
+    VP.toast('Discord account linked', 'success');
+    setTimeout(() => location.reload(), 600);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function renewPlan() {
+  const ok = await VP.confirmDialog('Renew your plan now (extends from today) and clear any suspension?', { title: 'Renew Plan', okText: 'Renew', danger: false });
+  if (!ok) return;
+  try {
+    const r = await VP.api('/billing/plan/renew', { method: 'POST', body: {} });
+    VP.toast('Renewed — valid until ' + new Date(r.plan.expires_at).toLocaleDateString(), 'success');
+    setTimeout(() => location.reload(), 700);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 
