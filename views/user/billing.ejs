@@ -81,20 +81,20 @@
         <% } %>
       </div>
       <div>
-        <div class="form-group" style="margin:0">
-          <label>Link Discord account</label>
-          <p class="muted text-sm" style="margin:2px 0 8px">Required for invite &amp; booster plans, and so the bot can DM you about plan warnings. Open Discord → Settings → <b>Advanced</b> → enable <b>Developer Mode</b>, then right-click your username → <b>Copy User ID</b>.</p>
-        </div>
-        <div class="grid grid-2" style="gap:10px">
-          <div class="form-group" style="margin:0"><label>Discord user ID</label><input id="dc_id" class="input" value="<%= user.discord_id || '' %>" placeholder="123456789012345678" /></div>
-          <div class="form-group" style="margin:0"><label>Username (optional)</label><input id="dc_name" class="input" value="<%= user.discord_name || '' %>" placeholder="yourname" /></div>
-        </div>
-        <div class="flex" style="gap:10px;justify-content:space-between;align-items:center;margin-top:12px">
-          <button class="btn btn-primary" onclick="saveDiscord()">Save Link</button>
-          <% if (user.discord_id) { %>
-            <span class="muted text-sm">Linked: <b><%= user.discord_name || user.discord_id %></b><% if (user.discord_linked_at) { %> · <%= new Date(user.discord_linked_at).toLocaleDateString() %><% } %></span>
-          <% } %>
-        </div>
+        <div class="card-title" style="font-size:14px;margin-bottom:6px">Discord account</div>
+        <p class="muted text-sm" style="margin:0 0 10px">Required for invite &amp; booster plans, and so the bot can DM you about plan warnings.</p>
+        <% if (user.discord_id) { %>
+          <div class="flex" style="gap:10px;align-items:center">
+            <% if (user.discord_avatar) { %><img src="<%= user.discord_avatar %>" style="width:34px;height:34px;border-radius:50%" alt=""/><% } %>
+            <div>
+              <div style="font-weight:600"><%= user.discord_name || user.discord_id %></div>
+              <div class="muted text-sm"><%= user.discord_id %><% if (user.discord_linked_at) { %> · linked <%= new Date(user.discord_linked_at).toLocaleDateString() %><% } %></div>
+            </div>
+          </div>
+        <% } else { %>
+          <div class="muted text-sm">Not linked yet.</div>
+        <% } %>
+        <a class="btn btn-sm btn-primary" style="margin-top:12px" href="/settings"><%= user.discord_id ? 'Manage in Settings' : 'Link Discord in Settings' %></a>
       </div>
     </div>
   </div>
@@ -151,17 +151,6 @@ async function redeemCoupon() {
     const res = await VP.api('/billing/coupon/redeem', { method: 'POST', body: { code } });
     VP.toast('+' + res.result.amount + ' credits credited!', 'success');
     setTimeout(() => location.reload(), 800);
-  } catch (e) { VP.toast(e.message, 'error'); }
-}
-
-async function saveDiscord() {
-  const discord_id = document.getElementById('dc_id').value.trim();
-  const discord_name = document.getElementById('dc_name').value.trim();
-  if (!discord_id) { VP.toast('Enter your Discord user ID', 'warning'); return; }
-  try {
-    await VP.api('/billing/discord-link', { method: 'POST', body: { discord_id, discord_name } });
-    VP.toast('Discord account linked', 'success');
-    setTimeout(() => location.reload(), 600);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 

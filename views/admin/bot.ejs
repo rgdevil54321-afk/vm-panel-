@@ -8,7 +8,53 @@
     <div class="flex" style="gap:8px">
       <button class="btn btn-sm" onclick="loadStatus()">Refresh</button>
       <button class="btn btn-sm btn-primary" onclick="runGuard()">Run PlanGuard Now</button>
-      <a class="btn btn-sm" href="/admin/settings?tab=general">Bot Settings</a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-title">Configuration</div>
+    <p class="muted text-sm mb-2">Everything about the bot lives here — token, OAuth client (for linking users), target guild and the PlanGuard DM templates. Save to apply.</p>
+    <div class="grid grid-2" style="gap:12px">
+      <div class="form-group" style="margin:0">
+        <label>Bot Token</label>
+        <input id="bc_token" class="input" type="password" value="<%= String(settings['bot.token'] || '') %>" placeholder="MTEyMzQ1..." autocomplete="off" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Guild ID (server the plans run on)</label>
+        <input id="bc_guild" class="input" value="<%= String(settings['bot.guild_id'] || '') %>" placeholder="123456789012345678" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>OAuth Application ID (Client ID)</label>
+        <input id="bc_cid" class="input" value="<%= String(settings['bot.client_id'] || '') %>" placeholder="needed for user Discord linking" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>OAuth Client Secret</label>
+        <input id="bc_csec" class="input" type="password" value="<%= String(settings['bot.client_secret'] || '') %>" autocomplete="off" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>PlanGuard check interval (minutes)</label>
+        <input id="bc_interval" class="input" type="number" min="1" value="<%= String(settings['bot.check_interval_min'] || '15') %>" />
+      </div>
+      <div class="flex" style="align-items:flex-end;gap:14px">
+        <label class="switch" style="margin-bottom:8px"><input id="bc_enabled" type="checkbox"<%= String(settings['bot.enabled'] || '0') === '1' ? ' checked' : '' %>/><span class="switch-slider"></span></label>
+        <span class="text-sm muted">Bot enabled (sweep runs)</span>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Warn DM template <span class="muted">({name} {plan} {need} {have} {grace})</span></label>
+        <textarea id="bc_dm_warn" class="input" rows="2" style="resize:vertical"><%= String(settings['bot.dm_warn'] || '') %></textarea>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Suspend DM template</label>
+        <textarea id="bc_dm_suspend" class="input" rows="2" style="resize:vertical"><%= String(settings['bot.dm_suspend'] || '') %></textarea>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Restore DM template</label>
+        <textarea id="bc_dm_restore" class="input" rows="2" style="resize:vertical"><%= String(settings['bot.dm_restore'] || '') %></textarea>
+      </div>
+    </div>
+    <div class="flex" style="gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="saveBotConfig()">Save Bot Configuration</button>
+      <button class="btn" onclick="loadStatus()">Test Connection</button>
     </div>
   </div>
 
@@ -52,6 +98,26 @@
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let GUILD_ID = '';
 
+async function saveBotConfig() {
+  const get = (id) => document.getElementById(id).value;
+  const body = {
+    'bot.token': get('bc_token').trim(),
+    'bot.guild_id': get('bc_guild').trim(),
+    'bot.client_id': get('bc_cid').trim(),
+    'bot.client_secret': get('bc_csec').trim(),
+    'bot.enabled': document.getElementById('bc_enabled').checked ? '1' : '0',
+    'bot.check_interval_min': get('bc_interval').trim(),
+    'bot.dm_warn': get('bc_dm_warn'),
+    'bot.dm_suspend': get('bc_dm_suspend'),
+    'bot.dm_restore': get('bc_dm_restore'),
+  };
+  try {
+    await VP.api('/admin/bot/config', { method: 'POST', body });
+    VP.toast('Bot configuration saved', 'success');
+    loadStatus();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
 async function loadStatus() {
   const box = document.getElementById('botStatus');
   try {
@@ -61,7 +127,7 @@ async function loadStatus() {
         ? '<span class="pill pill-green">connected</span> <span class="mono">' + esc(res.me.username) + '</span><span class="muted">#' + esc(res.me.discriminator || res.me.id) + '</span>'
         : '<span class="pill pill-red">token error</span> ' + esc(res.me_error || ''))
       + '<br/><span class="muted text-sm">guild: ' + esc(res.guild_id || 'not set') + ' · guard every ' + esc(res.check_interval_min) + ' min · ' + (res.enabled ? 'enabled' : 'paused') + '</span>'
-      : '<span class="pill pill-red">not configured</span> Set a bot token in the Bot section of <a href="/admin/settings?tab=general">Settings</a>.';
+      : '<span class="pill pill-red">not configured</span> Add your token in the Configuration card above.';
   } catch (e) { box.textContent = 'Failed: ' + e.message; }
 }
 

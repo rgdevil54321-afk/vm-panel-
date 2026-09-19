@@ -10,6 +10,7 @@ const authService = require('../services/authService');
 const activity = require('../services/activityService');
 const { requireAuth } = require('../middleware/auth');
 const { uploadAvatar } = require('../middleware/upload');
+const crypto = require('crypto');
 const router = express.Router();
 
 router.use(requireAuth);
@@ -423,7 +424,7 @@ router.get('/account', (req, res) => {
 });
 
 router.get('/profile', (req, res) => res.redirect('/account'));
-router.get('/user-settings', (req, res) => res.redirect('/account'));
+router.get('/user-settings', (req, res) => res.redirect('/settings'));
 
 router.post('/account', express.urlencoded({ extended: true }), (req, res) => {
   try {
@@ -439,7 +440,56 @@ router.post('/account', express.urlencoded({ extended: true }), (req, res) => {
   }
 });
 
-router.get('/settings', (req, res) => res.redirect('/account'));
+router.get('/settings', (req, res) => {
+  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet — ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.' };
+  const err = msgs[req.query.err] ? msgs[req.query.err] : (req.query.err || '');
+  const ok = msgs[req.query.ok] ? msgs[req.query.ok] : (req.query.ok || '');
+  render(res, 'userSettings', { tfaSetup: null, error: err, success: ok });
+});
+router.get('/user-settings', (req, res) => res.redirect('/settings'));
+
+function oauthRedirectUri(req) {
+  const proto = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
+  return proto + '://' + req.get('host') + '/settings/discord/callback';
+}
+function discordState(userId) {
+  const hmac = crypto.createHmac('sha256', config.jwtSecret).update(String(userId)).digest('hex');
+  return userId + '.' + hmac;
+}
+
+router.get('/settings/discord/link', (req, res) => {
+  const d = require('../services/discordService');
+  if (!d.oauthConfigured()) return res.redirect('/settings?err=discord_not_configured');
+  res.redirect(d.authorizeUrl(oauthRedirectUri(req), discordState(req.user.id)));
+});
+
+router.get('/settings/discord/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  if (error) return res.redirect('/settings?err=discord_denied');
+  const parts = String(state || '').split('.');
+  const userId = parseInt(parts[0], 10);
+  if (!parts[1] || !userId) return res.redirect('/settings?err=discord_badstate');
+  const expected = crypto.createHmac('sha256', config.jwtSecret).update(String(userId)).digest('hex');
+  const a = Buffer.from(String(parts[1]));
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.redirect('/settings?err=discord_badstate');
+  const d = require('../services/discordService');
+  const tok = await d.exchangeCode(String(code || ''), oauthRedirectUri(req));
+  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/settings?err=discord_oauth_failed');
+  const me = await d.getOAuthUser(tok.data.access_token);
+  if (!me.ok || !me.data || !me.data.id) return res.redirect('/settings?err=discord_oauth_failed');
+  db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_avatar = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
+    .run(String(me.data.id), String(me.data.username || '').slice(0, 64), d.cdnAvatar(me.data), new Date().toISOString(), new Date().toISOString(), userId);
+  activity.logActivity({ user_id: userId, event: 'account:discord_link', details: { discord_id: me.data.id, discord_name: me.data.username || '' } });
+  res.redirect('/settings?ok=discord_linked');
+});
+
+router.post('/settings/discord/unlink', express.json(), (req, res) => {
+  db.prepare('UPDATE users SET discord_id = NULL, discord_name = NULL, discord_avatar = NULL, discord_linked_at = NULL, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), req.user.id);
+  activity.logActivity({ user_id: req.user.id, event: 'account:discord_unlink' });
+  res.json({ ok: true });
+});
 
 router.post('/profile/avatar', uploadAvatar.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -458,8 +508,6 @@ router.post('/profile/password', express.json(), (req, res) => {
   return res.json({ ok: true });
 });
 
-router.get('/settings', (req, res) => render(res, 'userSettings', { tfaSetup: null }));
-router.get('/user-settings', (req, res) => res.redirect('/settings'));
 router.get('/billing', (req, res) => {
   const q = vmService.effectiveQuota(req.user);
   const bonusEnabled = String(settings.get('billing.enabled') || '0') === '1' && (parseFloat(settings.get('billing.daily_bonus') || '0') || 0) > 0;

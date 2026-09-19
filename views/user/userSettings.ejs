@@ -53,6 +53,32 @@
     </div>
 
     <div class="card">
+      <div class="card-title">Discord Account</div>
+      <p class="muted mb-2 text-sm">Link your Discord account so invite / booster plans count you, and so the bot can DM you about plan warnings.</p>
+      <% if (user.discord_id) { %>
+        <div class="flex" style="gap:12px;align-items:center;margin-bottom:12px">
+          <% if (user.discord_avatar) { %><img src="<%= user.discord_avatar %>" style="width:40px;height:40px;border-radius:50%" alt="Discord avatar"/><% } else { %><div class="avatar" style="width:40px;height:40px;font-size:16px"><%= (user.discord_name || user.discord_id || 'D')[0] %></div><% } %>
+          <div>
+            <div style="font-weight:600"><%= user.discord_name || 'Discord user' %></div>
+            <div class="muted text-sm mono"><%= user.discord_id %></div>
+            <% if (user.discord_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.discord_linked_at).toLocaleDateString() %></div><% } %>
+          </div>
+        </div>
+        <div class="flex" style="gap:10px">
+          <button class="btn btn-danger" onclick="unlinkDiscord()">Unlink</button>
+          <a class="btn" href="/settings/discord/link">Re-authorize</a>
+        </div>
+      <% } else { %>
+        <% if (String(settings['bot.client_id'] || '') && String(settings['bot.client_secret'] || '')) { %>
+          <p class="muted text-sm" style="margin-bottom:12px">Authorized through real Discord OAuth — no ID typing needed.</p>
+          <a class="btn btn-primary" href="/settings/discord/link">Link Discord Account</a>
+        <% } else { %>
+          <p class="muted text-sm" style="margin-bottom:0">Discord linking is not configured yet by the administrator.</p>
+        <% } %>
+      <% } %>
+    </div>
+
+    <div class="card">
       <div class="card-title">Privacy</div>
       <p class="muted mb-2 text-sm">Blur sensitive information (passwords, tokens, API keys) on screen to protect against screen sharing. Hover a blurred value to briefly reveal it.</p>
       <div class="flex-between" style="gap:10px">
@@ -115,6 +141,15 @@
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
 <script>
+async function unlinkDiscord() {
+  const ok = await VP.confirmDialog('Unlink your Discord account? Invite and booster plans may stop counting until you link again.', { title: 'Unlink Discord' });
+  if (!ok) return;
+  try {
+    await VP.api('/settings/discord/unlink', { method: 'POST' });
+    VP.toast('Discord account unlinked', 'success');
+    setTimeout(() => location.reload(), 600);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
 async function enableTfa() {
   const code = document.getElementById('tfaCode').value;
   try {

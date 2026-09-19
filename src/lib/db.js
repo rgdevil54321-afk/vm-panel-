@@ -570,6 +570,7 @@ const addUserExtraCol = (name, ddl) => { if (!userPlanDiscordCols.includes(name)
 addUserExtraCol('plan_id', 'INTEGER');
 addUserExtraCol('discord_id', 'TEXT');
 addUserExtraCol('discord_name', 'TEXT');
+addUserExtraCol('discord_avatar', 'TEXT');
 addUserExtraCol('discord_linked_at', 'TEXT');
 
 function seedSettings() {

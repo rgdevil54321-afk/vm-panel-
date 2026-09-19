@@ -358,6 +358,15 @@ router.get('/admin/bot', (req, res) => {
   render(res, 'bot', {});
 });
 
+router.post('/admin/bot/config', express.json(), (req, res) => {
+  const body = req.body || {};
+  for (const key of ['bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min', 'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore', 'bot.client_id', 'bot.client_secret']) {
+    if (body[key] !== undefined) settings.set(key, String(body[key]));
+  }
+  activity.logActivity({ user_id: req.user.id, event: 'admin:bot_config' });
+  return res.json({ ok: true });
+});
+
 router.get('/admin/updates', (req, res) => {
   render(res, 'updates', {});
 });
@@ -419,7 +428,6 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
   save('billing.enabled');
   save('billing.base_price'); save('billing.ram_price'); save('billing.disk_price'); save('billing.signup_credits'); save('billing.daily_bonus');
   for (const key of ['plans.default_renew_days', 'plans.grace_days']) save(key);
-  for (const key of ['bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min', 'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore']) save(key);
   if (req.body.vm_os_list) {
     try {
       settings.set('vm.os_list', JSON.stringify(JSON.parse(req.body.vm_os_list)));

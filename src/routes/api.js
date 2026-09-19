@@ -800,17 +800,7 @@ router.post('/admin/billing/user-plans/:id/status', apiAdmin, json, async (req, 
   res.json({ ok: true, plan: bs.getUserPlanRow(up.id) });
 });
 
-// ---------- Discord link + self-renewal (user) ----------
-router.post('/billing/discord-link', apiAuth, json, (req, res) => {
-  const id = String(req.body && req.body.discord_id || '').trim();
-  const name = String(req.body && req.body.discord_name || '').trim().slice(0, 64);
-  if (!id) return res.status(400).json({ error: 'Discord ID is required' });
-  db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
-    .run(id, name, new Date().toISOString(), new Date().toISOString(), req.user.id);
-  activity.logActivity({ user_id: req.user.id, event: 'account:discord_link', details: { discord_id: id, discord_name: name } });
-  res.json({ ok: true });
-});
-
+// ---------- Self-renewal (user) ----------
 router.post('/billing/plan/renew', apiAuth, json, (req, res) => {
   try {
     const bs = require('../services/billingService');

@@ -112,7 +112,96 @@ function fillTemplate(tpl, vars) {
     .replace(/\{grace\}/g, String(vars.grace != null ? vars.grace : '?'));
 }
 
+// ---------- User Discord linking via OAuth2 (identify) ----------
+function oauthConfigured() {
+  return !!(String(settings.get('bot.client_id') || '').trim() && String(settings.get('bot.client_secret') || '').trim());
+}
+
+function authorizeUrl(redirectUri, state) {
+  const cid = encodeURIComponent(String(settings.get('bot.client_id') || '').trim());
+  const redir = encodeURIComponent(redirectUri);
+  const st = encodeURIComponent(state);
+  return `https://discord.com/api/oauth2/authorize?client_id=${cid}&response_type=code&redirect_uri=${redir}&scope=identify&state=${st}&prompt=consent`;
+}
+
+function oauthPost(path, params) {
+  return new Promise((resolve) => {
+    const body = Object.entries(params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    const req = https.request(
+      new URL('https://discord.com/api/v10' + path),
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+          'User-Agent': 'VenlixNodes/1.0',
+        },
+      },
+      (res) => {
+        let buf = '';
+        res.on('data', (d) => { buf += d; });
+        res.resume();
+        res.on('end', () => {
+          let data = null;
+          try { data = JSON.parse(buf || 'null'); } catch (_) { data = buf; }
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data, error: buf.slice(0, 300) });
+        });
+      }
+    );
+    req.on('error', (e) => resolve({ ok: false, status: 0, error: e.message }));
+    req.setTimeout(12000, () => req.destroy(new Error('timeout')));
+    req.write(body);
+    req.end();
+  });
+}
+
+async function exchangeCode(code, redirectUri) {
+  return oauthPost('/oauth2/token', {
+    client_id: String(settings.get('bot.client_id') || '').trim(),
+    client_secret: String(settings.get('bot.client_secret') || '').trim(),
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: redirectUri,
+  });
+}
+
+function requestBearer(token, path, method = 'GET') {
+  return new Promise((resolve) => {
+    const req = https.request(
+      new URL('https://discord.com/api/v10' + path),
+      {
+        method,
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'User-Agent': 'VenlixNodes/1.0' },
+      },
+      (res) => {
+        let buf = '';
+        res.on('data', (d) => { buf += d; });
+        res.resume();
+        res.on('end', () => {
+          let data = null;
+          try { data = JSON.parse(buf || 'null'); } catch (_) { data = buf; }
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data, error: buf.slice(0, 300) });
+        });
+      }
+    );
+    req.on('error', (e) => resolve({ ok: false, status: 0, error: e.message }));
+    req.setTimeout(12000, () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+}
+
+async function getOAuthUser(accessToken) {
+  return requestBearer(accessToken, '/users/@me');
+}
+
+function cdnAvatar(user) {
+  if (!user || !user.avatar) return null;
+  const ext = user.avatar.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${encodeURIComponent(user.id)}/${user.avatar}.${ext}?size=64`;
+}
+
 module.exports = {
   botConfigured, currentToken, getBotUser, getGuilds, getGuild, getGuildMember,
   getGuildInvites, countInviteUses, openDm, sendDm, fillTemplate,
+  oauthConfigured, authorizeUrl, exchangeCode, getOAuthUser, cdnAvatar,
 };
