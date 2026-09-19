@@ -8,6 +8,7 @@
     <div class="flex" style="gap:8px">
       <button class="btn btn-sm" onclick="checkStatus()">Refresh</button>
       <button class="btn btn-sm" onclick="fetchNow()">Fetch Origin</button>
+      <button class="btn btn-sm" onclick="updateAllNodes()">Update All Nodes</button>
     </div>
   </div>
 
@@ -81,9 +82,20 @@ async function fetchNow() {
   try {
     const res = await VP.api('/admin/updates/fetch', { method: 'POST' });
     VP.toast(res.ok ? res.message : (res.message || 'Fetch failed'), res.ok ? 'success' : 'error');
-    checkStatus();
+    if (res.ok) checkStatus();
   } catch (e) { VP.toast(e.message, 'error'); }
 }
+async function updateAllNodes() {
+  const ok = await VP.confirmDialog('Push this update to every connected node and reinstall agent code there?', { title: 'Update All Nodes', danger: false, okText: 'Update Nodes' });
+  if (!ok) return;
+  VP.toast('Pushing update to nodes…', 'success');
+  try {
+    const res = await VP.api('/admin/updates/nodes', { method: 'POST' });
+    const okCount = (res.results || []).filter((r) => r.ok).length;
+    VP.toast(res.ok ? `${okCount}/${(res.results || []).length} nodes updated` : (res.message || 'Node update failed'), res.ok ? 'success' : 'error');
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
 async function updateNow() {
   const btn = document.getElementById('btnUpdate');
   const ok = await VP.confirmDialog('Fetch latest and restart the panel? Node agents will need reinstalling when agent code changes.', { title: 'Update Panel', danger: false, okText: 'Update & Restart' });

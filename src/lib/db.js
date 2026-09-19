@@ -365,6 +365,9 @@ const defaultSettings = {
   'billing.disk_price': '0',
   'billing.signup_credits': '0',
   'billing.daily_bonus': '0',
+  // ---- Neofetch host identity overrides (CPU / GPU / RAM / DISK shown in banner) ----
+  'panel.ram_name': '',
+  'panel.disk_name': '',
 };
 
 const vmsColumns = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
@@ -473,6 +476,27 @@ const vmAdvColumns = {
 };
 for (const [col, type] of Object.entries(vmAdvColumns)) {
   if (!vmsColumns.includes(col)) {
+    db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
+  }
+}
+
+// ---- VM networking (shared/dedicated IPv4, IPv6, NAT) + per-VM neofetch spoof ----
+const vmNetColumns = {
+  ip_mode: "TEXT NOT NULL DEFAULT 'nat'",        // nat | ipv4_shared | ipv4_dedicated | ipv6 | dual
+  ip_address: 'TEXT',
+  ip_gateway: 'TEXT',
+  ip_prefix: 'TEXT',
+  ipv6_address: 'TEXT',
+  ipv6_gateway: 'TEXT',
+  ipv6_prefix: 'TEXT',
+  mac_address: 'TEXT',
+  neofetch_cpu: 'TEXT',
+  neofetch_mem: 'TEXT',
+  neofetch_disk: 'TEXT',
+};
+const vmNetColNames = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
+for (const [col, type] of Object.entries(vmNetColumns)) {
+  if (!vmNetColNames.includes(col)) {
     db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
   }
 }

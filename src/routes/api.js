@@ -710,6 +710,19 @@ router.post('/admin/updates/rollback', apiAdmin, async (req, res) => {
   const us = require('../services/updatesService');
   res.json(await us.rollback());
 });
+router.post('/admin/updates/nodes', apiAdmin, async (req, res) => {
+  const us = require('../services/updatesService');
+  res.json(await us.updateAllNodes());
+});
+router.get('/admin/neofetch/export', apiAdmin, (req, res) => {
+  const ns = require('../services/neofetchService');
+  res.json({
+    ok: true,
+    ascii: ns.logoPlain(),
+    motd: ns.motdText(),
+    script: ns.fetchShellScript(),
+  });
+});
 
 router.get('/admin/templates', apiAdmin, (req, res) => {
   const osList = settings.get('vm.os_list');

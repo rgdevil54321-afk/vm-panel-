@@ -294,6 +294,42 @@
           <div id="imgName" class="mono text-sm mt-2" style="color:var(--accent-2)"></div>
         </div>
       </div>
+
+      <!-- 6. Static IP & Neofetch Spoof -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin-bottom:18px;font-size:16px">6 · Static IP &amp; Neofetch Spoof</div>
+
+        <div class="grid grid-4" style="gap:12px">
+          <div class="form-group" style="margin:0">
+            <label>Network Mode</label>
+            <select id="fIpMode" class="input" onchange="updateSummary()">
+              <option value="nat" selected>NAT (default)</option>
+              <option value="ipv4_shared">IPv4 shared</option>
+              <option value="ipv4_dedicated">IPv4 dedicated</option>
+              <option value="ipv6">IPv6 only</option>
+              <option value="dual">Dual stack</option>
+            </select>
+            <div class="form-hint">Non-NAT writes a static netplan into the guest on first boot.</div>
+          </div>
+          <div class="form-group" style="margin:0"><label>IPv4 Address</label><input id="fIpAddr" class="input" placeholder="10.10.0.5"/></div>
+          <div class="form-group" style="margin:0"><label>IPv4 Gateway</label><input id="fIpGw" class="input" placeholder="10.10.0.1"/></div>
+          <div class="form-group" style="margin:0"><label>IPv4 Prefix</label><input id="fIpPrefix" class="input" value="24"/></div>
+          <div class="form-group" style="margin:0"><label>IPv6 Address</label><input id="fIp6Addr" class="input" placeholder="2001:db8::5"/></div>
+          <div class="form-group" style="margin:0"><label>IPv6 Gateway</label><input id="fIp6Gw" class="input" placeholder="2001:db8::1"/></div>
+          <div class="form-group" style="margin:0"><label>IPv6 Prefix</label><input id="fIp6Prefix" class="input" value="64"/></div>
+          <div class="form-group" style="margin:0"><label class="check" style="cursor:pointer;margin-top:20px"><input type="checkbox" id="fNbToggle" onchange="document.getElementById('nbBox').style.display = this.checked ? '' : 'none'"/><span>Spoof neofetch (below)</span></label></div>
+        </div>
+
+        <div class="card" id="nbBox" style="padding:16px;margin-top:14px;background:rgba(0,0,0,0.18)">
+          <div class="card-title" style="margin:0 0 8px">Neofetch Spoof</div>
+          <p class="muted text-sm mb-2">Installs <code class="mono">venlix-fetch</code> so <code class="mono">neofetch</code>/<code class="mono">fastfetch</code>/<code class="mono">screenfetch</code> inside the guest show these specs instead of real hardware.</p>
+          <div class="grid grid-3" style="gap:12px">
+            <div class="form-group" style="margin:0"><label>CPU name</label><input id="fNbCpu" class="input" placeholder="Intel Xeon E5-2697 v4 @ 2.30GHz"/></div>
+            <div class="form-group" style="margin:0"><label>Memory</label><input id="fNbMem" class="input" placeholder="64GiB"/></div>
+            <div class="form-group" style="margin:0"><label>Disk</label><input id="fNbDisk" class="input" placeholder="2.0 TiB"/></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Live Inspector Sidebar & Launch Card -->
@@ -651,6 +687,19 @@ async function createVm() {
   fd.append('gui_mode', document.getElementById('fGui').checked ? '1' : '0');
   fd.append('owner_id', document.getElementById('fOwner').value);
   fd.append('node_id', (document.getElementById('fNode') || {}).value || '1');
+
+  fd.append('ip_mode', document.getElementById('fIpMode').value);
+  fd.append('ip_address', document.getElementById('fIpAddr').value.trim());
+  fd.append('ip_gateway', document.getElementById('fIpGw').value.trim());
+  fd.append('ip_prefix', document.getElementById('fIpPrefix').value.trim() || '24');
+  fd.append('ipv6_address', document.getElementById('fIp6Addr').value.trim());
+  fd.append('ipv6_gateway', document.getElementById('fIp6Gw').value.trim());
+  fd.append('ipv6_prefix', document.getElementById('fIp6Prefix').value.trim() || '64');
+  if (document.getElementById('fNbToggle').checked) {
+    fd.append('neofetch_cpu', document.getElementById('fNbCpu').value.trim());
+    fd.append('neofetch_mem', document.getElementById('fNbMem').value.trim());
+    fd.append('neofetch_disk', document.getElementById('fNbDisk').value.trim());
+  }
 
   if ((document.querySelector('input[name="imgSrc"]:checked') || {}).value === 'upload') {
     const f = document.getElementById('fImg').files[0];

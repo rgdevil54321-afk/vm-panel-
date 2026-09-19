@@ -19,17 +19,18 @@ const A = {
   barColors: ['\x1b[31m','\x1b[33m','\x1b[32m','\x1b[36m','\x1b[34m','\x1b[35m','\x1b[37m','\x1b[90m'],
 };
 
-// ── ASCII "V" logo (8 lines) ─────────────────────────────────────────
+// ── ASCII "VN" logo ────────────────────────────────────────────────
 const LOGO_RAW = [
-  '███            ███',
-  '█████        █████',
-  '  ████      ████  ',
-  '   ████    ████   ',
-  '    ██████████    ',
-  '      ████████    ',
-  '       ██████     ',
-  '        ████      ',
+  '█████      █████   ███████  ██████',
+  '███████   ██████   ████████ ████████',
+  '  ███████ ██████    █████████████████',
+  '   ████████████     █████████████████',
+  '    ██████████      █████████████████',
+  '     ████████       █████████████████',
+  '      ██████        █████████  ██████',
+  '       ████         ███████    ██████',
 ];
+const LOGO_WIDTH = Math.max(...LOGO_RAW.map((l) => l.length));
 
 const LOGO_COL = LOGO_RAW.map(l => A.logo + l + A.reset);
 
@@ -57,6 +58,8 @@ function getUptime() {
 }
 
 function getMemInfo() {
+  const override = settings.get('panel.ram_name');
+  if (override) return override;
   const total = os.totalmem();
   const free = os.freemem();
   const used = total - free;
@@ -65,6 +68,8 @@ function getMemInfo() {
 }
 
 function getDiskInfo() {
+  const override = settings.get('panel.disk_name');
+  if (override) return override;
   try {
     const out = execSync('df -B1 / 2>/dev/null | tail -1', { encoding: 'utf8', timeout: 3000 }).trim().split(/\s+/);
     const used = (parseInt(out[2], 10) / 1073741824).toFixed(1);
@@ -134,7 +139,7 @@ function plainBar() {
 function renderPlain() {
   const info = collect();
   const lines = infoLines(info);
-  const logoW = 20;
+  const logoW = LOGO_WIDTH;
   const rows = [];
 
   for (let i = 0; i < Math.max(LOGO_RAW.length, lines.length); i++) {
@@ -159,7 +164,7 @@ function renderColor() {
   const info = collect();
   const lines = infoLines(info);
   const rows = [];
-  const logoW = 20;
+  const logoW = LOGO_WIDTH;
 
   for (let i = 0; i < Math.max(LOGO_COL.length, lines.length); i++) {
     const rawLeft = i < LOGO_RAW.length ? LOGO_RAW[i] : ''.padEnd(logoW, ' ');
@@ -181,6 +186,72 @@ function renderColor() {
   return rows.join('\n');
 }
 
+// ── Exportable banner artifacts (neofetch / fastfetch / screenfetch / motd) ──
+function logoPlain() {
+  return LOGO_RAW.join('\n');
+}
+
+// Full plain banner with a configurable host/label (used for motd / SSH login).
+function bannerText(hostOverride = null, overrides = {}) {
+  const info = collect();
+  if (hostOverride) info.host = hostOverride;
+  if (overrides.cpu) info.cpu = `${overrides.cpu}`;
+  if (overrides.memory) info.memory = overrides.memory;
+  if (overrides.disk) info.disk = overrides.disk;
+  return renderPlainWith(info);
+}
+
+function renderPlainWith(info) {
+  const lines = infoLines(info);
+  const logoW = LOGO_WIDTH;
+  const rows = [];
+  for (let i = 0; i < Math.max(LOGO_RAW.length, lines.length); i++) {
+    const left = (i < LOGO_RAW.length ? LOGO_RAW[i] : ''.padEnd(logoW, ' ')).padEnd(logoW, ' ');
+    const line = lines[i];
+    let right = '';
+    if (line) {
+      right = line.isTitle ? line.label : `${line.key}: ${line.val}`;
+    }
+    rows.push(left + '  ' + right);
+  }
+  rows.push('');
+  rows.push(plainBar());
+  return rows.join('\n');
+}
+
+// Bash wrapper that shows the VN banner through whatever fetch tool exists.
+function fetchShellScript(overrides = {}) {
+  const info = collect();
+  if (overrides.cpu) info.cpu = String(overrides.cpu);
+  if (overrides.memory) info.memory = String(overrides.memory);
+  if (overrides.disk) info.disk = String(overrides.disk);
+  if (overrides.host) info.host = String(overrides.host);
+  const banner = renderPlainWith(info).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+  return `#!/bin/bash
+# Venlix VN banner - shown via fastfetch / neofetch / screenfetch or as-is.
+if command -v fastfetch >/dev/null 2>&1; then
+  exec fastfetch --logo "\${VN_LOGO:-\${HOME}/.config/venlix/vn-ascii.txt}" --logo-type file-raw "\${@}"
+fi
+if command -v neofetch >/dev/null 2>&1; then
+  exec neofetch --ascii "\${VN_LOGO:-\${HOME}/.config/venlix/vn-ascii.txt}" --ascii_colors 4 6 "\${@}"
+fi
+if command -v screenfetch >/dev/null 2>&1; then
+  exec screenfetch "AsciiFile=\${VN_LOGO:-\${HOME}/.config/venlix/vn-ascii.txt}" "\${@}"
+fi
+echo -e "\${VN_BANNER:-${banner}}"
+`;
+}
+
+// A single-file text banner for MOTD / SSH login (no fetch tools required).
+function motdText(overrides = {}) {
+  const info = collect();
+  if (overrides.cpu) info.cpu = String(overrides.cpu);
+  if (overrides.memory) info.memory = String(overrides.memory);
+  if (overrides.disk) info.disk = String(overrides.disk);
+  if (overrides.host) info.host = String(overrides.host);
+  return renderPlainWith(info);
+}
+
 // ── Exports ───────────────────────────────────────────────────────────
 module.exports = {
   collect,
@@ -188,5 +259,9 @@ module.exports = {
   renderPlain,
   renderColor,
   colorBar,
+  logoPlain,
+  bannerText,
+  motdText,
+  fetchShellScript,
   LOGO_RAW,
 };

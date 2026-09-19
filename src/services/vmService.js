@@ -12,6 +12,7 @@ const logger = require('../lib/logger');
 const nodeRegistry = require('./nodeRegistry');
 const { logActivity } = require('./activityService');
 const webhooks = require('./webhookService');
+const neofetchService = require('./neofetchService');
 
 const VM_DIR = config.vmDir;
 const RUNNING_PREFIX = 'qemu-system';
@@ -766,6 +767,60 @@ function writeSeed(vm) {
       }
     }
   } catch (_) {}
+
+  // ---- Static IP assignment (shared/dedicated IPv4, IPv6, dual) ----
+  let networkConfig = null;
+  const mode = String(vm.ip_mode || 'nat');
+  const v4 = String(vm.ip_address || '').trim();
+  const v4gw = String(vm.ip_gateway || '').trim();
+  const v4prefix = String(vm.ip_prefix || '').trim() || '24';
+  const v6 = String(vm.ipv6_address || '').trim();
+  const v6gw = String(vm.ipv6_gateway || '').trim();
+  const v6prefix = String(vm.ipv6_prefix || '').trim() || '64';
+  if (mode !== 'nat' && (v4 || v6)) {
+    const addresses = [];
+    if (mode !== 'ipv6' && v4) addresses.push(`"${v4}/${v4prefix}"`);
+    if ((mode === 'ipv6' || mode === 'dual') && v6) addresses.push(`"${v6}/${v6prefix}"`);
+    const routes = [];
+    if (v4gw && mode !== 'ipv6') routes.push(`      - to: 0.0.0.0/0\n        via: ${v4gw}`);
+    if (v6gw && (mode === 'ipv6' || mode === 'dual')) routes.push(`      - to: ::/0\n        via: ${v6gw}`);
+    networkConfig = `version: 2
+ethernets:
+  vnet0:
+    match:
+      name: "e*"
+    dhcp4: false
+    dhcp6: false
+    addresses:
+    ${addresses.map((a) => '      - ' + a).join('\n')}
+    routes:
+${routes.join('\n')}
+    nameservers:
+      addresses: [1.1.1.1, 8.8.8.8]
+`;
+  }
+
+  // ---- Per-VM neofetch spoof (custom CPU/RAM/disk shown inside the guest) ----
+  const spoofCpu = String(vm.neofetch_cpu || '').trim();
+  const spoofMem = String(vm.neofetch_mem || '').trim();
+  const spoofDisk = String(vm.neofetch_disk || '').trim();
+  if (spoofCpu || spoofMem || spoofDisk) {
+    writeFiles.push({
+      path: '/usr/local/bin/venlix-fetch',
+      permissions: '0755',
+      content: neofetchService.fetchShellScript({
+        cpu: spoofCpu,
+        memory: spoofMem,
+        disk: spoofDisk,
+        host: String(vm.hostname || vm.name),
+      }),
+    });
+    writeFiles.push({
+      path: '/etc/venlix/vn-ascii.txt',
+      permissions: '0644',
+      content: neofetchService.logoPlain(),
+    });
+  }
   if (writeFiles.length) {
     blocks.push(`write_files:\n${writeFiles.map((f) =>
       `  - path: ${f.path}\n    owner: root:root\n    permissions: '${f.permissions}'\n    content: |\n${String(f.content).split('\n').map((l) => '      ' + l).join('\n')}`
@@ -776,6 +831,12 @@ function writeSeed(vm) {
   let commands = [];
   try { commands = JSON.parse(vm.cloudinit_commands || '[]'); } catch (_) { commands = []; }
   for (const c of commands) if (c) runcmds.push(String(c));
+  if (spoofCpu || spoofMem || spoofDisk) {
+    runcmds.push('chmod +x /usr/local/bin/venlix-fetch || true');
+    runcmds.push('test -d /etc/venlix || mkdir -p /etc/venlix || true');
+    runcmds.push(`printf 'alias neofetch=venlix-fetch\\nalias fastfetch=venlix-fetch\\nalias screenfetch=venlix-fetch\\n' > /etc/profile.d/vn-fetch.sh`);
+    runcmds.push('chmod 644 /etc/profile.d/vn-fetch.sh || true');
+  }
   const startupScript = String(vm.startup_script || '').trim();
   if (startupScript) {
     const b64 = Buffer.from(startupScript, 'utf8').toString('base64');
@@ -826,7 +887,15 @@ ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + user
     path.join(dir, 'meta-data'),
     `instance-id: iid-${vm.uuid || vm.name}\nlocal-hostname: ${vm.hostname || vm.name}\n`
   );
-  const r = spawnSync('cloud-localds', [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data')], { encoding: 'utf8' });
+  if (networkConfig) {
+    fs.writeFileSync(path.join(dir, 'network-config'), `#cloud-config\n${networkConfig}`);
+  }
+
+  const r = spawnSync('cloud-localds',
+    networkConfig
+      ? [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data'), path.join(dir, 'network-config')]
+      : [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data')],
+    { encoding: 'utf8' });
   if (r.status !== 0) {
     throw new Error(`cloud-localds failed: ${r.stderr || r.stdout}`);
   }
@@ -901,6 +970,18 @@ function normalizeAdvanced(data) {
     backup_schedule: String(data.backup_schedule || ''),
     timezone: String(data.timezone || 'UTC').slice(0, 64),
     locale: String(data.locale || 'en_US.UTF-8').slice(0, 64),
+    // ---- Networking (shared/dedicated IPv4, IPv6, NAT) ----
+    ip_mode: ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'].includes(data.ip_mode) ? data.ip_mode : 'nat',
+    ip_address: String(data.ip_address || '').trim().slice(0, 64),
+    ip_gateway: String(data.ip_gateway || '').trim().slice(0, 64),
+    ip_prefix: String(data.ip_prefix || '').trim().slice(0, 16),
+    ipv6_address: String(data.ipv6_address || '').trim().slice(0, 64),
+    ipv6_gateway: String(data.ipv6_gateway || '').trim().slice(0, 64),
+    ipv6_prefix: String(data.ipv6_prefix || '').trim().slice(0, 16),
+    // ---- Per-VM neofetch spoof (custom CPU/RAM/disk shown inside the guest) ----
+    neofetch_cpu: String(data.neofetch_cpu || '').trim().slice(0, 200),
+    neofetch_mem: String(data.neofetch_mem || '').trim().slice(0, 200),
+    neofetch_disk: String(data.neofetch_disk || '').trim().slice(0, 200),
   };
 }
 
@@ -982,6 +1063,16 @@ async function create({ user, data }) {
       timezone: adv.timezone,
       locale: adv.locale,
       advanced: adv.advanced,
+      ip_mode: adv.ip_mode,
+      ip_address: adv.ip_address,
+      ip_gateway: adv.ip_gateway,
+      ip_prefix: adv.ip_prefix,
+      ipv6_address: adv.ipv6_address,
+      ipv6_gateway: adv.ipv6_gateway,
+      ipv6_prefix: adv.ipv6_prefix,
+      neofetch_cpu: adv.neofetch_cpu,
+      neofetch_mem: adv.neofetch_mem,
+      neofetch_disk: adv.neofetch_disk,
     };
     if (data.ssh_port) payload.ssh_port = parseInt(data.ssh_port, 10);
     if (data.upload_image && data.upload_image.path && fs.existsSync(data.upload_image.path)) {
@@ -1003,13 +1094,15 @@ async function create({ user, data }) {
         description, tag, region, vmid, cpu_sockets, cores_per_socket, threads_per_core, cpu_model, cpu_type, cpu_units, cpu_limit,
         mem_min, mem_max, ballooning, memory_hotplug, machine_type, firmware, secure_boot, tpm, boot_order, nic_model, nic_count,
         storage_pool, disk_format, additional_disks, cloudinit_userdata, cloudinit_packages, cloudinit_commands, cloudinit_files,
-        startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced)
+        startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced,
+        ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk)
        VALUES (@node_id, @uuid, @owner_id, @name, @os_type, @codename, @img_url, @hostname, @username, @password,
         @disk_size, @memory, @cpus, @ssh_port, @vnc_port, @agent_port, @agent_token, @gui_mode, @port_forwards, @start_on_boot, @startup_command, 'stopped', @notes, @created, @created,
         @description, @tag, @region, @vmid, @cpu_sockets, @cores_per_socket, @threads_per_core, @cpu_model, @cpu_type, @cpu_units, @cpu_limit,
         @mem_min, @mem_max, @ballooning, @memory_hotplug, @machine_type, @firmware, @secure_boot, @tpm, @boot_order, @nic_model, @nic_count,
         @storage_pool, @disk_format, @additional_disks, @cloudinit_userdata, @cloudinit_packages, @cloudinit_commands, @cloudinit_files,
-        @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced)`
+        @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced,
+        @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk)`
     ).run({
       node_id: targetNodeId,
       uuid: rv.uuid,
@@ -1070,6 +1163,16 @@ async function create({ user, data }) {
       timezone: rv.timezone || adv.timezone,
       locale: rv.locale || adv.locale,
       advanced: (typeof rv.advanced === 'string' ? rv.advanced : JSON.stringify(rv.advanced || adv.advanced)),
+      ip_mode: rv.ip_mode || adv.ip_mode,
+      ip_address: rv.ip_address || adv.ip_address,
+      ip_gateway: rv.ip_gateway || adv.ip_gateway,
+      ip_prefix: rv.ip_prefix || adv.ip_prefix,
+      ipv6_address: rv.ipv6_address || adv.ipv6_address,
+      ipv6_gateway: rv.ipv6_gateway || adv.ipv6_gateway,
+      ipv6_prefix: rv.ipv6_prefix || adv.ipv6_prefix,
+      neofetch_cpu: rv.neofetch_cpu || adv.neofetch_cpu,
+      neofetch_mem: rv.neofetch_mem || adv.neofetch_mem,
+      neofetch_disk: rv.neofetch_disk || adv.neofetch_disk,
       created: now(),
     });
     const id = Number(info.lastInsertRowid);
@@ -1168,6 +1271,16 @@ async function create({ user, data }) {
     timezone: adv.timezone,
     locale: adv.locale,
     advanced: JSON.stringify(adv.advanced),
+    ip_mode: adv.ip_mode,
+    ip_address: adv.ip_address,
+    ip_gateway: adv.ip_gateway,
+    ip_prefix: adv.ip_prefix,
+    ipv6_address: adv.ipv6_address,
+    ipv6_gateway: adv.ipv6_gateway,
+    ipv6_prefix: adv.ipv6_prefix,
+    neofetch_cpu: adv.neofetch_cpu,
+    neofetch_mem: adv.neofetch_mem,
+    neofetch_disk: adv.neofetch_disk,
   };
 
   const info = db.prepare(
@@ -1176,13 +1289,15 @@ async function create({ user, data }) {
       description, tag, region, vmid, cpu_sockets, cores_per_socket, threads_per_core, cpu_model, cpu_type, cpu_units, cpu_limit,
       mem_min, mem_max, ballooning, memory_hotplug, machine_type, firmware, secure_boot, tpm, boot_order, nic_model, nic_count,
       storage_pool, disk_format, additional_disks, cloudinit_userdata, cloudinit_packages, cloudinit_commands, cloudinit_files,
-      startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced)
+      startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced,
+      ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk)
      VALUES (@node_id, @uuid, @owner_id, @name, @os_type, @codename, @img_url, @hostname, @username, @password,
       @disk_size, @memory, @cpus, @ssh_port, @vnc_port, @agent_port, @agent_token, @gui_mode, @port_forwards, @start_on_boot, @startup_command, @status, @notes, @created, @created,
       @description, @tag, @region, @vmid, @cpu_sockets, @cores_per_socket, @threads_per_core, @cpu_model, @cpu_type, @cpu_units, @cpu_limit,
       @mem_min, @mem_max, @ballooning, @memory_hotplug, @machine_type, @firmware, @secure_boot, @tpm, @boot_order, @nic_model, @nic_count,
       @storage_pool, @disk_format, @additional_disks, @cloudinit_userdata, @cloudinit_packages, @cloudinit_commands, @cloudinit_files,
-      @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced)`
+      @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced,
+      @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk)`
   ).run({ ...vm, created: now() });
 
   const id = Number(info.lastInsertRowid);
