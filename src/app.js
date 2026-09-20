@@ -238,10 +238,8 @@ function attachConsoleSocket(io) {
       socket.data.pendingJoins.add(joinToken);
 
       sshService.shellStreamWithRetry(vm, {
-        maxRetries: 40,
-        retryDelay: 1000,
-        readyTimeout: 15000,
-        totalTimeoutMs: 60000,
+        maxRetries: 60,
+        retryDelay: 1500,
         shouldContinue: () => socket.connected && socket.data.pendingJoins.has(joinToken) && vmService.isRunning(vm),
       })
         .then(({ conn, stream }) => {

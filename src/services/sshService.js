@@ -2,15 +2,7 @@ const { Client } = require('ssh2');
 const path = require('path');
 const logger = require('../lib/logger');
 
-function sshError(vm, err) {
-  const msg = (err && err.message) || String(err);
-  if (/timed out|timeout|handshake/i.test(msg)) {
-    return new Error('SSH to 127.0.0.1:' + (vm && vm.ssh_port) + ' is not responding yet (handshake never completes) — the VM\'s SSH server may still be starting, or the OS image has no SSH server running on port 22');
-  }
-  return err instanceof Error ? err : new Error(msg);
-}
-
-function connect(vm, { readyTimeout = 10000 } = {}) {
+function connect(vm, { readyTimeout = 5000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!vm || !vm.ssh_port || !vm.username) {
       return reject(new Error('VM has no SSH configuration'));
@@ -18,11 +10,8 @@ function connect(vm, { readyTimeout = 10000 } = {}) {
     const conn = new Client();
     let settled = false;
     const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try { conn.end(); } catch (_) {}
-      reject(sshError(vm, new Error('SSH connection timed out')));
-    }, readyTimeout + 1000);
+      if (!settled) { settled = true; try { conn.end(); } catch (_) {} reject(new Error('SSH connection timed out')); }
+    }, readyTimeout);
     conn.on('ready', () => {
       if (settled) return;
       settled = true;
@@ -31,7 +20,7 @@ function connect(vm, { readyTimeout = 10000 } = {}) {
     });
     conn.on('error', (err) => {
       clearTimeout(timer);
-      if (!settled) { settled = true; reject(sshError(vm, err)); }
+      if (!settled) { settled = true; reject(err); }
     });
     conn.connect({
       host: '127.0.0.1',
@@ -71,8 +60,8 @@ async function withExec(vm, cmd, opts) {
   }
 }
 
-function shellStream(vm, readyTimeout) {
-  return connect(vm, readyTimeout ? { readyTimeout } : {}).then((conn) => {
+function shellStream(vm) {
+  return connect(vm).then((conn) => {
     return new Promise((resolve, reject) => {
       conn.shell({ term: 'xterm-256color' }, (err, stream) => {
         if (err) return reject(err);
@@ -82,21 +71,18 @@ function shellStream(vm, readyTimeout) {
   });
 }
 
-async function shellStreamWithRetry(vm, { maxRetries = 12, retryDelay = 700, readyTimeout = 5000, totalTimeoutMs = 30000, shouldContinue = () => true } = {}) {
-  const start = Date.now();
+async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true } = {}) {
   let lastErr;
   for (let i = 0; i < maxRetries; i++) {
     if (!shouldContinue()) {
       throw new Error('Connection cancelled');
     }
-    if (Date.now() - start >= totalTimeoutMs) break;
     try {
-      return await shellStream(vm, readyTimeout);
+      return await shellStream(vm);
     } catch (err) {
       lastErr = err;
-      const remaining = totalTimeoutMs - (Date.now() - start);
-      if (i < maxRetries - 1 && remaining > 100 && shouldContinue()) {
-        await new Promise((r) => setTimeout(r, Math.min(retryDelay, remaining)));
+      if (i < maxRetries - 1 && shouldContinue()) {
+        await new Promise((r) => setTimeout(r, retryDelay));
       }
     }
   }
