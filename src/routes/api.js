@@ -693,15 +693,39 @@ router.post('/billing/coupon/redeem', apiAuth, json, (req, res) => {
 // ---------- Discord bot (admin) ----------
 router.get('/admin/bot/status', apiAdmin, async (req, res) => {
   const d = require('../services/discordService');
+  const gw = require('../services/discordGateway');
   const base = {
     configured: d.botConfigured(),
     guild_id: String(settings.get('bot.guild_id') || ''),
     enabled: String(settings.get('bot.enabled') || '0') === '1',
     check_interval_min: String(settings.get('bot.check_interval_min') || '5'),
+    presence: String(settings.get('bot.presence') || ''),
+    gateway: gw.state(),
   };
   if (!base.configured) return res.json({ ok: true, ...base, me: null });
   const me = await d.getBotUser();
   res.json({ ok: true, ...base, me: me.ok ? me.data : null, me_error: me.ok ? null : (me.error || 'discord api unreachable') });
+});
+
+router.post('/admin/bot/profile', apiAdmin, json, async (req, res) => {
+  try {
+    const d = require('../services/discordService');
+    const r = await d.updateBotProfile(req.body || {});
+    res.json({ ok: r.ok, me: r.ok ? r.data : null, error: r.ok ? null : r.error });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post('/admin/bot/presence', apiAdmin, json, async (req, res) => {
+  try {
+    const gw = require('../services/discordGateway');
+    const text = String((req.body && req.body.text) || '').trim().slice(0, 128);
+    gw.setPresence(text);
+    res.json({ ok: true, presence: text });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 router.get('/admin/bot/guilds', apiAdmin, async (req, res) => {

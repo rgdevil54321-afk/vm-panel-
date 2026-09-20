@@ -30,6 +30,33 @@
   </div>
 
   <div class="card mt-3">
+    <div class="card-title">Node Updates</div>
+    <p class="muted text-sm mb-2">Nodes are numbered 1 to <%= (nodes || []).length %>. "Update #N" pushes the current panel build to that node's agent — it reinstalls itself. The panel itself (shown without an agent) is updated with the "Update Panel" button above.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>#</th><th>Node</th><th>Status</th><th>Agent</th><th>Last seen</th><th></th></tr></thead>
+        <tbody>
+          <% if (!nodes || !nodes.length) { %>
+            <tr><td colspan="6" class="muted">No nodes registered.</td></tr>
+          <% } else { nodes.forEach((n) => { %>
+          <tr>
+            <td class="mono" style="font-weight:700">#<%= n.num %></td>
+            <td style="font-weight:600"><%= String(n.name || ('Node ' + n.id)) %></td>
+            <td><span class="pill <%= String(n.status) === 'online' ? 'pill-green' : 'pill-red' %>"><%= String(n.status || 'offline') %></span></td>
+            <td class="muted text-sm"><%= n.agent ? 'remote agent' : 'panel (in-place)' %></td>
+            <td class="muted text-sm"><%= n.last_seen_at ? String(n.last_seen_at).slice(0, 16) : 'never' %></td>
+            <td style="text-align:right">
+              <button class="btn btn-sm" id="nu_<%= n.id %>" data-num="<%= n.num %>" data-name="<%= String(n.name || ('Node ' + n.id)).replace(/"/g, '&quot;') %>" onclick="updateNode(<%= n.id %>, this)" <%= n.agent ? '' : 'disabled title="The panel updates itself via Update Panel above"' %>>Update #<%= n.num %></button>
+            </td>
+          </tr>
+          <% }); } %>
+        </tbody>
+      </table>
+    </div>
+    <div id="nodeUpdateLog" class="muted text-sm" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card mt-3">
     <div class="card-title">Recent Commits</div>
     <div class="table-wrap" style="margin-top:10px">
       <table>
@@ -91,9 +118,39 @@ async function updateAllNodes() {
   VP.toast('Pushing update to nodes…', 'success');
   try {
     const res = await VP.api('/admin/updates/nodes', { method: 'POST' });
-    const okCount = (res.results || []).filter((r) => r.ok).length;
-    VP.toast(res.ok ? `${okCount}/${(res.results || []).length} nodes updated` : (res.message || 'Node update failed'), res.ok ? 'success' : 'error');
+    const results = res.results || [];
+    const rows = document.getElementById('nodeUpdateLog');
+    if (rows) {
+      rows.innerHTML = (results.length ? results.map((r) => {
+        const num = (nodeNumbers[r.node_id] != null) ? ('#' + nodeNumbers[r.node_id]) : (r.node_id != null ? '#' + r.node_id : '-');
+        const tag = r.status === 'ok' ? 'pill-green' : (r.status === 'error' ? 'pill-red' : 'pill-gray');
+        return '<span class="pill ' + tag + '">' + esc(r.status || '?') + '</span> Node ' + num + ' (' + esc(r.name || '?') + ') — ' + esc(r.message || '') + '<br/>';
+      }).join('') : '<span class="muted">No nodes.</span>');
+    }
+    const okCount = results.filter((r) => r.status === 'ok').length;
+    VP.toast(res.ok ? (results.length ? `${okCount}/${results.length} nodes updated` : 'No nodes to update') : (res.message || 'Node update failed'), res.ok ? 'success' : 'error');
   } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+// Map built from the numbered table: node id -> human number (used by update-all results).
+const nodeNumbers = {};
+document.querySelectorAll('button[id^="nu_"]').forEach((b) => {
+  nodeNumbers[parseInt(b.id.slice(3), 10)] = parseInt(b.dataset.num, 10);
+});
+
+async function updateNode(id, btn) {
+  const num = btn.dataset.num;
+  const name = btn.dataset.name || ('Node ' + num);
+  const ok = await VP.confirmDialog('Update node #' + num + ' (' + name + ')? The agent reinstalls itself with the current panel build.', { title: 'Update Node #' + num, okText: 'Update', danger: false });
+  if (!ok) return;
+  const orig = btn.textContent;
+  btn.textContent = 'Updating…'; btn.disabled = true;
+  try {
+    const res = await VP.api('/admin/nodes/' + id + '/update', { method: 'POST' });
+    const msg = res.ok ? (res.message || 'update started') : (res.error || 'update failed');
+    VP.toast('Node #' + num + ': ' + msg, res.ok ? 'success' : 'error');
+  } catch (e) { VP.toast('Node #' + num + ' failed: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 async function updateNow() {

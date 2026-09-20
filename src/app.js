@@ -399,6 +399,9 @@ function bootstrap() {
 
   scheduleService.loadAll();
   planGuardService.start();
+  try {
+    require('./services/discordGateway').sync();
+  } catch (_) { /* gateway optional */ }
   const nodeRegistry = require('./services/nodeRegistry');
   nodeRegistry.startHeartbeat(parseInt(process.env.NODE_HEARTBEAT_MS || '8000', 10));
 

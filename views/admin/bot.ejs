@@ -35,6 +35,10 @@
         <label>PlanGuard check interval (minutes)</label>
         <input id="bc_interval" class="input" type="number" min="1" value="<%= String(settings['bot.check_interval_min'] || '15') %>" />
       </div>
+      <div class="form-group" style="margin:0">
+        <label>Presence text <span class="muted">(shows as "Watching …", keeps the bot online)</span></label>
+        <input id="bc_presence" class="input" maxlength="128" value="<%= String(settings['bot.presence'] || '') %>" placeholder="e.g. venlix.node" />
+      </div>
       <div class="flex" style="align-items:flex-end;gap:14px">
         <label class="switch" style="margin-bottom:8px"><input id="bc_enabled" type="checkbox"<%= String(settings['bot.enabled'] || '0') === '1' ? ' checked' : '' %>/><span class="switch-slider"></span></label>
         <span class="text-sm muted">Bot enabled (sweep runs)</span>
@@ -55,6 +59,33 @@
     <div class="flex" style="gap:8px;margin-top:14px">
       <button class="btn btn-primary" onclick="saveBotConfig()">Save Bot Configuration</button>
       <button class="btn" onclick="loadStatus()">Test Connection</button>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-title">Bot Profile</div>
+    <p class="muted text-sm mb-2">Edit the bot's username and avatar directly through Discord — changes apply instantly (the gateway reconnects automatically). Usernames are limited to 2 changes per hour by Discord.</p>
+    <div class="grid grid-2" style="gap:12px;align-items:center">
+      <div class="flex" style="gap:14px;align-items:center">
+        <img id="bp_avatar_img" alt="bot avatar" style="width:56px;height:56px;border-radius:12px;background:#111;object-fit:cover" />
+        <div class="form-group" style="margin:0">
+          <label>Bot Username</label>
+          <input id="bp_username" class="input" placeholder="current username shown after load" />
+        </div>
+      </div>
+      <div class="flex" style="gap:10px;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1">
+          <label>New Avatar <span class="muted">(PNG / JPG / GIF)</span></label>
+          <input id="bp_file" type="file" accept="image/*" class="input" />
+          <span id="bp_file_name" class="muted text-sm" style="display:block;margin-top:4px"></span>
+        </div>
+        <button class="btn btn-primary" onclick="saveProfile()">Save Bot Profile</button>
+      </div>
+    </div>
+    <div class="flex" style="gap:8px;margin-top:14px;align-items:center">
+      <button class="btn btn-sm" onclick="buildInvite(this)">Build Invite Link</button>
+      <input id="bp_invite" class="input" style="flex:1" readonly placeholder="Invite link appears here — add the bot to your server so it shows online" />
+      <span id="bp_invite_warn" class="muted text-sm"></span>
     </div>
   </div>
 
@@ -97,6 +128,8 @@
 <script>
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let GUILD_ID = '';
+let PROFILE = null;
+let PROFILE_AVATAR = null;
 
 async function saveBotConfig() {
   const get = (id) => document.getElementById(id).value;
@@ -107,6 +140,7 @@ async function saveBotConfig() {
     'bot.client_secret': get('bc_csec').trim(),
     'bot.enabled': document.getElementById('bc_enabled').checked ? '1' : '0',
     'bot.check_interval_min': get('bc_interval').trim(),
+    'bot.presence': get('bc_presence').trim(),
     'bot.dm_warn': get('bc_dm_warn'),
     'bot.dm_suspend': get('bc_dm_suspend'),
     'bot.dm_restore': get('bc_dm_restore'),
@@ -122,13 +156,81 @@ async function loadStatus() {
   const box = document.getElementById('botStatus');
   try {
     const res = await VP.api('/admin/bot/status');
+    if (res.ok && res.me) {
+      PROFILE = res.me;
+      PROFILE_AVATAR = res.me.avatar
+        ? 'https://cdn.discordapp.com/avatars/' + encodeURIComponent(res.me.id) + '/' + res.me.avatar + (res.me.avatar.startsWith('a_') ? '.gif' : '.png') + '?size=64'
+        : 'https://cdn.discordapp.com/embed/avatars/0.png';
+      document.getElementById('bp_avatar_img').src = PROFILE_AVATAR;
+      const uInput = document.getElementById('bp_username');
+      if (!uInput.dataset.dirty) uInput.value = res.me.username || '';
+      const fileInput = document.getElementById('bp_file');
+      fileInput.value = ''; fileInput.dataset.ready = '';
+      document.getElementById('bp_file_name').textContent = '';
+    }
     box.innerHTML = res.configured
       ? (res.ok
         ? '<span class="pill pill-green">connected</span> <span class="mono">' + esc(res.me.username) + '</span><span class="muted">#' + esc(res.me.discriminator || res.me.id) + '</span>'
         : '<span class="pill pill-red">token error</span> ' + esc(res.me_error || ''))
       + '<br/><span class="muted text-sm">guild: ' + esc(res.guild_id || 'not set') + ' · guard every ' + esc(res.check_interval_min) + ' min · ' + (res.enabled ? 'enabled' : 'paused') + '</span>'
+      + '<br/><span class="muted text-sm">gateway: '
+      + (res.gateway && res.gateway.running ? '<span class="pill pill-green">online</span> presenting "' + esc(res.presence || 'Venlix panel') + '"' : (res.gateway && res.gateway.available ? (res.gateway.intended ? '<span class="pill pill-yellow">connecting…</span> waiting on Discord gateway' : '<span class="pill pill-gray">paused</span> bot disabled') : '<span class="pill pill-gray">REST mode</span> offline presence'))
+      + '</span>'
       : '<span class="pill pill-red">not configured</span> Add your token in the Configuration card above.';
   } catch (e) { box.textContent = 'Failed: ' + e.message; }
+}
+
+async function saveProfile() {
+  const patch = {};
+  const uInput = document.getElementById('bp_username');
+  const newName = uInput.value.trim();
+  if (newName && (!PROFILE || newName !== (PROFILE.username || ''))) patch.username = newName;
+  const fileInput = document.getElementById('bp_file');
+  if (fileInput.dataset.ready) patch.avatar = fileInput.dataset.ready;
+  if (!patch.username && !patch.avatar) { VP.toast('Change the username or pick a new avatar first', 'warning'); return; }
+  try {
+    const res = await VP.api('/admin/bot/profile', { method: 'POST', body: patch });
+    if (!res.ok) throw new Error(res.error || 'Profile update failed');
+    PROFILE = res.me;
+    PROFILE_AVATAR = res.me.avatar
+      ? 'https://cdn.discordapp.com/avatars/' + encodeURIComponent(res.me.id) + '/' + res.me.avatar + (res.me.avatar.startsWith('a_') ? '.gif' : '.png') + '?size=64'
+      : 'https://cdn.discordapp.com/embed/avatars/0.png';
+    document.getElementById('bp_avatar_img').src = PROFILE_AVATAR;
+    uInput.dataset.dirty = '';
+    uInput.value = res.me.username || '';
+    fileInput.value = ''; fileInput.dataset.ready = '';
+    document.getElementById('bp_file_name').textContent = '';
+    VP.toast('Bot profile updated — the bot may be briefly offline while Discord applies it', 'success');
+    loadStatus();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+document.addEventListener('change', (ev) => {
+  const f = ev.target;
+  if (f.id !== 'bp_file' || !f.files || !f.files.length) return;
+  const file = f.files[0];
+  document.getElementById('bp_file_name').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    f.dataset.ready = String(reader.result);
+    VP.toast('Avatar ready — press Save Bot Profile', 'success');
+  };
+  reader.readAsDataURL(file);
+});
+
+function copyText(t, btn) {
+  navigator.clipboard.writeText(t).then(() => { if (btn) { const o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => (btn.textContent = o), 1200); } });
+}
+
+function buildInvite(btn) {
+  const cid = document.getElementById('bc_cid').value.trim();
+  const out = document.getElementById('bp_invite');
+  const warn = document.getElementById('bp_invite_warn');
+  if (!cid) { warn.textContent = 'Add your OAuth Client ID first.'; warn.className = 'text-sm'; return; }
+  warn.textContent = '';
+  out.value = 'https://discord.com/api/oauth2/authorize?client_id=' + encodeURIComponent(cid) + '&scope=bot&permissions=0';
+  copyText(out.value, btn);
+  VP.toast('Invite link copied — paste it in a browser and pick your server', 'success');
 }
 
 async function testBot() {
@@ -156,10 +258,6 @@ async function loadGuilds() {
       + '<td><button class="btn btn-sm" onclick="useGuild(\'' + esc(g.id) + '\')">Invites</button></td>'
       + '</tr>').join('');
   } catch (e) { VP.toast(e.message, 'error'); }
-}
-
-function copyText(t, btn) {
-  navigator.clipboard.writeText(t).then(() => { if (btn) { const o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => (btn.textContent = o), 1200); } });
 }
 
 async function useGuild(gid) {

@@ -360,15 +360,23 @@ router.get('/admin/bot', (req, res) => {
 
 router.post('/admin/bot/config', express.json(), (req, res) => {
   const body = req.body || {};
-  for (const key of ['bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min', 'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore', 'bot.client_id', 'bot.client_secret']) {
+  for (const key of ['bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min', 'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore', 'bot.client_id', 'bot.client_secret', 'bot.presence']) {
     if (body[key] !== undefined) settings.set(key, String(body[key]));
   }
   activity.logActivity({ user_id: req.user.id, event: 'admin:bot_config' });
+  try {
+    require('../services/discordGateway').sync();
+  } catch (_) { /* gateway optional */ }
   return res.json({ ok: true });
 });
 
 router.get('/admin/updates', (req, res) => {
-  render(res, 'updates', {});
+  const nodes = require('../services/nodeRegistry').allNodes().map((n, i) => ({
+    ...n,
+    num: i + 1,
+    agent: !!(n.agent_token && n.agent_token !== 'local-primary-no-agent'),
+  }));
+  render(res, 'updates', { nodes });
 });
 
 router.get('/admin/templates', (req, res) => {

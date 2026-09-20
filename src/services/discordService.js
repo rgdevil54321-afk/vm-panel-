@@ -200,8 +200,20 @@ function cdnAvatar(user) {
   return `https://cdn.discordapp.com/avatars/${encodeURIComponent(user.id)}/${user.avatar}.${ext}?size=64`;
 }
 
+// Edit the bot application account itself (username / avatar). Avatar accepts
+// a data URI (data:image/png;base64,...) exactly like the Discord client sends.
+async function updateBotProfile({ username, avatar }, token) {
+  const body = {};
+  if (username !== undefined && String(username).trim()) body.username = String(username).trim().slice(0, 32);
+  if (avatar !== undefined && String(avatar).trim().length > 10) body.avatar = String(avatar).trim();
+  if (!Object.keys(body).length) return { ok: false, status: 0, error: 'nothing to update' };
+  const r = await request(token || currentToken(), '/users/@me', 'PATCH', body);
+  return { ok: r.ok, status: r.status, data: r.data, error: r.error };
+}
+
 module.exports = {
   botConfigured, currentToken, getBotUser, getGuilds, getGuild, getGuildMember,
   getGuildInvites, countInviteUses, openDm, sendDm, fillTemplate,
   oauthConfigured, authorizeUrl, exchangeCode, getOAuthUser, cdnAvatar,
+  updateBotProfile,
 };
