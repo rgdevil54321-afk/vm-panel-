@@ -704,7 +704,32 @@ router.get('/admin/bot/status', apiAdmin, async (req, res) => {
   };
   if (!base.configured) return res.json({ ok: true, ...base, me: null });
   const me = await d.getBotUser();
-  res.json({ ok: true, ...base, me: me.ok ? me.data : null, me_error: me.ok ? null : (me.error || 'discord api unreachable') });
+  const token_app_id = d.decodeBotId();
+  let app_info = null;
+  let app_error = null;
+  try {
+    const a = await d.getOAuthApp();
+    if (a.ok) app_info = a.app; else app_error = a.error;
+  } catch (e) { app_error = e.message; }
+  res.json({
+    ok: true, ...base,
+    token_app_id, app_info, app_error,
+    me: me.ok ? me.data : null, me_error: me.ok ? null : (me.error || 'discord api unreachable'),
+  });
+});
+
+router.post('/admin/bot/detect', apiAdmin, json, async (req, res) => {
+  try {
+    const d = require('../services/discordService');
+    const token_app_id = d.decodeBotId();
+    if (!token_app_id) return res.json({ ok: false, error: 'Could not extract an application ID from the token. Check that the token is complete.' });
+    const a = await d.getOAuthApp();
+    if (!a.ok) return res.json({ ok: false, error: a.error });
+    if (req.body && req.body.apply) settings.set('bot.client_id', token_app_id);
+    res.json({ ok: true, token_app_id, app: a.app, applied: !!(req.body && req.body.apply) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 router.post('/admin/bot/profile', apiAdmin, json, async (req, res) => {
@@ -719,10 +744,15 @@ router.post('/admin/bot/profile', apiAdmin, json, async (req, res) => {
 
 router.post('/admin/bot/presence', apiAdmin, json, async (req, res) => {
   try {
+    const b = req.body || {};
     const gw = require('../services/discordGateway');
-    const text = String((req.body && req.body.text) || '').trim().slice(0, 128);
-    gw.setPresence(text);
-    res.json({ ok: true, presence: text });
+    if (b.text !== undefined) settings.set('bot.presence', String(b.text));
+    if (b.type !== undefined) settings.set('bot.presence_type', String(b.type));
+    if (b.state !== undefined) settings.set('bot.presence_state', String(b.state));
+    if (b.rotate !== undefined) settings.set('bot.presence_rotate', b.rotate ? '1' : '0');
+    if (b.interval !== undefined) settings.set('bot.presence_interval', String(parseInt(b.interval, 10) || 30));
+    gw.refresh();
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }

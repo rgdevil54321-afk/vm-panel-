@@ -360,12 +360,18 @@ router.get('/admin/bot', (req, res) => {
 
 router.post('/admin/bot/config', express.json(), (req, res) => {
   const body = req.body || {};
-  for (const key of ['bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min', 'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore', 'bot.client_id', 'bot.client_secret', 'bot.presence']) {
+  for (const key of [
+    'bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min',
+    'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore', 'bot.client_id', 'bot.client_secret',
+    'bot.presence', 'bot.presence_type', 'bot.presence_state', 'bot.presence_rotate', 'bot.presence_interval',
+  ]) {
     if (body[key] !== undefined) settings.set(key, String(body[key]));
   }
   activity.logActivity({ user_id: req.user.id, event: 'admin:bot_config' });
   try {
-    require('../services/discordGateway').sync();
+    const gateway = require('../services/discordGateway');
+    gateway.sync();
+    gateway.refresh();
   } catch (_) { /* gateway optional */ }
   return res.json({ ok: true });
 });

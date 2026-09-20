@@ -13,7 +13,7 @@
 
   <div class="card mb-3">
     <div class="card-title">Configuration</div>
-    <p class="muted text-sm mb-2">Everything about the bot lives here — token, OAuth client (for linking users), target guild and the PlanGuard DM templates. Save to apply.</p>
+    <p class="muted text-sm mb-2">Token, OAuth client (for user Discord linking), target guild and the PlanGuard DM templates. Save to apply — the gateway reconnects automatically.</p>
     <div class="grid grid-2" style="gap:12px">
       <div class="form-group" style="margin:0">
         <label>Bot Token</label>
@@ -35,10 +35,6 @@
         <label>PlanGuard check interval (minutes)</label>
         <input id="bc_interval" class="input" type="number" min="1" value="<%= String(settings['bot.check_interval_min'] || '15') %>" />
       </div>
-      <div class="form-group" style="margin:0">
-        <label>Presence text <span class="muted">(shows as "Watching …", keeps the bot online)</span></label>
-        <input id="bc_presence" class="input" maxlength="128" value="<%= String(settings['bot.presence'] || '') %>" placeholder="e.g. venlix.node" />
-      </div>
       <div class="flex" style="align-items:flex-end;gap:14px">
         <label class="switch" style="margin-bottom:8px"><input id="bc_enabled" type="checkbox"<%= String(settings['bot.enabled'] || '0') === '1' ? ' checked' : '' %>/><span class="switch-slider"></span></label>
         <span class="text-sm muted">Bot enabled (sweep runs)</span>
@@ -56,9 +52,52 @@
         <textarea id="bc_dm_restore" class="input" rows="2" style="resize:vertical"><%= String(settings['bot.dm_restore'] || '') %></textarea>
       </div>
     </div>
-    <div class="flex" style="gap:8px;margin-top:14px">
+    <div class="flex" style="gap:10px;margin-top:14px;align-items:center">
       <button class="btn btn-primary" onclick="saveBotConfig()">Save Bot Configuration</button>
       <button class="btn" onclick="loadStatus()">Test Connection</button>
+      <button class="btn btn-sm" onclick="detectApp()">Detect App ID from Token</button>
+      <span id="detectInfo" class="muted text-sm"></span>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-title">Status Manager</div>
+    <p class="muted text-sm mb-2">Presence keeps the bot looking alive — the bot stays <b>online</b> in every server and can rotate through several status lines. Changes push to Discord instantly.</p>
+    <div class="grid grid-2" style="gap:12px">
+      <div class="form-group" style="margin:0">
+        <label>Presence state</label>
+        <select id="sm_state" class="input">
+          <option value="online"<%= String(settings['bot.presence_state'] || 'online') === 'online' ? ' selected' : '' %>>Online</option>
+          <option value="idle"<%= String(settings['bot.presence_state'] || '') === 'idle' ? ' selected' : '' %>>Idle</option>
+          <option value="dnd"<%= String(settings['bot.presence_state'] || '') === 'dnd' ? ' selected' : '' %>>Do Not Disturb</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Activity type</label>
+        <select id="sm_type" class="input">
+          <option value="playing"<%= String(settings['bot.presence_type'] || 'watching') === 'playing' ? ' selected' : '' %>>Playing</option>
+          <option value="watching"<%= String(settings['bot.presence_type'] || 'watching') === 'watching' ? ' selected' : '' %>>Watching</option>
+          <option value="listening"<%= String(settings['bot.presence_type'] || '') === 'listening' ? ' selected' : '' %>>Listening to</option>
+          <option value="competing"<%= String(settings['bot.presence_type'] || '') === 'competing' ? ' selected' : '' %>>Competing in</option>
+          <option value="streaming"<%= String(settings['bot.presence_type'] || '') === 'streaming' ? ' selected' : '' %>>Streaming</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin:12px 0 0 0">
+      <label>Status lines <span class="muted">(one per line — rotates when enabled)</span></label>
+      <textarea id="sm_lines" rows="3" style="resize:vertical" class="input"><%= String(settings['bot.presence'] || '') %></textarea>
+    </div>
+    <div class="flex" style="gap:16px;margin-top:12px;align-items:center">
+      <label class="switch" style="margin-right:6px"><input id="sm_rotate" type="checkbox"<%= String(settings['bot.presence_rotate'] || '1') === '1' ? ' checked' : '' %>/><span class="switch-slider"></span></label>
+      <span class="text-sm muted">Rotate status lines</span>
+      <div class="form-group" style="margin:0;width:120px">
+        <label>Every (seconds)</label>
+        <input id="sm_interval" class="input" type="number" min="10" max="600" value="<%= String(settings['bot.presence_interval'] || '30') %>" />
+      </div>
+      <span id="sm_live" class="muted text-sm"></span>
+    </div>
+    <div class="flex" style="gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="saveStatusManager()">Save Status Manager</button>
     </div>
   </div>
 
@@ -81,11 +120,6 @@
         </div>
         <button class="btn btn-primary" onclick="saveProfile()">Save Bot Profile</button>
       </div>
-    </div>
-    <div class="flex" style="gap:8px;margin-top:14px;align-items:center">
-      <button class="btn btn-sm" onclick="buildInvite(this)">Build Invite Link</button>
-      <input id="bp_invite" class="input" style="flex:1" readonly placeholder="Invite link appears here — add the bot to your server so it shows online" />
-      <span id="bp_invite_warn" class="muted text-sm"></span>
     </div>
   </div>
 
@@ -131,6 +165,12 @@ let GUILD_ID = '';
 let PROFILE = null;
 let PROFILE_AVATAR = null;
 
+const CDN_AVATAR = (me) => me && me.avatar
+  ? 'https://cdn.discordapp.com/avatars/' + encodeURIComponent(me.id) + '/' + me.avatar + (me.avatar.startsWith('a_') ? '.gif' : '.png') + '?size=64'
+  : 'https://cdn.discordapp.com/embed/avatars/0.png';
+
+const API_URL = '/admin/bot';
+
 async function saveBotConfig() {
   const get = (id) => document.getElementById(id).value;
   const body = {
@@ -140,14 +180,44 @@ async function saveBotConfig() {
     'bot.client_secret': get('bc_csec').trim(),
     'bot.enabled': document.getElementById('bc_enabled').checked ? '1' : '0',
     'bot.check_interval_min': get('bc_interval').trim(),
-    'bot.presence': get('bc_presence').trim(),
     'bot.dm_warn': get('bc_dm_warn'),
     'bot.dm_suspend': get('bc_dm_suspend'),
     'bot.dm_restore': get('bc_dm_restore'),
   };
   try {
-    await VP.api('/admin/bot/config', { method: 'POST', body });
+    await VP.api(API_URL + '/config', { method: 'POST', body });
     VP.toast('Bot configuration saved', 'success');
+    loadStatus();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function detectApp() {
+  const info = document.getElementById('detectInfo');
+  info.textContent = 'Checking…';
+  try {
+    const res = await VP.api('/admin/bot/detect', { method: 'POST', body: { apply: true } });
+    if (!res.ok) throw new Error(res.error || 'Detection failed');
+    document.getElementById('bc_cid').value = res.token_app_id;
+    info.innerHTML = '<span class="pill pill-green">detected</span> ' + esc(res.app && res.app.name ? (res.app.name + ' (' + res.token_app_id + ')') : res.token_app_id)
+      + ' <span class="muted">saved — linking will work now</span>';
+    VP.toast(res.app && res.app.name ? ('Found: ' + res.app.name) : 'Application ID saved', 'success');
+  } catch (e) {
+    info.innerHTML = '<span class="pill pill-red">failed</span> ' + esc(e.message);
+    VP.toast('Detection failed: ' + e.message, 'error');
+  }
+}
+
+async function saveStatusManager() {
+  const body = {
+    'bot.presence': document.getElementById('sm_lines').value,
+    'bot.presence_state': document.getElementById('sm_state').value,
+    'bot.presence_type': document.getElementById('sm_type').value,
+    'bot.presence_rotate': document.getElementById('sm_rotate').checked ? '1' : '0',
+    'bot.presence_interval': document.getElementById('sm_interval').value,
+  };
+  try {
+    await VP.api(API_URL + '/config', { method: 'POST', body });
+    VP.toast('Status manager saved — presence pushed to Discord', 'success');
     loadStatus();
   } catch (e) { VP.toast(e.message, 'error'); }
 }
@@ -158,24 +228,39 @@ async function loadStatus() {
     const res = await VP.api('/admin/bot/status');
     if (res.ok && res.me) {
       PROFILE = res.me;
-      PROFILE_AVATAR = res.me.avatar
-        ? 'https://cdn.discordapp.com/avatars/' + encodeURIComponent(res.me.id) + '/' + res.me.avatar + (res.me.avatar.startsWith('a_') ? '.gif' : '.png') + '?size=64'
-        : 'https://cdn.discordapp.com/embed/avatars/0.png';
+      PROFILE_AVATAR = CDN_AVATAR(res.me);
       document.getElementById('bp_avatar_img').src = PROFILE_AVATAR;
       const uInput = document.getElementById('bp_username');
       if (!uInput.dataset.dirty) uInput.value = res.me.username || '';
       const fileInput = document.getElementById('bp_file');
       fileInput.value = ''; fileInput.dataset.ready = '';
       document.getElementById('bp_file_name').textContent = '';
+    } else {
+      document.getElementById('bp_avatar_img').src = 'https://cdn.discordapp.com/embed/avatars/0.png';
     }
+    const gw = res.gateway || {};
+    document.getElementById('sm_lines').value = res.presence || '';
+    document.getElementById('sm_state').value = gw.state || 'online';
+    document.getElementById('sm_type').value = gw.type || 'watching';
+    document.getElementById('sm_rotate').checked = !!gw.rotate;
+    document.getElementById('sm_interval').value = gw.interval || 30;
+    document.getElementById('sm_live').textContent = gw.running
+      ? 'now showing: "' + (gw.current || '') + '"'
+      : (gw.intended ? 'connecting…' : 'paused');
+
+    const brand = res.me
+      ? '<img src="' + esc(PROFILE_AVATAR) + '" alt="" style="width:34px;height:34px;border-radius:8px;vertical-align:middle;margin-right:8px"/>'
+      : '';
     box.innerHTML = res.configured
       ? (res.ok
-        ? '<span class="pill pill-green">connected</span> <span class="mono">' + esc(res.me.username) + '</span><span class="muted">#' + esc(res.me.discriminator || res.me.id) + '</span>'
+        ? '<span class="pill pill-green">connected</span> ' + brand + '<span class="mono" style="font-weight:600">' + esc(res.me.username) + '</span><span class="muted">#' + esc(res.me.discriminator || res.me.id) + '</span>'
         : '<span class="pill pill-red">token error</span> ' + esc(res.me_error || ''))
       + '<br/><span class="muted text-sm">guild: ' + esc(res.guild_id || 'not set') + ' · guard every ' + esc(res.check_interval_min) + ' min · ' + (res.enabled ? 'enabled' : 'paused') + '</span>'
       + '<br/><span class="muted text-sm">gateway: '
-      + (res.gateway && res.gateway.running ? '<span class="pill pill-green">online</span> presenting "' + esc(res.presence || 'Venlix panel') + '"' : (res.gateway && res.gateway.available ? (res.gateway.intended ? '<span class="pill pill-yellow">connecting…</span> waiting on Discord gateway' : '<span class="pill pill-gray">paused</span> bot disabled') : '<span class="pill pill-gray">REST mode</span> offline presence'))
+      + (gw.running ? '<span class="pill pill-green">online</span> ' + esc(gw.current || '') : (gw.available ? (gw.intended ? '<span class="pill pill-yellow">connecting…</span> waiting on Discord gateway' : '<span class="pill pill-gray">paused</span> bot disabled') : '<span class="pill pill-gray">REST mode</span> offline presence'))
       + '</span>'
+      + (res.app_info ? '<br/><span class="muted text-sm">application: <span class="mono">' + esc(res.app_info.name) + '</span> (' + esc(res.app_info.id) + ')' + (res.app_info.bot_public ? '' : ' · not public') + '</span>' : '')
+      + (res.app_error ? '<br/><span class="pill pill-red">app check failed</span> ' + esc(res.app_error) : '')
       : '<span class="pill pill-red">not configured</span> Add your token in the Configuration card above.';
   } catch (e) { box.textContent = 'Failed: ' + e.message; }
 }
@@ -189,12 +274,10 @@ async function saveProfile() {
   if (fileInput.dataset.ready) patch.avatar = fileInput.dataset.ready;
   if (!patch.username && !patch.avatar) { VP.toast('Change the username or pick a new avatar first', 'warning'); return; }
   try {
-    const res = await VP.api('/admin/bot/profile', { method: 'POST', body: patch });
+    const res = await VP.api(API_URL + '/profile', { method: 'POST', body: patch });
     if (!res.ok) throw new Error(res.error || 'Profile update failed');
     PROFILE = res.me;
-    PROFILE_AVATAR = res.me.avatar
-      ? 'https://cdn.discordapp.com/avatars/' + encodeURIComponent(res.me.id) + '/' + res.me.avatar + (res.me.avatar.startsWith('a_') ? '.gif' : '.png') + '?size=64'
-      : 'https://cdn.discordapp.com/embed/avatars/0.png';
+    PROFILE_AVATAR = CDN_AVATAR(res.me);
     document.getElementById('bp_avatar_img').src = PROFILE_AVATAR;
     uInput.dataset.dirty = '';
     uInput.value = res.me.username || '';
@@ -222,22 +305,11 @@ function copyText(t, btn) {
   navigator.clipboard.writeText(t).then(() => { if (btn) { const o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => (btn.textContent = o), 1200); } });
 }
 
-function buildInvite(btn) {
-  const cid = document.getElementById('bc_cid').value.trim();
-  const out = document.getElementById('bp_invite');
-  const warn = document.getElementById('bp_invite_warn');
-  if (!cid) { warn.textContent = 'Add your OAuth Client ID first.'; warn.className = 'text-sm'; return; }
-  warn.textContent = '';
-  out.value = 'https://discord.com/api/oauth2/authorize?client_id=' + encodeURIComponent(cid) + '&scope=bot&permissions=0';
-  copyText(out.value, btn);
-  VP.toast('Invite link copied — paste it in a browser and pick your server', 'success');
-}
-
 async function testBot() {
   const userId = document.getElementById('bt_user').value.trim();
   const message = document.getElementById('bt_msg').value.trim();
   try {
-    const res = await VP.api('/admin/bot/test', { method: 'POST', body: { user_id: userId, message } });
+    const res = await VP.api(API_URL + '/test', { method: 'POST', body: { user_id: userId, message } });
     if (!res.ok) throw new Error(res.error || 'Bot test failed');
     VP.toast('Bot is alive' + (res.dm ? (res.dm.ok ? ' — DM sent' : ' — DM failed: ' + res.dm.error) : ' — no DM target'), 'success');
     loadStatus();
@@ -246,7 +318,7 @@ async function testBot() {
 
 async function loadGuilds() {
   try {
-    const res = await VP.api('/admin/bot/guilds');
+    const res = await VP.api(API_URL + '/guilds');
     if (!res.ok) throw new Error(res.error || 'Failed to load guilds');
     const rows = document.getElementById('guildRows');
     if (!res.guilds || !res.guilds.length) { rows.innerHTML = '<tr><td colspan="5" class="muted">Bot is not in any server.</td></tr>'; return; }
@@ -270,7 +342,7 @@ async function loadInvites(gid) {
   const target = gid || GUILD_ID || document.getElementById('bt_user').value.trim();
   if (!target) { VP.toast('Run "Fetch Guilds" first and pick one', 'warning'); return; }
   try {
-    const res = await VP.api('/admin/bot/guilds/' + target + '/invites');
+    const res = await VP.api(API_URL + '/guilds/' + target + '/invites');
     if (!res.ok) throw new Error(res.error || 'Failed to load invites');
     const rows = document.getElementById('inviteRows');
     if (!res.invites || !res.invites.length) { rows.innerHTML = '<tr><td colspan="4" class="muted">No server invites — create one for invite plans to count.</td></tr>'; return; }
@@ -288,7 +360,7 @@ async function lookupMember() {
   const uid = document.getElementById('bt_msg').value.trim();
   if (!gid || !uid) { VP.toast('Pick a guild (Invites) and put the Discord user ID in the message box', 'warning'); return; }
   try {
-    const res = await VP.api('/admin/bot/guilds/' + gid + '/member/' + uid);
+    const res = await VP.api(API_URL + '/guilds/' + gid + '/member/' + uid);
     const box = document.getElementById('memberBox');
     if (!res.ok) box.innerHTML = '<span class="pill pill-red">not found</span> ' + esc(res.error || 'member lookup failed');
     else box.innerHTML = '<span class="pill ' + (res.member.premium_since ? 'pill-green' : 'pill-gray') + '">' + (res.member.premium_since ? 'boosting' : 'not boosting') + '</span> '
@@ -301,7 +373,7 @@ async function runGuard() {
   const ok = await VP.confirmDialog('Run a PlanGuard sweep right now? It checks every active plan assignment (invite uses, boost status, expiry) and applies warns/suspensions.', { title: 'Run PlanGuard', okText: 'Run Now', danger: false });
   if (!ok) return;
   try {
-    const res = await VP.api('/admin/bot/run-guard', { method: 'POST' });
+    const res = await VP.api(API_URL + '/run-guard', { method: 'POST' });
     VP.toast(res.skipped ? 'PlanGuard skipped: ' + res.skipped : 'Checked ' + res.checked + '/' + res.total + ' plan assignments', res.ok ? 'success' : 'error');
   } catch (e) { VP.toast(e.message, 'error'); }
 }

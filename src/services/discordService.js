@@ -50,6 +50,41 @@ function currentToken() {
   return String(settings.get('bot.token') || '').trim();
 }
 
+// Extract the bot's user ID (which equals its OAuth2 Application ID) from the
+// token. Discord tokens are <base64(userId)>.<timestamp>.<hmac>. This is how
+// we can auto-fix the "unknown application" OAuth linking problem: the Client
+// ID can be derived straight from the bot token.
+function decodeBotId(tok) {
+  const t = String(tok || currentToken() || '').trim();
+  const seg = t.split('.');
+  if (seg.length < 3) return null;
+  try {
+    const buf = Buffer.from(seg[0], 'base64').toString('utf8').trim();
+    if (/^\d{6,20}$/.test(buf)) return buf;
+  } catch (_) { /* malformed */ }
+  return null;
+}
+
+// Fetch the Discord application that owns the token so we can validate it and
+// show its real name/icon in the panel (also proves linking will work).
+async function getOAuthApp(tok) {
+  const r = await request(tok || currentToken(), '/oauth2/applications/@me');
+  if (!r.ok) return { ok: false, error: r.error };
+  const a = r.data || {};
+  return {
+    ok: true,
+    app: {
+      id: a.id,
+      name: a.name,
+      icon: a.icon,
+      description: a.description,
+      flags: a.flags,
+      bot_public: !!a.bot_public,
+      bot_require_code_grant: !!a.bot_require_code_grant,
+    },
+  };
+}
+
 async function getBotUser(token) {
   return request(token || currentToken(), '/users/@me');
 }
@@ -215,5 +250,5 @@ module.exports = {
   botConfigured, currentToken, getBotUser, getGuilds, getGuild, getGuildMember,
   getGuildInvites, countInviteUses, openDm, sendDm, fillTemplate,
   oauthConfigured, authorizeUrl, exchangeCode, getOAuthUser, cdnAvatar,
-  updateBotProfile,
+  updateBotProfile, decodeBotId, getOAuthApp,
 };

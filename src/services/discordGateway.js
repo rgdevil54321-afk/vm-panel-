@@ -2,8 +2,10 @@
 // REST-only bots show as OFFLINE in Discord. This lightweight gateway client
 // connects with intents=0 (no events needed), keeps the heartbeat alive and
 // announces an online presence so the bot appears ONLINE in every server it
-// belongs to. If the 'ws' module is not available the gateway is skipped and
-// the bot keeps working in REST mode (just appears offline).
+// belongs to. A status manager offers presence state (online/idle/dnd),
+// activity type (Playing/Watching/...) and rotating status lines.
+// If the 'ws' module is not available the gateway is skipped and the bot keeps
+// working in REST mode (just appears offline).
 'use strict';
 
 let WebSocket = null;
@@ -11,14 +13,18 @@ try { WebSocket = require('ws'); } catch (_) { /* ws optional */ }
 
 const GATEWAY = 'wss://gateway.discord.gg/?v=10&encoding=json';
 
+const ACTIVITY_TYPES = { playing: 0, streaming: 1, listening: 2, watching: 3, custom: 4, competing: 5 };
+
 let ws = null;
 let heartbeatTimer = null;
 let reconnectTimer = null;
+let rotationTimer = null;
 let heartbeatAck = true;
 let lastSeq = null;
 let sessionId = null;
 let reconnectAttempts = 0;
 let stopped = true;
+let rotationIndex = 0;
 
 function db() { return require('../lib/db'); }
 
@@ -32,17 +38,47 @@ function enabled() {
   return String(db().settings.get('bot.enabled') || '0') === '1';
 }
 
-function presenceText() {
-  const t = String(db().settings.get('bot.presence') || '').trim();
-  return t.slice(0, 128) || 'Venlix panel';
+function get(k, d) {
+  const v = db().settings.get(k);
+  return v === undefined || v === null ? d : v;
+}
+
+function presenceState() {
+  const s = String(get('bot.presence_state', 'online')).toLowerCase();
+  return s === 'idle' || s === 'dnd' ? s : 'online';
+}
+
+function activityType() {
+  const t = String(get('bot.presence_type', 'watching')).toLowerCase();
+  return ACTIVITY_TYPES[t] !== undefined ? t : 'watching';
+}
+
+function statusLines() {
+  const raw = String(get('bot.presence', ''));
+  const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  return lines.length ? lines : ['Venlix panel'];
+}
+
+function rotateEnabled() { return String(get('bot.presence_rotate', '1')) === '1'; }
+
+function rotateInterval() {
+  const s = parseInt(get('bot.presence_interval', '30'), 10);
+  return Math.max(10, Math.min(600, s || 30));
+}
+
+function buildActivity(name) {
+  const t = activityType();
+  const activity = { name: String(name || 'Venlix panel').slice(0, 128), type: ACTIVITY_TYPES[t] };
+  if (t === 'streaming') activity.url = 'https://twitch.tv/venlix';
+  return activity;
 }
 
 function presence() {
   return {
-    status: 'online',
+    status: presenceState(),
     since: null,
     afk: false,
-    activities: [{ name: presenceText(), type: 3 }],
+    activities: [buildActivity(statusLines()[rotationIndex] || statusLines()[0])],
   };
 }
 
@@ -50,11 +86,25 @@ function send(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-function sendPresence() { send({ op: 3, d: presence() }); }
+function sendPresence() {
+  if (!stopped) send({ op: 3, d: presence() });
+}
+
+function startRotation() {
+  if (rotationTimer) clearInterval(rotationTimer);
+  rotationTimer = null;
+  if (!rotateEnabled() || statusLines().length < 2) { rotationIndex = 0; return; }
+  rotationTimer = setInterval(() => {
+    rotationIndex = (rotationIndex + 1) % statusLines().length;
+    sendPresence();
+  }, rotateInterval() * 1000);
+  if (rotationTimer.unref) rotationTimer.unref();
+}
 
 function clearTimers() {
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
 }
 
 function closeRaw() {
@@ -88,6 +138,8 @@ function onMessage(raw) {
         heartbeatAck = false;
         send({ op: 1, d: lastSeq });
       }, iv);
+      if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
+      startRotation();
       if (sessionId && lastSeq != null) {
         send({ op: 6, d: { token: token(), session_id: sessionId, seq: lastSeq } });
       } else {
@@ -146,6 +198,7 @@ function isAvailable() { return !!WebSocket; }
 
 function start() {
   stopped = false;
+  startRotation();
   if (!isRunning()) connect();
 }
 
@@ -161,21 +214,33 @@ function sync() {
   else stop();
 }
 
-function setPresence(text) {
-  db().settings.set('bot.presence', String(text || '').trim());
+// Re-read presence settings, rebuild the rotation and push the current status.
+function refresh() {
+  startRotation();
   if (isRunning()) sendPresence();
 }
 
+function setPresence(text) {
+  db().settings.set('bot.presence', String(text || ''));
+  refresh();
+}
+
 function state() {
+  const lines = statusLines();
   return {
     available: isAvailable(),
     running: isRunning(),
     intended: configured() && enabled(),
-    presence: String(db().settings.get('bot.presence') || ''),
+    state: presenceState(),
+    type: activityType(),
+    lines: lines.length,
+    current: lines[rotationIndex] || lines[0] || '',
+    rotate: rotateEnabled(),
+    interval: rotateInterval(),
   };
 }
 
 module.exports = {
-  start, stop, sync, setPresence, state,
-  isRunning, isAvailable, configured, enabled, presenceText,
+  start, stop, sync, refresh, setPresence, state,
+  isRunning, isAvailable, configured, enabled,
 };
