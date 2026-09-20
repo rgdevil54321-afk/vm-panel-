@@ -554,7 +554,7 @@
       if (connected && socket) socket.emit('console:resize', { sessionId: sid, cols, rows });
     });
 
-    const entry = { term, fit, wrapper, tab, closed: false, retries: 0 };
+    const entry = { term, fit, wrapper, tab, closed: false, retries: 0, warned: false, failed: false };
     terms.set(sid, entry);
     return entry;
   }
@@ -606,8 +606,11 @@
   };
 
   window.reconnectActive = function () {
-    if (activeSid) joinSession(activeSid, true);
-    else if (isVmRunning) window.newTerminal();
+    if (activeSid) {
+      const entry = terms.get(activeSid);
+      if (entry) { entry.failed = false; entry.warned = false; entry.retries = 0; }
+      joinSession(activeSid, true);
+    } else if (isVmRunning) window.newTerminal();
     else setState('offline', 'pill-gray');
   };
 
@@ -690,7 +693,10 @@
           if (terms.size === 0) window.newTerminal();
           else {
             // re-join all existing tabs after a socket reconnect (lossless via replay)
-            for (const sid of Array.from(terms.keys())) doJoin(sid, true);
+            for (const sid of Array.from(terms.keys())) {
+              const pane = terms.get(sid);
+              if (pane && !pane.closed && !pane.failed) doJoin(sid, true);
+            }
           }
         } else {
           setState('offline', 'pill-gray');
@@ -703,12 +709,16 @@
     socket.on('console:buffer', ({ sessionId, text }) => {
       const entry = createTerminalPane(sessionId);
       entry.retries = 0;
+      entry.warned = false;
+      entry.failed = false;
       try { entry.term.clear(); entry.term.write(text || ''); } catch (_) {}
     });
 
     socket.on('console:ready', ({ sessionId, replayed }) => {
       const entry = createTerminalPane(sessionId);
       entry.retries = 0;
+      entry.warned = false;
+      entry.failed = false;
       if (activeSid === null) activateSession(sessionId);
       entry.closed = false;
       if (!replayed) { try { entry.term.clear(); } catch (_) {} }
@@ -739,9 +749,12 @@
         if (entry && !entry.closed && isVmRunning && entry.retries < 6) {
           entry.retries++;
           const sid = activeSid;
-          entry.term.writeln('\r\n\x1b[33m[SSH not ready yet — retrying ' + entry.retries + '/6…]\x1b[0m\r\n');
-          setState('waiting for SSH…', 'pill-yellow', true);
-          if (sid) setSessionState(sid, 'waiting for SSH…', 'pill-yellow', true);
+          if (!entry.warned) {
+            entry.warned = true;
+            entry.term.writeln('\r\n\x1b[33m[Waiting for SSH to come up — retrying automatically…]\x1b[0m\r\n');
+          }
+          setState('waiting for SSH… (' + entry.retries + '/6)', 'pill-yellow', true);
+          if (sid) setSessionState(sid, 'waiting for SSH… (' + entry.retries + '/6)', 'pill-yellow', true);
           setTimeout(() => {
             if (socket && connected && terms.has(sid) && !terms.get(sid).closed) joinSession(sid, false);
           }, 3000);
@@ -749,7 +762,8 @@
         }
         setState('connection failed', 'pill-red', true);
         if (entry) {
-          if (entry.retries >= 6) entry.term.writeln('\r\n\x1b[31m[Error] ' + m + ' — click Reconnect to try again.\x1b[0m\r\n');
+          entry.failed = true;
+          if (entry.retries >= 6) entry.term.writeln('\r\n\x1b[31m[Error] ' + m + '\r\n\x1b[33mClick Reconnect, or check that the VM\'s SSH server is actually running.\x1b[0m\r\n');
           else entry.term.writeln('\r\n\x1b[31m[Error] ' + m + '\x1b[0m\r\n');
         }
         if (activeSid) setSessionState(activeSid, 'connection failed', 'pill-red', true);

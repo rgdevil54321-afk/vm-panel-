@@ -2,7 +2,15 @@ const { Client } = require('ssh2');
 const path = require('path');
 const logger = require('../lib/logger');
 
-function connect(vm, { readyTimeout = 5000 } = {}) {
+function sshError(vm, err) {
+  const msg = (err && err.message) || String(err);
+  if (/timed out|timeout|handshake/i.test(msg)) {
+    return new Error('SSH to 127.0.0.1:' + (vm && vm.ssh_port) + ' is not responding yet (handshake never completes) — the VM\'s SSH server may still be starting, or the OS image has no SSH server running on port 22');
+  }
+  return err instanceof Error ? err : new Error(msg);
+}
+
+function connect(vm, { readyTimeout = 10000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!vm || !vm.ssh_port || !vm.username) {
       return reject(new Error('VM has no SSH configuration'));
@@ -10,8 +18,11 @@ function connect(vm, { readyTimeout = 5000 } = {}) {
     const conn = new Client();
     let settled = false;
     const timer = setTimeout(() => {
-      if (!settled) { settled = true; try { conn.end(); } catch (_) {} reject(new Error('SSH connection timed out')); }
-    }, readyTimeout);
+      if (settled) return;
+      settled = true;
+      try { conn.end(); } catch (_) {}
+      reject(sshError(vm, new Error('SSH connection timed out')));
+    }, readyTimeout + 1000);
     conn.on('ready', () => {
       if (settled) return;
       settled = true;
@@ -20,7 +31,7 @@ function connect(vm, { readyTimeout = 5000 } = {}) {
     });
     conn.on('error', (err) => {
       clearTimeout(timer);
-      if (!settled) { settled = true; reject(err); }
+      if (!settled) { settled = true; reject(sshError(vm, err)); }
     });
     conn.connect({
       host: '127.0.0.1',
@@ -79,9 +90,8 @@ async function shellStreamWithRetry(vm, { maxRetries = 12, retryDelay = 700, rea
       throw new Error('Connection cancelled');
     }
     if (Date.now() - start >= totalTimeoutMs) break;
-    const attemptTimeout = i === 0 ? readyTimeout : Math.min(readyTimeout, 2500);
     try {
-      return await shellStream(vm, attemptTimeout);
+      return await shellStream(vm, readyTimeout);
     } catch (err) {
       lastErr = err;
       const remaining = totalTimeoutMs - (Date.now() - start);
