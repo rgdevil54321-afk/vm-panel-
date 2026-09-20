@@ -902,7 +902,7 @@ router.get('/admin/neofetch/export', apiAdmin, (req, res) => {
   });
 });
 
-router.get('/admin/templates', apiAdmin, (req, res) => {
+router.get('/admin/templates/list', apiAdmin, (req, res) => {
   const osList = settings.get('vm.os_list');
   const templates = Array.isArray(osList)
     ? osList.map((t) => (Array.isArray(t) ? { name: t[0], os_type: t[1], codename: t[2], img_url: t[3], username: t[4], password: t[5] } : t))

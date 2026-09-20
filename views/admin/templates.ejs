@@ -32,8 +32,8 @@ let TEMPLATES = [];
 async function loadTemplates() {
   const rows = document.getElementById('tplRows');
   try {
-    const res = await VP.api('/admin/templates');
-    TEMPLATES = res.templates || [];
+    const res = await VP.api('/admin/templates/list');
+    TEMPLATES = (res && res.templates) || [];
     if (!TEMPLATES.length) { rows.innerHTML = '<tr><td colspan="7" class="muted">No templates.</td></tr>'; return; }
     render();
   } catch (e) { rows.innerHTML = '<tr><td colspan="7" class="muted">Failed: ' + e.message + '</td></tr>'; }
