@@ -60,8 +60,8 @@ async function withExec(vm, cmd, opts) {
   }
 }
 
-function shellStream(vm) {
-  return connect(vm).then((conn) => {
+function shellStream(vm, readyTimeout) {
+  return connect(vm, readyTimeout ? { readyTimeout } : {}).then((conn) => {
     return new Promise((resolve, reject) => {
       conn.shell({ term: 'xterm-256color' }, (err, stream) => {
         if (err) return reject(err);
@@ -71,18 +71,22 @@ function shellStream(vm) {
   });
 }
 
-async function shellStreamWithRetry(vm, { maxRetries = 12, retryDelay = 700, shouldContinue = () => true } = {}) {
+async function shellStreamWithRetry(vm, { maxRetries = 12, retryDelay = 700, readyTimeout = 5000, totalTimeoutMs = 30000, shouldContinue = () => true } = {}) {
+  const start = Date.now();
   let lastErr;
   for (let i = 0; i < maxRetries; i++) {
     if (!shouldContinue()) {
       throw new Error('Connection cancelled');
     }
+    if (Date.now() - start >= totalTimeoutMs) break;
+    const attemptTimeout = i === 0 ? readyTimeout : Math.min(readyTimeout, 2500);
     try {
-      return await shellStream(vm);
+      return await shellStream(vm, attemptTimeout);
     } catch (err) {
       lastErr = err;
-      if (i < maxRetries - 1 && shouldContinue()) {
-        await new Promise((r) => setTimeout(r, retryDelay));
+      const remaining = totalTimeoutMs - (Date.now() - start);
+      if (i < maxRetries - 1 && remaining > 100 && shouldContinue()) {
+        await new Promise((r) => setTimeout(r, Math.min(retryDelay, remaining)));
       }
     }
   }

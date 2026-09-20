@@ -233,21 +233,24 @@ function attachConsoleSocket(io) {
       }
 
       const sid = terminalId || ('t' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+      if (!socket.data.pendingJoins) socket.data.pendingJoins = new Set();
       const joinToken = sid + ':' + Date.now();
-      socket.data.joining = joinToken;
+      socket.data.pendingJoins.add(joinToken);
 
       sshService.shellStreamWithRetry(vm, {
-        maxRetries: 12,
+        maxRetries: 18,
         retryDelay: 700,
-        shouldContinue: () => socket.connected && socket.data.joining === joinToken && vmService.isRunning(vm),
+        readyTimeout: 5000,
+        totalTimeoutMs: 25000,
+        shouldContinue: () => socket.connected && socket.data.pendingJoins.has(joinToken) && vmService.isRunning(vm),
       })
         .then(({ conn, stream }) => {
-          if (socket.data.joining !== joinToken || !socket.connected) {
+          if (!socket.connected || !socket.data.pendingJoins.has(joinToken)) {
             try { stream.end(); } catch (_) {}
             try { conn.end(); } catch (_) {}
             return;
           }
-          socket.data.joining = null;
+          socket.data.pendingJoins.delete(joinToken);
           const session = {
             id: sid,
             vmId: vid,
@@ -283,7 +286,7 @@ function attachConsoleSocket(io) {
           attach(session, { replay: false });
         })
         .catch((e) => {
-          socket.data.joining = null;
+          if (socket.data.pendingJoins) socket.data.pendingJoins.delete(joinToken);
           if (!socket.connected) return;
           if (!vmService.isRunning(vm)) {
             socket.emit('console:offline');

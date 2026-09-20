@@ -554,7 +554,7 @@
       if (connected && socket) socket.emit('console:resize', { sessionId: sid, cols, rows });
     });
 
-    const entry = { term, fit, wrapper, tab, closed: false };
+    const entry = { term, fit, wrapper, tab, closed: false, retries: 0 };
     terms.set(sid, entry);
     return entry;
   }
@@ -702,11 +702,13 @@
 
     socket.on('console:buffer', ({ sessionId, text }) => {
       const entry = createTerminalPane(sessionId);
+      entry.retries = 0;
       try { entry.term.clear(); entry.term.write(text || ''); } catch (_) {}
     });
 
     socket.on('console:ready', ({ sessionId, replayed }) => {
       const entry = createTerminalPane(sessionId);
+      entry.retries = 0;
       if (activeSid === null) activateSession(sessionId);
       entry.closed = false;
       if (!replayed) { try { entry.term.clear(); } catch (_) {} }
@@ -733,9 +735,23 @@
 
     socket.on('console:error', (m) => {
       if (activeTab === 'terminal') {
-        setState('connection failed', 'pill-red', true);
         const entry = terms.get(activeSid);
-        if (entry) entry.term.writeln('\r\n\x1b[31m[Error] ' + m + '\x1b[0m\r\n');
+        if (entry && !entry.closed && isVmRunning && entry.retries < 6) {
+          entry.retries++;
+          const sid = activeSid;
+          entry.term.writeln('\r\n\x1b[33m[SSH not ready yet — retrying ' + entry.retries + '/6…]\x1b[0m\r\n');
+          setState('waiting for SSH…', 'pill-yellow', true);
+          if (sid) setSessionState(sid, 'waiting for SSH…', 'pill-yellow', true);
+          setTimeout(() => {
+            if (socket && connected && terms.has(sid) && !terms.get(sid).closed) joinSession(sid, false);
+          }, 3000);
+          return;
+        }
+        setState('connection failed', 'pill-red', true);
+        if (entry) {
+          if (entry.retries >= 6) entry.term.writeln('\r\n\x1b[31m[Error] ' + m + ' — click Reconnect to try again.\x1b[0m\r\n');
+          else entry.term.writeln('\r\n\x1b[31m[Error] ' + m + '\x1b[0m\r\n');
+        }
         if (activeSid) setSessionState(activeSid, 'connection failed', 'pill-red', true);
       }
     });
