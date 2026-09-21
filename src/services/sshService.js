@@ -73,7 +73,8 @@ function shellStream(vm) {
 
 async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true } = {}) {
   let lastErr;
-  for (let i = 0; i < maxRetries; i++) {
+  let attempt = 0;
+  for (;;) {
     if (!shouldContinue()) {
       throw new Error('Connection cancelled');
     }
@@ -81,12 +82,12 @@ async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, sh
       return await shellStream(vm);
     } catch (err) {
       lastErr = err;
-      if (i < maxRetries - 1 && shouldContinue()) {
-        await new Promise((r) => setTimeout(r, retryDelay));
-      }
+      // maxRetries = 0 (or falsy) keeps retrying forever until shouldContinue() is false
+      if (maxRetries && attempt + 1 >= maxRetries) throw lastErr;
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, retryDelay));
     }
   }
-  throw lastErr || new Error('SSH connection timed out');
 }
 
 function statLineToFile(line, base) {
