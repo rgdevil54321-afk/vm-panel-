@@ -848,9 +848,7 @@ ${routes.join('\n')}
   }
   const userData = String(vm.cloudinit_userdata || '').trim();
 
-  fs.writeFileSync(
-    path.join(dir, 'user-data'),
-    `#cloud-config
+  const seedUserData = `#cloud-config
 output:
   all: '| tee -a /dev/ttyS0 /dev/console'
 hostname: ${vm.hostname || vm.name}
@@ -880,11 +878,15 @@ runcmd:
 ${agentSeedPayload(vm).map((c) => '  - ' + c).join('\n')}
 ${runcmds.map((c) => '  - ' + c).join('\n')}
 ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + userData : ''}
-`
-  );
+`;
+  fs.writeFileSync(path.join(dir, 'user-data'), seedUserData);
+  // Include a content hash in the instance-id so cloud-init re-runs its
+  // per-instance modules (write_files/runcmd/passwords) whenever the seed
+  // actually changes, instead of staying stuck on a stale first-boot config.
+  const seedRev = crypto.createHash('sha1').update(seedUserData).digest('hex').slice(0, 10);
   fs.writeFileSync(
     path.join(dir, 'meta-data'),
-    `instance-id: iid-${vm.uuid || vm.name}\nlocal-hostname: ${vm.hostname || vm.name}\n`
+    `instance-id: iid-${vm.uuid || vm.name}-${seedRev}\nlocal-hostname: ${vm.hostname || vm.name}\n`
   );
   if (networkConfig) {
     fs.writeFileSync(path.join(dir, 'network-config'), `#cloud-config\n${networkConfig}`);
@@ -1378,9 +1380,10 @@ async function start(vm, { user = null } = {}) {
   }
 
   if (!fs.existsSync(vm.img_file)) throw new Error(`Image file not found: ${vm.img_file}`);
-  if (!fs.existsSync(vm.seed_file)) {
-    writeSeed(vm);
-  }
+  // Refresh the seed on every start so template fixes reach existing VMs.
+  // The instance-id carries a content hash, so cloud-init only re-runs its
+  // per-instance modules when the seed actually changed.
+  writeSeed(vm);
   // Pre-flight: enough free RAM for the guest (+64MB QEMU overhead)?
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
   const budget = memoryBudget();
@@ -1639,8 +1642,11 @@ function update(vm, data, user) {
     vals.updated_at = now();
     db.prepare(`UPDATE vms SET ${set.join(', ')} WHERE id = @id`).run({ ...vals, id: vm.id });
   }
-  const needSeed = ['hostname', 'username', 'password'].some((f) => data[f] !== undefined);
-  if (needSeed) writeSeed(vm);
+  const needSeed = ['hostname', 'username', 'password', 'neofetch_cpu', 'neofetch_mem', 'neofetch_disk',
+    'cloudinit_files', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_userdata',
+    'ip_mode', 'ip_address', 'ip_gateway', 'ipv6_address', 'timezone', 'locale', 'startup_script']
+    .some((f) => data[f] !== undefined);
+  if (needSeed) writeSeed(getVm(vm.id) || vm);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:update', details: data });
   return getVm(vm.id);
 }
