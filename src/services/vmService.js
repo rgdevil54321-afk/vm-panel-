@@ -148,6 +148,16 @@ function isRemoteVm(vm) {
   return vm && (Number(vm.node_id) || 1) !== 1;
 }
 
+// Neofetch-style OS label for the spoofed guest banner, e.g. "Ubuntu x86_64".
+function guestOsLabel(vm) {
+  const t = String((vm && (vm.os_type || vm.os)) || '').trim();
+  if (!t) return '';
+  if (/\s/.test(t)) return t;
+  const cap = t.charAt(0).toUpperCase() + t.slice(1);
+  const arch = os.arch() === 'x64' ? 'x86_64' : (os.arch() || 'x86_64');
+  return `${cap} ${arch}`;
+}
+
 function remoteNodeFor(vm) {
   return nodeRegistry.getNode(vm.node_id);
 }
@@ -651,6 +661,7 @@ function serializeVm(row) {
           cpu: c, memory: m, disk: d,
           host: String(row.hostname || row.name),
           user: String(row.username || ''),
+          os: guestOsLabel(row),
         });
       } catch (_) {}
     }
@@ -832,6 +843,7 @@ ${routes.join('\n')}
         disk: spoofDisk,
         host: String(vm.hostname || vm.name),
         user: String(vm.username || ''),
+        os: guestOsLabel(vm),
       }),
     });
     writeFiles.push({
@@ -1107,6 +1119,7 @@ async function create({ user, data }) {
         try {
           payload.neofetch_banner = neofetchService.fetchShellScript({
             cpu: c, memory: m, disk: d, host: payload.hostname, user: payload.username,
+            os: guestOsLabel(payload),
           });
         } catch (_) {}
       }

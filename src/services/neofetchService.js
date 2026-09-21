@@ -16,7 +16,7 @@ const A = {
   val: '\x1b[0m',        // normal       (values)
   logo: '\x1b[1;34m',    // bold blue    (V logo)
   bar: '\x1b[0;37m',
-  barColors: ['\x1b[31m','\x1b[33m','\x1b[32m','\x1b[36m','\x1b[34m','\x1b[35m','\x1b[37m','\x1b[90m'],
+  barColors: ['\x1b[31m','\x1b[33m','\x1b[32m','\x1b[36m','\x1b[34m','\x1b[35m','\x1b[37m','\x1b[90m','\x1b[91m','\x1b[93m','\x1b[92m','\x1b[96m','\x1b[94m','\x1b[95m','\x1b[97m','\x1b[90m'],
 };
 
 // ── Configurable block logo (default "VN") ─────────────────────────
@@ -68,11 +68,17 @@ function logoText() {
 }
 function logoRows(text) {
   const chars = String(text || DEFAULT_LOGO_TEXT).toUpperCase().slice(0, 4).split('');
-  const rows = ['', '', '', '', ''];
+  const base = ['', '', '', '', ''];
   chars.forEach((ch, i) => {
     const g = BLOCK_FONT[ch] || BLOCK_FONT['?'];
-    for (let r = 0; r < 5; r++) rows[r] += (i ? ' ' : '') + (g[r] || '    ');
+    for (let r = 0; r < 5; r++) base[r] += (i ? ' ' : '') + (g[r] || '    ');
   });
+  // Scale 2x in both directions so the logo is neofetch-sized (10 rows tall).
+  const rows = [];
+  for (const r of base) {
+    const wide = r.replace(/./g, (c) => c + c);
+    rows.push(wide, wide);
+  }
   return rows;
 }
 function logoWidth(rows) { return Math.max(...rows.map((l) => l.length), 1); }
@@ -158,8 +164,10 @@ function collect() {
 // ── Render ────────────────────────────────────────────────────────────
 function infoLines(info) {
   const user = info.user || 'admin';
+  const title = user + '@' + info.host;
   const lines = [
-    { label: user + '@' + info.host, isTitle: true },
+    { label: title, isTitle: true },
+    { isSep: true, width: title.length },
     { key: 'OS',      val: info.os },
     { key: 'Kernel',  val: info.kernel },
     { key: 'Uptime',  val: info.uptime },
@@ -174,11 +182,14 @@ function infoLines(info) {
 }
 
 function colorBar() {
-  return A.barColors.map(c => c + '███').join('') + A.reset;
+  const c = A.barColors;
+  const row1 = c.slice(0, 8).map((x) => x + '███').join('') + A.reset;
+  const row2 = c.slice(8, 16).map((x) => x + '███').join('') + A.reset;
+  return row1 + '\n' + row2;
 }
 
 function plainBar() {
-  return '████████████████████████';
+  return '████████████████████████\n████████████████████████';
 }
 
 function renderPlain() {
@@ -195,6 +206,8 @@ function renderPlain() {
     if (line) {
       if (line.isTitle) {
         right = line.label;
+      } else if (line.isSep) {
+        right = '-'.repeat(line.width || 11);
       } else {
         right = `${line.key}: ${line.val}`;
       }
@@ -225,6 +238,8 @@ function renderColorWith(info) {
     if (line) {
       if (line.isTitle) {
         right = A.title + line.label + A.reset;
+      } else if (line.isSep) {
+        right = A.sep + '-'.repeat(line.width || 11) + A.reset;
       } else {
         right = A.key + line.key + A.sep + ': ' + A.val + line.val + A.reset;
       }
@@ -261,7 +276,7 @@ function renderPlainWith(info) {
     const line = lines[i];
     let right = '';
     if (line) {
-      right = line.isTitle ? line.label : `${line.key}: ${line.val}`;
+      right = line.isTitle ? line.label : (line.isSep ? '-'.repeat(line.width || 11) : `${line.key}: ${line.val}`);
     }
     rows.push(left + '  ' + right);
   }
@@ -279,6 +294,7 @@ function fetchShellScript(overrides = {}) {
   if (overrides.disk) info.disk = String(overrides.disk);
   if (overrides.host) info.host = String(overrides.host);
   if (overrides.user) info.user = String(overrides.user);
+  if (overrides.os) info.os = String(overrides.os);
   const banner = renderColorWith(info);
   const b64 = Buffer.from(banner + '\n', 'utf8').toString('base64');
   return `#!/bin/bash
