@@ -247,16 +247,20 @@ function attachConsoleSocket(io) {
       const joinToken = sid + ':' + Date.now();
       socket.data.pendingJoins.add(joinToken);
       let lastWaitingAt = 0;
+      const waitBudgetMs = 180000;
+      const deadline = Date.now() + waitBudgetMs;
+      socket.emit('console:waiting', { error: '', deadline, total: waitBudgetMs, sessionId: sid });
 
       sshService.shellStreamWithRetry(vm, {
         maxRetries: 0,
         retryDelay: 2500,
+        deadline,
         onError: (err) => {
           const now = Date.now();
-          if (now - lastWaitingAt < 10000) return;
+          if (now - lastWaitingAt < 3000) return;
           lastWaitingAt = now;
           if (socket.connected && socket.data.pendingJoins.has(joinToken)) {
-            socket.emit('console:waiting', { error: (err && err.message) ? err.message : String(err) });
+            socket.emit('console:waiting', { error: (err && err.message) ? err.message : String(err), deadline, total: waitBudgetMs, sessionId: sid });
           }
         },
         shouldContinue: () => socket.connected && socket.data.pendingJoins.has(joinToken) && vmService.isRunning(vm),

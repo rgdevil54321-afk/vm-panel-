@@ -438,6 +438,11 @@ body.term-fullscreen #bgOverlay {
   const sessionState = new Map(); // sessionId -> { text, cls }
   let activeSid = null;
 
+  // Live "connecting…" countdown (deadline is an absolute epoch-ms from the server)
+  let waitTimer = null;
+  let waitDeadline = 0;
+  let waitReason = '';
+
   let bootTerm, bootFit;
   let socket = null;
   let connected = false;
@@ -500,6 +505,43 @@ body.term-fullscreen #bgOverlay {
   function setSessionState(sid, text, cls, banner) {
     sessionState.set(sid, { text, cls });
     if (sid === activeSid) setState(text, cls, banner);
+  }
+
+  function fmtWait(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    if (s >= 60) return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    return s + 's';
+  }
+
+  function clearWaitTimer() {
+    if (waitTimer) { clearInterval(waitTimer); waitTimer = null; }
+    waitDeadline = 0;
+    waitReason = '';
+  }
+
+  function renderWait() {
+    if (activeTab !== 'terminal') return;
+    const left = waitDeadline - Date.now();
+    const reason = waitReason ? ' · ' + waitReason : '';
+    if (left <= 0) {
+      clearWaitTimer();
+      const txt = 'connection failed' + reason;
+      setState(txt, 'pill-red', true);
+      if (activeSid) setSessionState(activeSid, txt, 'pill-red', true);
+      return;
+    }
+    const txt = 'connecting… ' + fmtWait(left) + reason;
+    setState(txt, 'pill-yellow', true);
+    if (activeSid) setSessionState(activeSid, txt, 'pill-yellow', true);
+  }
+
+  function startWaitTimer(deadline, reason) {
+    if (deadline) waitDeadline = deadline;
+    if (!waitDeadline) waitDeadline = Date.now() + 180000;
+    if (reason) waitReason = reason;
+    if (waitTimer) { renderWait(); return; }
+    renderWait();
+    waitTimer = setInterval(renderWait, 1000);
   }
 
   function updateSizeBadge(term, isCustom) {
@@ -634,6 +676,7 @@ body.term-fullscreen #bgOverlay {
   }
 
   function doJoin(sid, reattach) {
+    clearWaitTimer();
     setSessionState(sid, 'connecting...', 'pill-yellow');
     socket.emit('console:join', { vmId: VM_ID, terminalId: sid, reattach: !!reattach });
   }
@@ -714,6 +757,7 @@ body.term-fullscreen #bgOverlay {
     });
 
     socket.on('console:ready', ({ sessionId, replayed }) => {
+      clearWaitTimer();
       const entry = createTerminalPane(sessionId);
       if (activeSid === null) activateSession(sessionId);
       entry.closed = false;
@@ -733,22 +777,22 @@ body.term-fullscreen #bgOverlay {
     });
 
     socket.on('console:offline', () => {
+      clearWaitTimer();
       if (activeTab === 'terminal') {
         setState('offline', 'pill-gray', true);
         if (terms.has(activeSid)) setSessionState(activeSid, 'offline', 'pill-gray', true);
       }
     });
 
-    socket.on('console:waiting', ({ error }) => {
-      if (activeTab === 'terminal') {
-        const why = String(error || '').replace(/SSH connection timed out/g, 'sshd not yet reachable').replace(/Connection lost before handshake/g, 'connection dropped before handshake');
-        const short = why.length > 70 ? why.slice(0, 67) + '...' : why;
-        setState('waiting for SSH… (' + short + ')', 'pill-yellow', true);
-        if (activeSid) setSessionState(activeSid, 'waiting for SSH… (' + short + ')', 'pill-yellow', true);
-      }
+    socket.on('console:waiting', ({ error, deadline }) => {
+      if (activeTab !== 'terminal') return;
+      const why = String(error || '').replace(/SSH connection timed out/g, 'sshd not yet reachable').replace(/Connection lost before handshake/g, 'connection dropped before handshake');
+      const short = why.length > 60 ? why.slice(0, 57) + '...' : why;
+      startWaitTimer(deadline, short);
     });
 
     socket.on('console:error', (m) => {
+      clearWaitTimer();
       if (activeTab === 'terminal') {
         setState('connection failed', 'pill-red', true);
         const entry = terms.get(activeSid);
@@ -798,6 +842,7 @@ body.term-fullscreen #bgOverlay {
 
     socket.on('disconnect', () => {
       connected = false;
+      clearWaitTimer();
       if (activeTab === 'terminal') {
         if (isVmRunning) setState('reconnecting...', 'pill-yellow');
         else setState('offline', 'pill-gray');

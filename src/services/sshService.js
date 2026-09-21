@@ -71,22 +71,26 @@ function shellStream(vm) {
   });
 }
 
-async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true, onError = null } = {}) {
+async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true, onError = null, deadline = 0 } = {}) {
   let lastErr;
   let attempt = 0;
   for (;;) {
     if (!shouldContinue()) {
       throw new Error('Connection cancelled');
     }
+    if (deadline && Date.now() >= deadline) {
+      throw lastErr || new Error('SSH connection timed out');
+    }
     try {
       return await shellStream(vm);
     } catch (err) {
       lastErr = err;
       if (onError) { try { onError(err, attempt); } catch (_) {} }
-      // maxRetries = 0 (or falsy) keeps retrying forever until shouldContinue() is false
+      // maxRetries = 0 (or falsy) keeps retrying until shouldContinue() is false or the deadline passes
       if (maxRetries && attempt + 1 >= maxRetries) throw lastErr;
       attempt += 1;
-      await new Promise((r) => setTimeout(r, retryDelay));
+      const remaining = deadline ? deadline - Date.now() : retryDelay;
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(retryDelay, remaining))));
     }
   }
 }
