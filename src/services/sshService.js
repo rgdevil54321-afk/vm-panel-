@@ -71,7 +71,7 @@ function shellStream(vm) {
   });
 }
 
-async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true } = {}) {
+async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true, onError = null } = {}) {
   let lastErr;
   let attempt = 0;
   for (;;) {
@@ -82,6 +82,7 @@ async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, sh
       return await shellStream(vm);
     } catch (err) {
       lastErr = err;
+      if (onError) { try { onError(err, attempt); } catch (_) {} }
       // maxRetries = 0 (or falsy) keeps retrying forever until shouldContinue() is false
       if (maxRetries && attempt + 1 >= maxRetries) throw lastErr;
       attempt += 1;

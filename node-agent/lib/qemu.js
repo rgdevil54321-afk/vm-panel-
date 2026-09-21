@@ -510,7 +510,9 @@ runcmd:
   - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || true
   - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
   - sed -i 's/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config || true
-  - systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || true
+  - (command -v sshd >/dev/null 2>&1 || apt-get install -y openssh-server >/dev/null 2>&1) || true
+  - systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true
+  - systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || true
 ${agentSeedPayload(vm).map((c) => '  - ' + c).join('\n')}
 ${runcmds.map((c) => '  - ' + c).join('\n')}
 ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + userData : ''}

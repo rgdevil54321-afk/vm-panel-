@@ -731,6 +731,15 @@
       }
     });
 
+    socket.on('console:waiting', ({ error }) => {
+      if (activeTab === 'terminal') {
+        const why = String(error || '').replace(/SSH connection timed out/g, 'sshd not yet reachable').replace(/Connection lost before handshake/g, 'connection dropped before handshake');
+        const short = why.length > 70 ? why.slice(0, 67) + '...' : why;
+        setState('waiting for SSH… (' + short + ')', 'pill-yellow', true);
+        if (activeSid) setSessionState(activeSid, 'waiting for SSH… (' + short + ')', 'pill-yellow', true);
+      }
+    });
+
     socket.on('console:error', (m) => {
       if (activeTab === 'terminal') {
         setState('connection failed', 'pill-red', true);
