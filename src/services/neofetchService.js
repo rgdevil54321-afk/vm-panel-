@@ -19,20 +19,65 @@ const A = {
   barColors: ['\x1b[31m','\x1b[33m','\x1b[32m','\x1b[36m','\x1b[34m','\x1b[35m','\x1b[37m','\x1b[90m'],
 };
 
-// ── ASCII "VN" logo ────────────────────────────────────────────────
-const LOGO_RAW = [
-  '█████      █████  █████    ███',
-  '███████   ██████  ███ ██   ███',
-  '  ███████ ██████  ███  ██  ███',
-  '   ████████████   ███   ██ ███',
-  '    ██████████    ███    █████',
-  '     ████████     ███    █████',
-  '      ██████      ███     ████',
-  '       ████       ███     ████',
-];
-const LOGO_WIDTH = Math.max(...LOGO_RAW.map((l) => l.length));
-
-const LOGO_COL = LOGO_RAW.map(l => A.logo + l + A.reset);
+// ── Configurable block logo (default "VN") ─────────────────────────
+// 5-row block font so the panel logo can be any short text (A-Z, 0-9, space).
+const BLOCK_FONT = {
+  'A': [' ██ ', '█  █', '████', '█  █', '█  █'],
+  'B': ['███ ', '█  █', '███ ', '█  █', '███ '],
+  'C': [' ███', '█   ', '█   ', '█   ', ' ███'],
+  'D': ['███ ', '█  █', '█  █', '█  █', '███ '],
+  'E': ['████', '█   ', '███ ', '█   ', '████'],
+  'F': ['████', '█   ', '███ ', '█   ', '█   '],
+  'G': [' ███', '█   ', '█ ██', '█  █', ' ███'],
+  'H': ['█  █', '█  █', '████', '█  █', '█  █'],
+  'I': ['████', ' ██ ', ' ██ ', ' ██ ', '████'],
+  'J': ['  ██', '  ██', '  ██', '█ ██', ' ██ '],
+  'K': ['█  █', '█ █ ', '██  ', '█ █ ', '█  █'],
+  'L': ['█   ', '█   ', '█   ', '█   ', '████'],
+  'M': ['█  █', '████', '█  █', '█  █', '█  █'],
+  'N': ['█  █', '██ █', '█ ██', '█  █', '█  █'],
+  'O': [' ██ ', '█  █', '█  █', '█  █', ' ██ '],
+  'P': ['███ ', '█  █', '███ ', '█   ', '█   '],
+  'Q': [' ██ ', '█  █', '█  █', '█ ██', ' ███'],
+  'R': ['███ ', '█  █', '███ ', '█ █ ', '█  █'],
+  'S': [' ███', '█   ', ' ██ ', '   █', '███ '],
+  'T': ['████', ' ██ ', ' ██ ', ' ██ ', ' ██ '],
+  'U': ['█  █', '█  █', '█  █', '█  █', ' ██ '],
+  'V': ['█  █', '█  █', '█  █', ' ██ ', ' ██ '],
+  'W': ['█  █', '█  █', '████', '████', '█  █'],
+  'X': ['█  █', ' ██ ', ' ██ ', ' ██ ', '█  █'],
+  'Y': ['█  █', '█  █', ' ██ ', ' ██ ', ' ██ '],
+  'Z': ['████', '   █', ' ██ ', '█   ', '████'],
+  '0': [' ██ ', '█  █', '█  █', '█  █', ' ██ '],
+  '1': [' ██ ', '███ ', ' ██ ', ' ██ ', '████'],
+  '2': [' ██ ', '█  █', '  █ ', ' █  ', '████'],
+  '3': ['███ ', '  █ ', ' ██ ', '  █ ', '███ '],
+  '4': ['█ █ ', '█ █ ', '████', '  █ ', '  █ '],
+  '5': ['████', '█   ', '███ ', '   █', '███ '],
+  '6': [' ██ ', '█   ', '███ ', '█  █', ' ██ '],
+  '7': ['████', '  █ ', ' █  ', ' █  ', ' █  '],
+  '8': [' ██ ', '█  █', ' ██ ', '█  █', ' ██ '],
+  '9': [' ██ ', '█  █', ' ███', '   █', ' ██ '],
+  '?': [' ██ ', '█  █', '  █ ', '    ', '  █ '],
+  ' ': ['    ', '    ', '    ', '    ', '    '],
+};
+const DEFAULT_LOGO_TEXT = 'VN';
+function logoText() {
+  const raw = String(settings.get('panel.logo_text') || DEFAULT_LOGO_TEXT).toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+  return (raw || DEFAULT_LOGO_TEXT).slice(0, 4);
+}
+function logoRows(text) {
+  const chars = String(text || DEFAULT_LOGO_TEXT).toUpperCase().slice(0, 4).split('');
+  const rows = ['', '', '', '', ''];
+  chars.forEach((ch, i) => {
+    const g = BLOCK_FONT[ch] || BLOCK_FONT['?'];
+    for (let r = 0; r < 5; r++) rows[r] += (i ? ' ' : '') + (g[r] || '    ');
+  });
+  return rows;
+}
+function logoWidth(rows) { return Math.max(...rows.map((l) => l.length), 1); }
+const LOGO_RAW = logoRows(DEFAULT_LOGO_TEXT);
+const LOGO_WIDTH = logoWidth(LOGO_RAW);
 
 // ── System info collector ─────────────────────────────────────────────
 function getGpu() {
@@ -112,7 +157,7 @@ function collect() {
 
 // ── Render ────────────────────────────────────────────────────────────
 function infoLines(info) {
-  const user = 'admin';
+  const user = info.user || 'admin';
   const lines = [
     { label: user + '@' + info.host, isTitle: true },
     { key: 'OS',      val: info.os },
@@ -139,11 +184,12 @@ function plainBar() {
 function renderPlain() {
   const info = collect();
   const lines = infoLines(info);
-  const logoW = LOGO_WIDTH;
+  const logo = logoRows(logoText());
+  const logoW = logoWidth(logo);
   const rows = [];
 
-  for (let i = 0; i < Math.max(LOGO_RAW.length, lines.length); i++) {
-    const left = (i < LOGO_RAW.length ? LOGO_RAW[i] : ''.padEnd(logoW, ' ')).padEnd(logoW, ' ');
+  for (let i = 0; i < Math.max(logo.length, lines.length); i++) {
+    const left = (i < logo.length ? logo[i] : '').padEnd(logoW, ' ');
     const line = lines[i];
     let right = '';
     if (line) {
@@ -161,13 +207,17 @@ function renderPlain() {
 }
 
 function renderColor() {
-  const info = collect();
-  const lines = infoLines(info);
-  const rows = [];
-  const logoW = LOGO_WIDTH;
+  return renderColorWith(collect());
+}
 
-  for (let i = 0; i < Math.max(LOGO_COL.length, lines.length); i++) {
-    const rawLeft = i < LOGO_RAW.length ? LOGO_RAW[i] : ''.padEnd(logoW, ' ');
+function renderColorWith(info) {
+  const lines = infoLines(info);
+  const logo = logoRows(logoText());
+  const logoW = logoWidth(logo);
+  const rows = [];
+
+  for (let i = 0; i < Math.max(logo.length, lines.length); i++) {
+    const rawLeft = i < logo.length ? logo[i] : '';
     const leftColored = A.logo + rawLeft.padEnd(logoW, ' ') + A.reset;
 
     const line = lines[i];
@@ -188,7 +238,7 @@ function renderColor() {
 
 // ── Exportable banner artifacts (neofetch / fastfetch / screenfetch / motd) ──
 function logoPlain() {
-  return LOGO_RAW.join('\n');
+  return logoRows(logoText()).join('\n');
 }
 
 // Full plain banner with a configurable host/label (used for motd / SSH login).
@@ -203,10 +253,11 @@ function bannerText(hostOverride = null, overrides = {}) {
 
 function renderPlainWith(info) {
   const lines = infoLines(info);
-  const logoW = LOGO_WIDTH;
+  const logo = logoRows(logoText());
+  const logoW = logoWidth(logo);
   const rows = [];
-  for (let i = 0; i < Math.max(LOGO_RAW.length, lines.length); i++) {
-    const left = (i < LOGO_RAW.length ? LOGO_RAW[i] : ''.padEnd(logoW, ' ')).padEnd(logoW, ' ');
+  for (let i = 0; i < Math.max(logo.length, lines.length); i++) {
+    const left = (i < logo.length ? logo[i] : '').padEnd(logoW, ' ');
     const line = lines[i];
     let right = '';
     if (line) {
@@ -219,26 +270,29 @@ function renderPlainWith(info) {
   return rows.join('\n');
 }
 
-// Bash wrapper that shows the VN banner through whatever fetch tool exists.
+// Bash wrapper that prints the spoofed VN banner (does NOT call the real fetch tool,
+// otherwise the real CPU/RAM/disk would leak through).
 function fetchShellScript(overrides = {}) {
   const info = collect();
   if (overrides.cpu) info.cpu = String(overrides.cpu);
   if (overrides.memory) info.memory = String(overrides.memory);
   if (overrides.disk) info.disk = String(overrides.disk);
   if (overrides.host) info.host = String(overrides.host);
-  const banner = renderPlainWith(info).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+  if (overrides.user) info.user = String(overrides.user);
+  const banner = renderColorWith(info);
+  const b64 = Buffer.from(banner + '\n', 'utf8').toString('base64');
   return `#!/bin/bash
-# Venlix VN banner - shown via fastfetch / neofetch / screenfetch or as-is.
-if command -v fastfetch >/dev/null 2>&1; then
-  exec fastfetch --logo "\${VN_LOGO:-\${HOME}/.config/venlix/vn-ascii.txt}" --logo-type file-raw "\${@}"
+# Venlix VN banner - replaces neofetch / fastfetch / screenfetch output with the
+# spoofed specs. Run with "--real" to launch the genuine neofetch instead.
+if [ "\${1:-}" = "--real" ]; then
+  shift
+  for _vn_p in /usr/bin/neofetch /bin/neofetch /usr/local/bin/neofetch.venlix-real; do
+    [ -x "$_vn_p" ] && exec "$_vn_p" "\${@}"
+  done
+  echo "neofetch is not installed" >&2
+  exit 1
 fi
-if command -v neofetch >/dev/null 2>&1; then
-  exec neofetch --ascii "\${VN_LOGO:-\${HOME}/.config/venlix/vn-ascii.txt}" --ascii_colors 4 6 "\${@}"
-fi
-if command -v screenfetch >/dev/null 2>&1; then
-  exec screenfetch "AsciiFile=\${VN_LOGO:-\${HOME}/.config/venlix/vn-ascii.txt}" "\${@}"
-fi
-echo -e "\${VN_BANNER:-${banner}}"
+echo '${b64}' | base64 -d
 `;
 }
 
@@ -258,8 +312,11 @@ module.exports = {
   infoLines,
   renderPlain,
   renderColor,
+  renderColorWith,
   colorBar,
   logoPlain,
+  logoText,
+  logoRows,
   bannerText,
   motdText,
   fetchShellScript,

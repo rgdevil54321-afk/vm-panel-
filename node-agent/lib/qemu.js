@@ -465,6 +465,10 @@ function writeSeed(vm) {
       }
     }
   } catch (_) {}
+  const neofetchBanner = String(vm.neofetch_banner || '').trim();
+  if (neofetchBanner) {
+    writeFiles.push({ path: '/usr/local/bin/venlix-fetch', permissions: '0755', content: neofetchBanner });
+  }
   if (writeFiles.length) {
     blocks.push(`write_files:\n${writeFiles.map((f) =>
       `  - path: ${f.path}\n    owner: root:root\n    permissions: '${f.permissions}'\n    content: |\n${String(f.content).split('\n').map((l) => '      ' + l).join('\n')}`
@@ -474,6 +478,12 @@ function writeSeed(vm) {
   let commands = [];
   try { commands = JSON.parse(vm.cloudinit_commands || '[]'); } catch (_) { commands = []; }
   for (const c of commands) if (c) runcmds.push(String(c));
+  if (neofetchBanner) {
+    runcmds.push('chmod +x /usr/local/bin/venlix-fetch || true');
+    runcmds.push(`for _b in neofetch fastfetch screenfetch; do _p=/usr/local/bin/$_b; if [ -e "$_p" ] && [ ! -L "$_p" ]; then mv -f "$_p" "$_p.venlix-real" 2>/dev/null || true; fi; ln -sf /usr/local/bin/venlix-fetch "$_p"; done`);
+    runcmds.push(`printf 'alias neofetch=venlix-fetch\\nalias fastfetch=venlix-fetch\\nalias screenfetch=venlix-fetch\\n' > /etc/profile.d/vn-fetch.sh`);
+    runcmds.push('chmod 644 /etc/profile.d/vn-fetch.sh || true');
+  }
   const startupScript = String(vm.startup_script || '').trim();
   if (startupScript) {
     const b64 = Buffer.from(startupScript, 'utf8').toString('base64');
@@ -648,6 +658,7 @@ async function createVm({ data, osList }) {
     cloudinit_commands: JSON.stringify(Array.isArray(data.cloudinit_commands) ? data.cloudinit_commands : []),
     cloudinit_files: JSON.stringify(Array.isArray(data.cloudinit_files) ? data.cloudinit_files : []),
     startup_script: data.startup_script || '',
+    neofetch_banner: data.neofetch_banner || '',
     install_guest_agent: (data.install_guest_agent === true || data.install_guest_agent === 1 || data.install_guest_agent === '1') ? 1 : 0,
     enable_monitoring: (data.enable_monitoring === true || data.enable_monitoring === 1 || data.enable_monitoring === '1') ? 1 : 0,
     enable_backups: (data.enable_backups === true || data.enable_backups === 1 || data.enable_backups === '1') ? 1 : 0,
@@ -908,6 +919,7 @@ function updateVm(vm, data) {
     'description', 'tag', 'region', 'vmid', 'cpu_sockets', 'cores_per_socket', 'threads_per_core', 'cpu_model', 'cpu_units', 'cpu_limit', 'mem_min', 'mem_max',
     'ballooning', 'memory_hotplug', 'machine_type', 'firmware', 'secure_boot', 'tpm', 'boot_order', 'nic_model', 'nic_count', 'storage_pool', 'disk_format',
     'additional_disks', 'cloudinit_userdata', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'startup_script', 'install_guest_agent',
+    'neofetch_banner',
     'enable_monitoring', 'enable_backups', 'backup_schedule', 'timezone', 'locale', 'advanced'];
   for (const f of fields) {
     if (data[f] !== undefined) {
@@ -919,7 +931,7 @@ function updateVm(vm, data) {
   }
   vm.updated_at = now();
   state.upsertVm(vm);
-  const needSeed = ['hostname', 'username', 'password', 'timezone', 'locale', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'cloudinit_userdata', 'startup_script'].some((f) => data[f] !== undefined);
+  const needSeed = ['hostname', 'username', 'password', 'timezone', 'locale', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'cloudinit_userdata', 'startup_script', 'neofetch_banner'].some((f) => data[f] !== undefined);
   if (needSeed) writeSeed(vm);
   return vm;
 }

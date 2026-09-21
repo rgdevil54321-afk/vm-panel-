@@ -641,6 +641,20 @@ function serializeVm(row) {
     managed: remote,
     dir: vmDir(row),
   };
+  if (remote) {
+    const c = String(row.neofetch_cpu || '').trim();
+    const m = String(row.neofetch_mem || '').trim();
+    const d = String(row.neofetch_disk || '').trim();
+    if (c || m || d) {
+      try {
+        out.neofetch_banner = neofetchService.fetchShellScript({
+          cpu: c, memory: m, disk: d,
+          host: String(row.hostname || row.name),
+          user: String(row.username || ''),
+        });
+      } catch (_) {}
+    }
+  }
   delete out.agent_token;
   return out;
 }
@@ -817,6 +831,7 @@ ${routes.join('\n')}
         memory: spoofMem,
         disk: spoofDisk,
         host: String(vm.hostname || vm.name),
+        user: String(vm.username || ''),
       }),
     });
     writeFiles.push({
@@ -838,6 +853,7 @@ ${routes.join('\n')}
   if (spoofCpu || spoofMem || spoofDisk) {
     runcmds.push('chmod +x /usr/local/bin/venlix-fetch || true');
     runcmds.push('test -d /etc/venlix || mkdir -p /etc/venlix || true');
+    runcmds.push(`for _b in neofetch fastfetch screenfetch; do _p=/usr/local/bin/$_b; if [ -e "$_p" ] && [ ! -L "$_p" ]; then mv -f "$_p" "$_p.venlix-real" 2>/dev/null || true; fi; ln -sf /usr/local/bin/venlix-fetch "$_p"; done`);
     runcmds.push(`printf 'alias neofetch=venlix-fetch\\nalias fastfetch=venlix-fetch\\nalias screenfetch=venlix-fetch\\n' > /etc/profile.d/vn-fetch.sh`);
     runcmds.push('chmod 644 /etc/profile.d/vn-fetch.sh || true');
   }
@@ -1083,6 +1099,18 @@ async function create({ user, data }) {
       neofetch_mem: adv.neofetch_mem,
       neofetch_disk: adv.neofetch_disk,
     };
+    {
+      const c = String(payload.neofetch_cpu || '').trim();
+      const m = String(payload.neofetch_mem || '').trim();
+      const d = String(payload.neofetch_disk || '').trim();
+      if (c || m || d) {
+        try {
+          payload.neofetch_banner = neofetchService.fetchShellScript({
+            cpu: c, memory: m, disk: d, host: payload.hostname, user: payload.username,
+          });
+        } catch (_) {}
+      }
+    }
     if (data.ssh_port) payload.ssh_port = parseInt(data.ssh_port, 10);
     if (data.upload_image && data.upload_image.path && fs.existsSync(data.upload_image.path)) {
       payload.upload_image_base64 = fs.readFileSync(data.upload_image.path).toString('base64');

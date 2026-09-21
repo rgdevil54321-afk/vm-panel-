@@ -325,6 +325,7 @@ const defaultSettings = {
   'panel.hostname': 'Venlix Nodes',
   'panel.cpu_name': '',
   'panel.gpu_name': '',
+  'panel.logo_text': 'VN',
   'panel.logo_mode': 'url',
   'panel.logo_url': '',
   'panel.logo_file': '',
