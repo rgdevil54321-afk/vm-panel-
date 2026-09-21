@@ -30,6 +30,7 @@ function render(res, view, vars = {}) {
 
 const nodeService = require('../services/nodeService');
 const neofetchService = require('../services/neofetchService');
+const specs = require('../lib/specs');
 
 router.get('/admin', (req, res) => {
   const vms = vmService.dbVms().map(vmService.serializeVm);
@@ -214,7 +215,7 @@ router.get('/admin/servers/:id', (req, res) => {
   const schedules = db.prepare('SELECT * FROM schedules WHERE vm_id = ?').all(vm.id);
   const subs = db.prepare('SELECT s.*, u.username FROM subusers s JOIN users u ON u.id = s.user_id WHERE s.vm_id = ?').all(vm.id);
   const allUsers = db.prepare('SELECT id, username, email FROM users ORDER BY username').all();
-  render(res, 'serverDetail', { vm, backups, schedules, subs, allUsers, uptime: vmService.uptimeSeconds(vm), mem: vmService.memUsage(vm), osList: vmService.getOsList() });
+  render(res, 'serverDetail', { vm, specs: specs.display(vm), backups, schedules, subs, allUsers, uptime: vmService.uptimeSeconds(vm), mem: vmService.memUsage(vm), osList: vmService.getOsList() });
 });
 
 router.get('/admin/users', (req, res) => {

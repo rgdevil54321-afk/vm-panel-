@@ -4,6 +4,7 @@ const qrcode = require('qrcode');
 const config = require('../lib/config');
 const { db, settings } = require('../lib/db');
 const vmService = require('../services/vmService');
+const specs = require('../lib/specs');
 const bootLogService = require('../services/bootLogService');
 const backupService = require('../services/backupService');
 const authService = require('../services/authService');
@@ -61,14 +62,14 @@ router.get('/servers/:id', loadVm, (req, res) => {
   const allUsers = (req.user.role === 'admin' || req.user.root_admin)
     ? db.prepare('SELECT id, username, email FROM users ORDER BY username').all()
     : [];
-  render(res, 'server/overview', { vm: req.vm, backups: backupService.listForVm(req.vm.id), allUsers });
+  render(res, 'server/overview', { vm: req.vm, specs: specs.display(req.vm), backups: backupService.listForVm(req.vm.id), allUsers });
 });
 
 router.get('/servers/:id/overview', loadVm, (req, res) => {
   const allUsers = (req.user.role === 'admin' || req.user.root_admin)
     ? db.prepare('SELECT id, username, email FROM users ORDER BY username').all()
     : [];
-  render(res, 'server/overview', { vm: req.vm, backups: backupService.listForVm(req.vm.id), allUsers });
+  render(res, 'server/overview', { vm: req.vm, specs: specs.display(req.vm), backups: backupService.listForVm(req.vm.id), allUsers });
 });
 
 router.get('/servers/:id/status', loadVm, async (req, res) => {

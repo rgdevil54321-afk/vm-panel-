@@ -93,7 +93,7 @@
       </div>
       <div style="flex:1">
         <div class="flex-between">
-          <div class="stat-value"><%= vm.cpus %> vCPU</div>
+          <div class="stat-value"><%= specs.cpu %></div>
           <span id="liveCpuBadge" class="pill pill-sm pill-blue" style="font-size:11px;padding:2px 7px">0% Load</span>
         </div>
         <div class="stat-label">Processor Load</div>
@@ -109,10 +109,10 @@
       </div>
       <div style="flex:1">
         <div class="flex-between">
-          <div class="stat-value" id="statMemVal"><%= vm.memory %> MB</div>
+          <div class="stat-value" id="statMemVal"><%= specs.mem %></div>
           <span id="liveMemBadge" style="font-size:11px;color:#38bdf8;font-weight:600">0%</span>
         </div>
-        <div class="stat-label" id="statMemLabel">Memory (<%= (vm.memory/1024).toFixed(1) %> GB)</div>
+        <div class="stat-label" id="statMemLabel">Memory<% if (!specs.hasSpoof || !specs.spoof.mem) { %> (<%= specs.real.memGb %> GB)<% } %></div>
         <div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:8px;overflow:hidden">
           <div id="liveMemBar" style="height:100%;width:0%;background:linear-gradient(90deg, #38bdf8, #818cf8);transition:width 0.4s ease"></div>
         </div>
@@ -125,7 +125,7 @@
       </div>
       <div style="flex:1">
         <div class="flex-between">
-          <div class="stat-value"><%= vm.disk_size %></div>
+          <div class="stat-value"><%= specs.disk %></div>
           <span id="liveDiskBadge" style="font-size:11px;color:#fbbf24;font-weight:600">0%</span>
         </div>
         <div class="stat-label" id="statDiskLabel">Disk (<span id="liveDiskActual">-- MB</span> on host)</div>
@@ -526,8 +526,8 @@ async function updateLiveStats() {
 
     if (stats.memory) {
       const usedMb = stats.memory.used_mb || 0;
-      const totalMb = stats.memory.total_mb || <%= vm.memory %>;
-      const memPct = stats.memory.percent || 0;
+      const totalMb = <%= specs.memTotalMb %> || stats.memory.total_mb || 0;
+      const memPct = totalMb ? Math.min(100, Math.round((usedMb / totalMb) * 100)) : (stats.memory.percent || 0);
 
       if (memBadge) memBadge.textContent = isRunning ? `${usedMb} MB (${memPct}%)` : '0 MB (0%)';
       if (liveMemBar) liveMemBar.style.width = isRunning ? `${memPct}%` : '0%';

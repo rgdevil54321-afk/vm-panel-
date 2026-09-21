@@ -39,6 +39,7 @@
       <div>
         <div class="stat-value"><%= vm.cpus %></div>
         <div class="stat-label">vCPUs</div>
+        <% if (specs.hasSpoof && specs.spoof.cpu) { %><div class="muted text-sm mono" style="margin-top:4px;color:#a78bfa">spoof: <%= specs.spoof.cpu %></div><% } %>
       </div>
     </div>
 
@@ -49,6 +50,7 @@
       <div>
         <div class="stat-value"><%= vm.memory %> MB</div>
         <div class="stat-label">Memory</div>
+        <% if (specs.hasSpoof && specs.spoof.mem) { %><div class="muted text-sm mono" style="margin-top:4px;color:#a78bfa">spoof: <%= specs.spoof.mem %></div><% } %>
       </div>
     </div>
 
@@ -59,6 +61,7 @@
       <div>
         <div class="stat-value"><%= vm.disk_size %></div>
         <div class="stat-label">Disk Size</div>
+        <% if (specs.hasSpoof && specs.spoof.disk) { %><div class="muted text-sm mono" style="margin-top:4px;color:#a78bfa">spoof: <%= specs.spoof.disk %></div><% } %>
       </div>
     </div>
 
