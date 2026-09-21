@@ -539,6 +539,7 @@ const vmNetColumns = {
   neofetch_cpu: 'TEXT',
   neofetch_mem: 'TEXT',
   neofetch_disk: 'TEXT',
+  neofetch_gpu: 'TEXT',
   suspended_at: 'TEXT',
 };
 const vmNetColNames = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);

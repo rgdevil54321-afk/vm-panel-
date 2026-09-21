@@ -109,8 +109,8 @@
                 <span class="pill pill-blue font-bold"><%= v.os_type || 'linux' %></span>
               </td>
               <td class="mono">
-                <span style="color:var(--accent-2);font-weight:600">Port <%= v.ssh_port %></span>
-                <div class="muted text-sm">ssh -p <%= v.ssh_port %> <%= v.username %>@localhost</div>
+                <span style="color:var(--accent-2);font-weight:600"><%= v.ip_address || ('Port ' + v.ssh_port) %></span>
+                <div class="muted text-sm">ssh -p <%= v.connect_port || v.ssh_port %> <%= v.username %>@<%= v.connect_host || v.node_host || 'localhost' %></div>
               </td>
               <td>
                 <div style="font-weight:600"><%= v.cpus %> vCPU · <%= v.memory %> MB</div>

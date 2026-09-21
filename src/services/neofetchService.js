@@ -73,11 +73,11 @@ function logoRows(text) {
     const g = BLOCK_FONT[ch] || BLOCK_FONT['?'];
     for (let r = 0; r < 5; r++) base[r] += (i ? ' ' : '') + (g[r] || '    ');
   });
-  // Scale 2x in both directions so the logo is neofetch-sized (10 rows tall).
+  // Scale 3x in both directions so the logo is neofetch-sized (15 rows tall).
   const rows = [];
   for (const r of base) {
-    const wide = r.replace(/./g, (c) => c + c);
-    rows.push(wide, wide);
+    const wide = r.replace(/./g, (c) => c + c + c);
+    rows.push(wide, wide, wide);
   }
   return rows;
 }
@@ -151,6 +151,7 @@ function collect() {
     os: `${os.type()} ${os.release().split('-')[0]}`,
     kernel: os.release(),
     host: hostname,
+    node: settings.get('panel.hostname') || 'Venlix Nodes',
     uptime: getUptime(),
     packages: getPackages(),
     shell: getShell(),
@@ -169,15 +170,19 @@ function infoLines(info) {
     { label: title, isTitle: true },
     { isSep: true, width: title.length },
     { key: 'OS',      val: info.os },
-    { key: 'Kernel',  val: info.kernel },
-    { key: 'Uptime',  val: info.uptime },
-    { key: 'Packages', val: info.packages },
-    { key: 'Shell',   val: info.shell },
-    { key: 'CPU',     val: info.cpu },
-    { key: 'GPU',     val: info.gpu },
-    { key: 'Memory',  val: info.memory },
-    { key: 'Disk',    val: info.disk },
   ];
+  if (info.node) lines.push({ key: 'Host', val: info.node });
+  lines.push({ key: 'Kernel',  val: info.kernel });
+  lines.push({ key: 'Uptime',  val: info.uptime });
+  lines.push({ key: 'Packages', val: info.packages });
+  lines.push({ key: 'Shell',   val: info.shell });
+  lines.push({ key: 'CPU',     val: info.cpu });
+  if (info.gpu && info.gpu !== 'Unknown GPU') lines.push({ key: 'GPU', val: info.gpu });
+  lines.push({ key: 'Memory',  val: info.memory });
+  lines.push({ key: 'Disk',    val: info.disk });
+  if (info.ipv4) lines.push({ key: 'IPv4', val: info.ipv4 });
+  if (info.ipv6) lines.push({ key: 'IPv6', val: info.ipv6 });
+  if (info.region) lines.push({ key: 'Region', val: info.region });
   return lines;
 }
 
@@ -197,11 +202,14 @@ function renderPlain() {
   const lines = infoLines(info);
   const logo = logoRows(logoText());
   const logoW = logoWidth(logo);
+  const topPad = Math.max(0, Math.floor((logo.length - lines.length) / 2));
+  const total = Math.max(logo.length, lines.length + topPad);
   const rows = [];
 
-  for (let i = 0; i < Math.max(logo.length, lines.length); i++) {
+  for (let i = 0; i < total; i++) {
     const left = (i < logo.length ? logo[i] : '').padEnd(logoW, ' ');
-    const line = lines[i];
+    const li = i - topPad;
+    const line = (li >= 0 && li < lines.length) ? lines[li] : null;
     let right = '';
     if (line) {
       if (line.isTitle) {
@@ -227,13 +235,16 @@ function renderColorWith(info) {
   const lines = infoLines(info);
   const logo = logoRows(logoText());
   const logoW = logoWidth(logo);
+  const topPad = Math.max(0, Math.floor((logo.length - lines.length) / 2));
+  const total = Math.max(logo.length, lines.length + topPad);
   const rows = [];
 
-  for (let i = 0; i < Math.max(logo.length, lines.length); i++) {
+  for (let i = 0; i < total; i++) {
     const rawLeft = i < logo.length ? logo[i] : '';
     const leftColored = A.logo + rawLeft.padEnd(logoW, ' ') + A.reset;
 
-    const line = lines[i];
+    const li = i - topPad;
+    const line = (li >= 0 && li < lines.length) ? lines[li] : null;
     let right = '';
     if (line) {
       if (line.isTitle) {
@@ -270,10 +281,13 @@ function renderPlainWith(info) {
   const lines = infoLines(info);
   const logo = logoRows(logoText());
   const logoW = logoWidth(logo);
+  const topPad = Math.max(0, Math.floor((logo.length - lines.length) / 2));
+  const total = Math.max(logo.length, lines.length + topPad);
   const rows = [];
-  for (let i = 0; i < Math.max(logo.length, lines.length); i++) {
+  for (let i = 0; i < total; i++) {
     const left = (i < logo.length ? logo[i] : '').padEnd(logoW, ' ');
-    const line = lines[i];
+    const li = i - topPad;
+    const line = (li >= 0 && li < lines.length) ? lines[li] : null;
     let right = '';
     if (line) {
       right = line.isTitle ? line.label : (line.isSep ? '-'.repeat(line.width || 11) : `${line.key}: ${line.val}`);
@@ -295,6 +309,11 @@ function fetchShellScript(overrides = {}) {
   if (overrides.host) info.host = String(overrides.host);
   if (overrides.user) info.user = String(overrides.user);
   if (overrides.os) info.os = String(overrides.os);
+  if (overrides.node) info.node = String(overrides.node);
+  if (overrides.gpu !== undefined) info.gpu = String(overrides.gpu);
+  if (overrides.ipv4) info.ipv4 = String(overrides.ipv4);
+  if (overrides.ipv6) info.ipv6 = String(overrides.ipv6);
+  if (overrides.region) info.region = String(overrides.region);
   const banner = renderColorWith(info);
   const b64 = Buffer.from(banner + '\n', 'utf8').toString('base64');
   return `#!/bin/bash

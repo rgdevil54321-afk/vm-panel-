@@ -241,7 +241,41 @@
         <div class="table-wrap">
           <table>
             <tbody>
-              <tr><td class="muted" style="width:140px">SSH Port</td><td class="mono"><span style="color:var(--accent-2);font-weight:700">Port <%= vm.ssh_port %></span></td></tr>
+              <tr><td class="muted" style="width:140px">Network Mode</td><td><span class="pill pill-gray"><%= vm.network_mode_label %></span></td></tr>
+              <tr>
+                <td class="muted">IPv4 Address</td>
+                <td class="mono">
+                  <% if (vm.ip_address) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ip_address %><%= vm.ip_prefix ? ('/' + vm.ip_prefix) : '' %></span>
+                  <% } else if (vm.network_mode === 'nat') { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.node_host %></span> <span class="muted" style="font-size:11px">(shared — reachable via node)</span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+              </tr>
+              <tr>
+                <td class="muted">IPv6 Address</td>
+                <td class="mono">
+                  <% if (vm.ipv6_address) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ipv6_address %><%= vm.ipv6_prefix ? ('/' + vm.ipv6_prefix) : '' %></span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+              </tr>
+              <tr>
+                <td class="muted">SSH Command</td>
+                <td>
+                  <div class="flex" style="gap:6px">
+                    <span class="mono" style="color:var(--accent-2)">ssh -p <%= vm.connect_port %> <%= vm.username %>@<%= vm.connect_host %></span>
+                    <button class="icon-btn" style="width:24px;height:24px" onclick="copyText('ssh -p <%= vm.connect_port %> <%= vm.username %>@<%= vm.connect_host %>')" title="Copy">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr><td class="muted">SSH Port</td><td class="mono"><span style="color:var(--accent-2);font-weight:700">Port <%= vm.ssh_port %></span></td></tr>
               <tr><td class="muted">VNC Port</td><td class="mono"><%= vm.vnc_port ? ('Port ' + vm.vnc_port) : 'Dynamic' %></td></tr>
               <tr><td class="muted">Port Forwards</td><td class="mono"><% if (vm.port_forwards && vm.port_forwards.length) { %><% for (const f of vm.port_forwards) { %><span class="pill pill-gray" style="margin-right:4px"><%= f.host %>:<%= f.guest %></span><% } %><% } else { %><span class="muted">None configured</span><% } %></td></tr>
               <tr>
