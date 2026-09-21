@@ -865,7 +865,7 @@ chpasswd:
   expire: false
 package_update: true
 write_files:
-  - path: /etc/ssh/sshd_config.d/60-vpanel.conf
+  - path: /etc/ssh/sshd_config.d/00-vpanel.conf
     owner: root:root
     permissions: '0644'
     content: |
@@ -874,6 +874,7 @@ write_files:
       KbdInteractiveAuthentication yes
 ${blocks.join('\n')}
 runcmd:
+  - rm -f /etc/ssh/sshd_config.d/60-cloudimg-settings.conf /etc/ssh/sshd_config.d/10-cloudimg-settings.conf /etc/ssh/sshd_config.d/60-vpanel.conf || true
   - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || true
   - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || true
   - sed -i 's/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config || true
