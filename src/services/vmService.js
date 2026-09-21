@@ -754,7 +754,11 @@ function writeSeed(vm) {
   try { packages = JSON.parse(vm.cloudinit_packages || '[]'); } catch (_) { packages = []; }
   if (packages.length) blocks.push(`packages:\n${packages.map((p) => '  - ' + p).join('\n')}`);
 
-  const writeFiles = [];
+  const writeFiles = [{
+    path: '/etc/ssh/sshd_config.d/00-vpanel.conf',
+    permissions: '0644',
+    content: 'PermitRootLogin yes\nPasswordAuthentication yes\nKbdInteractiveAuthentication yes\n',
+  }];
   try {
     const cf = JSON.parse(vm.cloudinit_files || '[]');
     if (Array.isArray(cf)) {
@@ -864,14 +868,6 @@ chpasswd:
     ${vm.username}:${vm.password}
   expire: false
 package_update: true
-write_files:
-  - path: /etc/ssh/sshd_config.d/00-vpanel.conf
-    owner: root:root
-    permissions: '0644'
-    content: |
-      PermitRootLogin yes
-      PasswordAuthentication yes
-      KbdInteractiveAuthentication yes
 ${blocks.join('\n')}
 runcmd:
   - rm -f /etc/ssh/sshd_config.d/60-cloudimg-settings.conf /etc/ssh/sshd_config.d/10-cloudimg-settings.conf /etc/ssh/sshd_config.d/60-vpanel.conf || true
