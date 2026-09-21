@@ -1,0 +1,82 @@
+<%- include('../partials/head', { title: 'License' }) %>
+<%- include('../partials/ambient') %>
+<div class="auth-wrap">
+  <div class="auth-card" style="position:relative;overflow:hidden">
+    <div class="vx-login-glow" aria-hidden="true"></div>
+
+    <div class="auth-logo" style="display:flex;flex-direction:column;align-items:center;margin-bottom:18px">
+      <% const pn = settings['panel.name'] || 'Venlix Nodes'; let lg='';
+        if (settings['panel.logo_mode']==='upload' && settings['panel.logo_file']) lg=settings['panel.logo_file'];
+        else if (settings['panel.logo_mode']==='url' && settings['panel.logo_url']) lg=settings['panel.logo_url']; %>
+      <% if (lg) { %>
+        <img src="<%= lg %>" style="height:48px;border-radius:12px;margin-bottom:8px"/>
+      <% } else { %>
+        <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg, var(--accent), var(--accent-2));display:grid;place-items:center;color:#fff;box-shadow:0 0 20px var(--accent-glow);margin-bottom:12px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="24" height="24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <span style="font-size:26px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(90deg,#fff 40%,var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent"><%= pn %></span>
+      <% } %>
+    </div>
+
+    <h1 class="auth-title" style="font-size:20px;font-weight:700">
+      <% if (locked) { %>License Expired<% } else { %>License Active<% } %>
+    </h1>
+    <p class="auth-sub" style="margin-bottom:22px">
+      <% if (locked) { %>
+        The weekly license has expired. Enter a valid license key to bring the panel (and your servers) back online.
+      <% } else { %>
+        The panel is unlocked. Next key required in <strong><%= daysLeft %> day<%= daysLeft === 1 ? '' : 's' %></strong>.
+      <% } %>
+    </p>
+
+    <div id="license-msg"></div>
+
+    <form id="license-form">
+      <div class="form-group">
+        <label for="key">Weekly License Key</label>
+        <input type="text" id="key" name="key" placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX" required autocomplete="off" spellcheck="false"/>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block mt-3" style="padding:12px;font-size:14px;font-weight:700">
+        <% if (locked) { %>Unlock Panel<% } else { %>Renew License<% } %>
+      </button>
+    </form>
+
+    <div class="auth-foot" style="margin-top:20px;text-align:center;display:flex;flex-direction:column;gap:8px">
+      <span style="font-size:13px;color:var(--text-dim)">Contact your provider if you need a new weekly key.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('license-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const box = document.getElementById('license-msg');
+    const btn = e.target.querySelector('button[type=submit]');
+    box.innerHTML = '';
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    try {
+      const r = await fetch('/api/license/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: document.getElementById('key').value.trim() }),
+      });
+      const data = await r.json();
+      if (r.ok && data.ok) {
+        box.innerHTML = '<div class="alert alert-success">' + (data.message || 'License activated.') + '</div>';
+        setTimeout(() => { window.location.href = '/dashboard'; }, 900);
+      } else {
+        let msg = 'Invalid license key.';
+        if (data && data.error) msg = data.error.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        box.innerHTML = '<div class="alert alert-error">' + msg + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'Unlock Panel';
+      }
+    } catch (err) {
+      box.innerHTML = '<div class="alert alert-error">Network error. Please try again.</div>';
+      btn.disabled = false;
+      btn.textContent = 'Unlock Panel';
+    }
+  });
+</script>
+<%- include('../partials/foot') %>

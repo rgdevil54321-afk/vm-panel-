@@ -17,6 +17,7 @@ const activity = require('./services/activityService');
 const { attachVncProxy } = require('./services/vncService');
 
 const authService = require('./services/authService');
+const license = require('./lib/license');
 
 function createWebApp() {
   const app = express();
@@ -43,6 +44,13 @@ function createWebApp() {
   app.use(optionalAuth);
   const { i18nMiddleware } = require('./lib/i18n');
   app.use(i18nMiddleware);
+
+  // ---- Weekly license gate ----
+  // The license page + its submit endpoint stay reachable while locked;
+  // everything else redirects to /license until a valid key is entered.
+  app.use('/', require('./routes/license'));
+  app.post('/api/license/submit', license.submitLicense);
+  app.use(license.webGate);
 
   app.get('/', (req, res) => res.redirect(req.user ? '/dashboard' : '/login'));
   app.use('/', require('./routes/webAuth'));
@@ -83,6 +91,8 @@ function createApiApp() {
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
   });
+  app.post('/api/license/submit', license.submitLicense);
+  app.use(license.apiGate);
   app.use('/api', require('./routes/api'));
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
   return app;
@@ -400,6 +410,7 @@ function bootstrap() {
 
   scheduleService.loadAll();
   planGuardService.start();
+  license.startTick();
   try {
     require('./services/discordGateway').sync();
   } catch (_) { /* gateway optional */ }

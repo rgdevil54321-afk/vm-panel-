@@ -35,6 +35,73 @@ log_ok()    { printf "${GREEN}${BOLD}[✔ SUCCESS]${NC} %b\n" "$*"; }
 log_warn()  { printf "${YELLOW}${BOLD}[⚠ WARN]${NC} %b\n" "$*"; }
 log_err()   { printf "${RED}${BOLD}[✖ ERROR]${NC} %b\n" "$*" >&2; }
 
+# --- License & install auth ------------------------------------------------
+# Installing requires the auth key. 5 wrong attempts blacklist this server;
+# the unlock password (menu 14 / --unlock) clears the blacklist.
+# The hashes below are SHA-256 of the NORMALIZED defaults defined in
+# src/lib/license.js (uppercase, no dashes/spaces). If you override
+# VNLX_AUTH_KEY / VNLX_UNLOCK_PASSWORD in .env, update them together.
+AUTH_KEY_SHA256="b0ecc60bd0b15c9f39942e28020ad604753e0fb9f85ab1c85d16b33db2775a56"
+UNLOCK_PASS_SHA256="517a45ef8d449e269e112e61ad6dd3aa8c2b58f7d29c162fe7d081cc3c28a8b7"
+LICENSE_STATE_FILE="$APP_DIR/data/licensing.json"
+
+license_state_blacklisted() {
+  if [ -f "$LICENSE_STATE_FILE" ] && grep -q '"blacklisted": *true' "$LICENSE_STATE_FILE" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+license_auth_gate() {
+  local attempts=0 key norm hash
+  if license_state_blacklisted; then
+    log_err "This server is blacklisted. Use menu option 14 (or: sudo bash install.sh --unlock) with the unlock password to continue."
+    exit 1
+  fi
+  while :; do
+    read -r -s -p "  Enter Venlix Installation Auth Key: " key
+    echo ""
+    if [ -z "$key" ]; then
+      log_err "Authorization key is required to install the panel."
+      exit 1
+    fi
+    norm=$(printf '%s' "$key" | tr -d ' -' | tr '[:lower:]' '[:upper:]')
+    hash=$(printf '%s' "$norm" | sha256sum | awk '{print $1}')
+    if [ "$hash" = "$AUTH_KEY_SHA256" ]; then
+      log_ok "Authorization accepted."
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 5 ]; then
+      mkdir -p "$APP_DIR/data" 2>/dev/null || true
+      printf '{\n  "authAttempts": %d,\n  "blacklisted": true\n}\n' 5 > "$LICENSE_STATE_FILE"
+      log_err "Too many wrong attempts. This server is now BLACKLISTED. Use --unlock with the unlock password to continue."
+      exit 1
+    fi
+    log_err "Invalid authorization key ($attempts/5)."
+  done
+}
+
+do_unlock_license() {
+  local pass norm hash
+  read -r -s -p "  Enter Venlix Unlock Password: " pass
+  echo ""
+  if [ -z "$pass" ]; then
+    log_err "Password required."
+    return 1
+  fi
+  norm=$(printf '%s' "$pass" | tr -d ' -' | tr '[:lower:]' '[:upper:]')
+  hash=$(printf '%s' "$norm" | sha256sum | awk '{print $1}')
+  if [ "$hash" != "$UNLOCK_PASS_SHA256" ]; then
+    log_err "Incorrect unlock password."
+    return 1
+  fi
+  if [ -f "$LICENSE_STATE_FILE" ]; then
+    sed -i 's/"blacklisted": *true/"blacklisted": false/; s/"authAttempts": *[0-9]*/"authAttempts": 0/' "$LICENSE_STATE_FILE" 2>/dev/null || true
+  fi
+  log_ok "Server unblocked. You can install the panel again."
+}
+
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     log_err "This script must be run as root. Please run with: sudo bash install.sh"
@@ -79,6 +146,9 @@ do_install() {
   echo "             🚀 Installing Venlix Nodes on $OS_NAME                "
   echo "================================================================="
   printf "${NC}\n"
+
+  # Auth gate: refuses install without a valid auth key (blacklists after 5 tries)
+  license_auth_gate
 
   # Step 1: System Packages
   log_info "Step 1/7: Updating APT package repositories..."
@@ -1058,11 +1128,12 @@ show_menu() {
     echo "   ${CYAN}[11]${NC} 🔐 SSL / HTTPS        Free auto-SSL via Caddy"
     echo "   ${CYAN}[12]${NC} 🔧 Change Ports       Panel / API / agent"
     echo "   ${CYAN}[13]${NC} 🎭 Host Identity      Hostname / CPU / GPU (neofetch)"
+    echo "   ${CYAN}[14]${NC} 🔓 Unlock Install      Clear install blacklist (unlock password)"
     echo ""
     echo "   ${RED}[0]${NC} 🚪 Exit"
     echo ""
     printf "${CYAN}─────────────────────────────────────────────────────────────${NC}\n"
-    read -r -p "  Select option ${BOLD}[0-13]${NC} › " CHOICE
+    read -r -p "  Select option ${BOLD}[0-14]${NC} › " CHOICE
 
     case "$CHOICE" in
       1)
@@ -1110,12 +1181,16 @@ show_menu() {
         do_identity
         read -r -p "Press Enter to return to menu..." _
         ;;
+      14)
+        do_unlock_license
+        read -r -p "Press Enter to return to menu..." _
+        ;;
       0)
         log_info "Exiting Venlix Nodes Installer. Goodbye!"
         exit 0
         ;;
       *)
-        log_warn "Invalid option '$CHOICE'. Please choose 0-12."
+        log_warn "Invalid option '$CHOICE'. Please choose 0-14."
         sleep 1.2
         ;;
     esac
@@ -1142,6 +1217,7 @@ if [ $# -gt 0 ]; then
     11|--ssl|--https|caddy) do_ssl ;;
     12|--ports|change-ports) do_change_ports ;;
     13|--identity|identity) do_identity ;;
+    14|--unlock|unlock) do_unlock_license ;;
     *) show_menu ;;
   esac
 else

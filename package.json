@@ -9,7 +9,8 @@
     "build": "node scripts/build.js",
     "createuser": "node scripts/createuser.js",
     "lint": "node scripts/build.js --check",
-    "test": "node scripts/test-auto-full.js"
+    "test": "node scripts/test-auto-full.js",
+    "license": "node scripts/license.js"
   },
   "engines": {
     "node": ">=18.0.0"
