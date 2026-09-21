@@ -237,6 +237,14 @@
   height: calc(100vh - 85px) !important;
   min-height: calc(100vh - 85px) !important;
 }
+body.term-fullscreen .sidebar,
+body.term-fullscreen .topbar,
+body.term-fullscreen .vx-discord-fab,
+body.term-fullscreen .vx-watermark,
+body.term-fullscreen #bgLayer,
+body.term-fullscreen #bgOverlay {
+  display: none !important;
+}
 </style>
 
 <div class="main">
@@ -886,6 +894,7 @@
     const pane = document.getElementById(paneId);
     if (!pane) return;
     pane.classList.toggle('fullscreen-pane');
+    document.body.classList.toggle('term-fullscreen', !!document.querySelector('.fullscreen-pane'));
     setTimeout(() => {
       if (paneId === 'paneTerminal') {
         const entry = terms.get(activeSid);
