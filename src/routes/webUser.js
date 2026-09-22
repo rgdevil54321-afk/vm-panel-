@@ -50,12 +50,20 @@ function loadVm(req, res, next) {
 
 router.get('/dashboard', (req, res) => {
   const vms = myVms(req.user);
+  const isAdmin = req.user.role === 'admin' || req.user.root_admin;
   const subVms = db.prepare(
     'SELECT v.* FROM subusers s JOIN vms v ON v.id = s.vm_id WHERE s.user_id = ?'
   ).all(req.user.id).map(vmService.serializeVm);
   const running = [...vms, ...subVms].filter((v) => v.status === 'running').length;
   const recentActivity = activity.listActivity({ user_id: req.user.id, limit: 8 });
-  render(res, 'dashboard', { vms, subVms, running, recentActivity });
+  // Admins also get every machine so the dashboard can show "My / All" servers.
+  let allVms = vms;
+  if (isAdmin) {
+    allVms = db.prepare(
+      'SELECT v.*, u.username AS owner_name, u.email AS owner_email FROM vms v JOIN users u ON u.id = v.owner_id ORDER BY v.id DESC'
+    ).all().map((r) => ({ ...vmService.serializeVm(r), mine: r.owner_id === req.user.id }));
+  }
+  render(res, 'dashboard', { vms, allVms, canSeeAll: isAdmin, running, recentActivity });
 });
 
 router.get('/servers/:id', loadVm, (req, res) => {

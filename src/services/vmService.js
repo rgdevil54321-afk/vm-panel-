@@ -1700,7 +1700,9 @@ async function getTmateSsh(vm, regen) {
 
 function update(vm, data, user) {
   const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes', 'owner_id',
-    'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix'];
+    'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix',
+    'os_type', 'region', 'tag', 'vmid', 'timezone', 'locale',
+    'neofetch_cpu', 'neofetch_mem', 'neofetch_disk', 'neofetch_gpu'];
   const set = [];
   const vals = {};
   for (const f of fields) {
@@ -1721,7 +1723,7 @@ function update(vm, data, user) {
   const needSeed = ['hostname', 'username', 'password', 'neofetch_cpu', 'neofetch_mem', 'neofetch_disk', 'neofetch_gpu',
     'cloudinit_files', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_userdata',
     'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix',
-    'timezone', 'locale', 'startup_script']
+    'os_type', 'timezone', 'locale', 'startup_script']
     .some((f) => data[f] !== undefined);
   if (needSeed) writeSeed(getVm(vm.id) || vm);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:update', details: data });

@@ -66,10 +66,18 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
         <%= t('dashboard.title') %>
       </div>
-      <span class="muted text-sm"><%= vms.length %> instance<%= vms.length === 1 ? '' : 's' %> configured</span>
+      <div class="flex" style="gap:10px;align-items:center">
+        <% if (canSeeAll && allVms.length > 0) { %>
+          <div id="vmTabs" style="display:flex;gap:2px;background:var(--glass);border:1px solid var(--border);border-radius:10px;padding:3px">
+            <button type="button" class="btn btn-sm vmf active" data-vmf="mine" onclick="setFilter('mine', this)">My Servers</button>
+            <button type="button" class="btn btn-sm vmf" data-vmf="all" onclick="setFilter('all', this)">All Servers</button>
+          </div>
+        <% } %>
+        <span class="muted text-sm" id="vmCount"><%= vms.length %> instance<%= vms.length === 1 ? '' : 's' %> configured</span>
+      </div>
     </div>
 
-    <% if (vms.length === 0) { %>
+    <% if (vms.length === 0 && !allVms.length) { %>
       <div class="empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
         <p style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px">No servers deployed yet</p>
@@ -84,6 +92,7 @@
           <thead>
             <tr>
               <th>Instance</th>
+              <% if (canSeeAll) { %><th>Owner</th><% } %>
               <th>OS / Distro</th>
               <th>SSH &amp; Ports</th>
               <th>Specs (vCPU / RAM / Disk)</th>
@@ -92,8 +101,8 @@
             </tr>
           </thead>
           <tbody>
-          <% for (const v of vms) { %>
-            <tr id="vm-row-<%= v.id %>">
+          <% for (const v of (canSeeAll && allVms.length ? allVms : vms)) { %>
+            <tr id="vm-row-<%= v.id %>" data-mine="<%= v.mine ? 1 : 0 %>">
               <td>
                 <div class="flex" style="gap:10px">
                   <div style="width:34px;height:34px;border-radius:10px;background:var(--glass);display:grid;place-items:center;border:1px solid var(--border)">
@@ -105,6 +114,11 @@
                   </div>
                 </div>
               </td>
+              <% if (canSeeAll) { %>
+                <td>
+                  <% if (v.mine) { %><span class="pill pill-green">You</span><% } else { %><span class="muted text-sm"><%= v.owner_name || '—' %></span><% } %>
+                </td>
+              <% } %>
               <td>
                 <span class="pill pill-blue font-bold"><%= v.os_type || 'linux' %></span>
               </td>
@@ -205,6 +219,28 @@
 <%- include('../partials/foot') %>
 
 <script>
+let curFilter = 'mine';
+
+function applyFilter() {
+  let n = 0;
+  document.querySelectorAll('tbody tr[data-mine]').forEach((tr) => {
+    const mine = tr.getAttribute('data-mine') === '1';
+    const show = curFilter === 'all' || mine;
+    tr.style.display = show ? '' : 'none';
+    if (show) n++;
+  });
+  const el = document.getElementById('vmCount');
+  if (el) {
+    el.textContent = n + ' instance' + (n === 1 ? '' : 's') + (curFilter === 'all' ? ' across all servers' : ' configured');
+  }
+}
+
+function setFilter(f, btn) {
+  curFilter = f;
+  document.querySelectorAll('#vmTabs .vmf').forEach((b) => b.classList.toggle('active', b === btn));
+  applyFilter();
+}
+
 async function power(id, action) {
   try {
     VP.toast(`Sending ${action} command...`, 'info');
@@ -222,4 +258,6 @@ document.getElementById('globalSearch')?.addEventListener('input', function () {
     tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
 });
+
+<%= canSeeAll && allVms.length > 0 ? 'applyFilter();' : '' %>
 </script>

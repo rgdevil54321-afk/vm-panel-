@@ -30,6 +30,7 @@
       <% } %>
       <a class="btn btn-sm" href="/servers/<%= vm.id %>/console">Terminal</a>
       <a class="btn btn-sm" href="/servers/<%= vm.id %>/console?tab=bootlog">Live Boot Logs</a>
+      <button class="btn btn-sm btn-primary" onclick="openEdit()">Edit Server</button>
       <button class="btn btn-sm btn-danger" onclick="del()">Delete Server</button>
     </div>
   </div>
@@ -143,7 +144,7 @@
                 </select>
               </td>
             </tr>
-            <tr><td class="muted">IPv4 Address</td><td><input id="net_ip_address" value="<%= vm.ip_address || '' %>" placeholder="10.10.0.5" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv4 Address</td><td><input id="net_ip_address" list="hostIps" value="<%= vm.ip_address || '' %>" placeholder="10.10.0.5 (pick from host, or type)" style="width:100%;padding:8px 10px;border-radius:8px"/><datalist id="hostIps"></datalist></td></tr>
             <tr><td class="muted">IPv4 Gateway</td><td><input id="net_ip_gateway" value="<%= vm.ip_gateway || '' %>" placeholder="10.10.0.1" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
             <tr><td class="muted">IPv4 Prefix</td><td><input id="net_ip_prefix" value="<%= vm.ip_prefix || '24' %>" placeholder="24" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
             <tr><td class="muted">IPv6 Address</td><td><input id="net_ipv6_address" value="<%= vm.ipv6_address || '' %>" placeholder="2001:db8::5" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
@@ -154,8 +155,12 @@
       </div>
       <div class="flex-between" style="gap:8px;margin-top:10px">
         <span class="muted text-sm">Applies on next boot (Stop → Start). The node-port SSH above keeps working regardless — setting a dedicated IP can't break the terminal.</span>
-        <button type="button" class="btn btn-primary" onclick="saveNetwork(this)">Save Network</button>
+        <div class="flex" style="gap:8px;flex-shrink:0">
+          <button type="button" class="btn" onclick="loadHostNet(this)">Detect Host IP</button>
+          <button type="button" class="btn btn-primary" onclick="saveNetwork(this)">Save Network</button>
+        </div>
       </div>
+      <div id="hostNetInfo" class="muted text-sm mono" style="margin-top:8px;display:none"></div>
     </div>
 
     <!-- Related Components -->
@@ -239,10 +244,141 @@
 </div>
 <% } %>
 
+<!-- Edit Server Modal -->
+<div id="editModal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:210;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
+    <div class="card" style="width:min(660px,94vw);max-height:88vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+      <div class="flex-between mb-3">
+        <h3 style="font-size:18px;font-weight:700;margin:0">Edit <%= vm.name %></h3>
+        <button type="button" class="btn btn-sm" onclick="closeEdit()">✕</button>
+      </div>
+
+      <div class="card-title mb-2" style="font-size:15px">Basic &amp; Credentials</div>
+      <div class="grid grid-2" style="gap:12px">
+        <div class="form-group" style="margin:0"><label>Name</label><input id="ed_name" class="input" value="<%= vm.name %>"/></div>
+        <div class="form-group" style="margin:0"><label>OS / Distro</label>
+          <select id="ed_os_type" class="input">
+            <% for (const o of osList) { %>
+              <option value="<%= o[1] %>" <%= vm.os_type === o[1] ? 'selected' : '' %>><%= o[0] %></option>
+            <% } %>
+            <% if (!osList.some((o) => o[1] === vm.os_type)) { %><option value="<%= vm.os_type %>" selected><%= vm.os_type || 'linux' %></option><% } %>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>Hostname</label><input id="ed_hostname" class="input" value="<%= vm.hostname || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>SSH Username</label><input id="ed_username" class="input" value="<%= vm.username || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>SSH Password</label><input id="ed_password" class="input" value="<%= vm.password || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>Region</label><input id="ed_region" class="input" value="<%= vm.region || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>Tag</label><input id="ed_tag" class="input" value="<%= vm.tag || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>VM ID (vmid)</label><input id="ed_vmid" class="input" value="<%= vm.vmid || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>Timezone</label><input id="ed_timezone" class="input" value="<%= vm.timezone || '' %>" placeholder="UTC"/></div>
+        <div class="form-group" style="margin:0"><label>Locale</label><input id="ed_locale" class="input" value="<%= vm.locale || '' %>" placeholder="en_US.UTF-8"/></div>
+      </div>
+
+      <div class="card-title mb-2 mt-3" style="font-size:15px">Resources</div>
+      <div class="grid grid-2" style="gap:12px">
+        <div class="form-group" style="margin:0"><label>Memory (MB)</label><input id="ed_memory" class="input" type="number" value="<%= vm.memory %>"/></div>
+        <div class="form-group" style="margin:0"><label>vCPUs</label><input id="ed_cpus" class="input" type="number" value="<%= vm.cpus %>"/></div>
+        <div class="form-group" style="margin:0"><label>Disk Size</label><input id="ed_disk_size" class="input" value="<%= vm.disk_size %>"/></div>
+        <div class="form-group" style="margin:0;display:flex;align-items:center;gap:14px;padding-top:26px">
+          <label class="check" style="cursor:pointer"><input type="checkbox" id="ed_gui_mode" <%= vm.gui_mode ? 'checked' : '' %>/><span>GUI Mode</span></label>
+          <label class="check" style="cursor:pointer"><input type="checkbox" id="ed_start_on_boot" <%= vm.start_on_boot ? 'checked' : '' %>/><span>Start on Boot</span></label>
+        </div>
+        <div class="form-group" style="margin:0"><label>Startup Command</label><input id="ed_startup_command" class="input" value="<%= vm.startup_command || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>Notes</label><textarea id="ed_notes" class="input" rows="2"><%= vm.notes || '' %></textarea></div>
+      </div>
+
+      <div class="card-title mb-2 mt-3" style="font-size:15px">Neofetch Spoof (shown inside the VM)</div>
+      <div class="grid grid-2" style="gap:12px">
+        <div class="form-group" style="margin:0"><label>CPU</label><input id="ed_nf_cpu" class="input" placeholder="Intel Xeon E5-2697 v4 @ 2.30GHz" value="<%= vm.neofetch_cpu || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>GPU</label><input id="ed_nf_gpu" class="input" placeholder="NVIDIA GeForce RTX 4090" value="<%= vm.neofetch_gpu || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>Memory</label><input id="ed_nf_mem" class="input" placeholder="64GiB" value="<%= vm.neofetch_mem || '' %>"/></div>
+        <div class="form-group" style="margin:0"><label>Disk</label><input id="ed_nf_disk" class="input" placeholder="2TB (nvme)" value="<%= vm.neofetch_disk || '' %>"/></div>
+      </div>
+
+      <div class="flex right" style="gap:8px;margin-top:18px">
+        <span class="muted text-sm" style="margin-right:auto;align-self:center">Password / spoof / OS apply on the next Start. Disk resize keeps existing data.</span>
+        <button type="button" class="btn" onclick="closeEdit()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveEdit(this)">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
 
 <script>
+function openEdit() {
+  const m = document.getElementById('editModal');
+  if (m) m.style.display = 'block';
+}
+
+function closeEdit() {
+  const m = document.getElementById('editModal');
+  if (m) m.style.display = 'none';
+}
+
+async function saveEdit(btn) {
+  const val = (id) => (document.getElementById(id) || {}).value || '';
+  const chk = (id) => !!(document.getElementById(id) || {}).checked;
+  const body = {
+    name: val('ed_name'),
+    os_type: val('ed_os_type'),
+    hostname: val('ed_hostname'),
+    username: val('ed_username'),
+    password: val('ed_password'),
+    region: val('ed_region'),
+    tag: val('ed_tag'),
+    vmid: val('ed_vmid'),
+    timezone: val('ed_timezone'),
+    locale: val('ed_locale'),
+    memory: val('ed_memory'),
+    cpus: val('ed_cpus'),
+    disk_size: val('ed_disk_size'),
+    gui_mode: chk('ed_gui_mode'),
+    start_on_boot: chk('ed_start_on_boot'),
+    startup_command: val('ed_startup_command'),
+    notes: val('ed_notes'),
+    neofetch_cpu: val('ed_nf_cpu'),
+    neofetch_mem: val('ed_nf_mem'),
+    neofetch_disk: val('ed_nf_disk'),
+    neofetch_gpu: val('ed_nf_gpu'),
+  };
+  try {
+    if (btn) btn.disabled = true;
+    await VP.api('/admin/servers/<%= vm.id %>/update', { method: 'POST', body });
+    VP.toast('Server updated — seed refresh applies on next Start', 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function loadHostNet(btn) {
+  const info = document.getElementById('hostNetInfo');
+  const dl = document.getElementById('hostIps');
+  try {
+    if (btn) btn.disabled = true;
+    const d = await VP.api('/admin/host/network');
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value.trim()) el.value = v; };
+    const ips = (d.addresses || []).map((a) => a.cidr);
+    set('net_ip_gateway', d.gateway);
+    if (d.addresses && d.addresses[0]) set('net_ip_prefix', String(d.addresses[0].prefix));
+    if (dl) dl.innerHTML = ips.map((x) => '<option value="' + x + '"></option>').join('');
+    let msg = 'Detected host: ' + (d.primary_interface || '?') + ' · ' + (ips.join(', ') || 'no IPv4 on host');
+    if (d.gateway) msg += ' · gateway ' + d.gateway;
+    if (d.dns && d.dns.length) msg += ' · DNS ' + d.dns.join(', ');
+    if (info) { info.textContent = msg; info.style.display = ''; }
+    VP.toast('Host network detected — pick an IP above or type your own', 'success');
+  } catch (e) {
+    VP.toast('Detection failed: ' + e.message, 'error');
+    if (info) { info.textContent = ''; info.style.display = 'none'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function openTransferModal() {
   const m = document.getElementById('transferModal');
   if (m) m.style.display = 'block';

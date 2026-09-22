@@ -302,7 +302,7 @@
         <div class="grid grid-4" style="gap:12px">
           <div class="form-group" style="margin:0">
             <label>Network Mode</label>
-            <select id="fIpMode" class="input" onchange="updateSummary()">
+            <select id="fIpMode" class="input" onchange="updateSummary(); maybeDetectNet()">
               <option value="nat" selected>NAT (default)</option>
               <option value="ipv4_shared">IPv4 shared</option>
               <option value="ipv4_dedicated">IPv4 dedicated</option>
@@ -311,7 +311,7 @@
             </select>
             <div class="form-hint">Non-NAT adds the static IP to the guest on first boot. SSH forwarding via the node port stays intact.</div>
           </div>
-          <div class="form-group" style="margin:0"><label>IPv4 Address</label><input id="fIpAddr" class="input" placeholder="10.10.0.5"/></div>
+          <div class="form-group" style="margin:0"><label>IPv4 Address</label><input id="fIpAddr" class="input" placeholder="10.10.0.5" list="cHostIps"/><datalist id="cHostIps"></datalist></div>
           <div class="form-group" style="margin:0"><label>IPv4 Gateway</label><input id="fIpGw" class="input" placeholder="10.10.0.1"/></div>
           <div class="form-group" style="margin:0"><label>IPv4 Prefix</label><input id="fIpPrefix" class="input" value="24"/></div>
           <div class="form-group" style="margin:0"><label>IPv6 Address</label><input id="fIp6Addr" class="input" placeholder="2001:db8::5"/></div>
@@ -723,6 +723,21 @@ async function createVm() {
 }
 
 // Initial password & summary setup
+let _netDetected = false;
+async function maybeDetectNet() {
+  const mode = document.getElementById('fIpMode').value;
+  if (mode === 'nat' || _netDetected) return;
+  try {
+    const d = await VP.api('/admin/host/network');
+    const fill = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value.trim()) el.value = v; };
+    fill('fIpGw', d.gateway);
+    if (d.addresses && d.addresses[0]) fill('fIpPrefix', String(d.addresses[0].prefix || '24'));
+    const dl = document.getElementById('cHostIps');
+    if (dl) dl.innerHTML = (d.addresses || []).map((a) => '<option value="' + a.cidr + '"></option>').join('');
+    _netDetected = true;
+  } catch (_) {}
+}
+
 const urlParams = new URLSearchParams(window.location.search);
 const targetOwner = urlParams.get('owner_id');
 if (targetOwner && document.getElementById('fOwner')) {

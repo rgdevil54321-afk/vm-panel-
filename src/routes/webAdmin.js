@@ -174,6 +174,50 @@ router.post('/admin/servers/:id/network', (req, res) => {
   }
 });
 
+// Full VM edit (basic + resources + spoof). Network fields live in /network.
+router.post('/admin/servers/:id/update', (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  const b = req.body || {};
+  const dirty = {
+    name: b.name,
+    hostname: b.hostname,
+    username: b.username,
+    password: b.password,
+    os_type: b.os_type,
+    region: b.region,
+    tag: b.tag,
+    vmid: b.vmid,
+    memory: b.memory,
+    cpus: b.cpus,
+    disk_size: b.disk_size,
+    gui_mode: b.gui_mode ? 1 : 0,
+    start_on_boot: b.start_on_boot ? 1 : 0,
+    startup_command: b.startup_command,
+    notes: b.notes,
+    timezone: b.timezone,
+    locale: b.locale,
+    neofetch_cpu: b.neofetch_cpu,
+    neofetch_mem: b.neofetch_mem,
+    neofetch_disk: b.neofetch_disk,
+    neofetch_gpu: b.neofetch_gpu,
+  };
+  try {
+    const updated = vmService.update(vm, dirty, req.user);
+    res.json({ ok: true, vm: vmService.serializeVm(updated) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/admin/host/network', (req, res) => {
+  try {
+    res.json({ ok: true, ...require('../services/hostDetect').detectNetwork() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/admin/servers/:id/tmate-status', (req, res) => {
   const vm = vmService.getVm(req.params.id);
   if (!vm) return res.status(404).json({ error: 'Server not found' });
