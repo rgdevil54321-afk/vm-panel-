@@ -73,10 +73,11 @@ function logoRows(text) {
     const g = BLOCK_FONT[ch] || BLOCK_FONT['?'];
     for (let r = 0; r < 5; r++) base[r] += (i ? ' ' : '') + (g[r] || '    ');
   });
-  // Scale 3x in both directions so the logo is neofetch-sized (15 rows tall).
+  // Scale wide: 6x horizontal, 3x tall so the logo reads like neofetch's
+  // chunky banner (wide cells) without getting any taller than before.
   const rows = [];
   for (const r of base) {
-    const wide = r.replace(/./g, (c) => c + c + c);
+    const wide = r.replace(/./g, (c) => c.repeat(6));
     rows.push(wide, wide, wide);
   }
   return rows;
@@ -171,7 +172,7 @@ function infoLines(info) {
     { isSep: true, width: title.length },
     { key: 'OS',      val: info.os },
   ];
-  if (info.node) lines.push({ key: 'Host', val: info.node });
+  if (info.node || info.host) lines.push({ key: 'Host', val: info.node || info.host || 'vps' });
   lines.push({ key: 'Kernel',  val: info.kernel });
   lines.push({ key: 'Uptime',  val: info.uptime });
   lines.push({ key: 'Packages', val: info.packages });
@@ -188,13 +189,13 @@ function infoLines(info) {
 
 function colorBar() {
   const c = A.barColors;
-  const row1 = c.slice(0, 8).map((x) => x + '███').join('') + A.reset;
-  const row2 = c.slice(8, 16).map((x) => x + '███').join('') + A.reset;
+  const row1 = c.slice(0, 8).map((x) => x + '████').join('') + A.reset;
+  const row2 = c.slice(8, 16).map((x) => x + '████').join('') + A.reset;
   return row1 + '\n' + row2;
 }
 
 function plainBar() {
-  return '████████████████████████\n████████████████████████';
+  return '████████████████████████████████████████████████████████\n████████████████████████████████████████████████████████';
 }
 
 function renderPlain() {
