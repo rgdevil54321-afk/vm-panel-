@@ -821,32 +821,29 @@ function writeSeed(vm) {
   } catch (_) {}
 
   // ---- Static IP assignment (shared/dedicated IPv4, IPv6, dual) ----
+  // DHCP stays ENABLED on purpose: the panel's own SSH path (node:ssh_port →
+  // QEMU hostfwd → guest 22) depends on the slirp DHCP lease (10.0.2.x). The
+  // static address is added as a secondary on the same NIC so a dedicated IP
+  // never breaks the web console / terminal connection.
   let networkConfig = null;
   const mode = String(vm.ip_mode || 'nat');
   const v4 = String(vm.ip_address || '').trim();
-  const v4gw = String(vm.ip_gateway || '').trim();
   const v4prefix = String(vm.ip_prefix || '').trim() || '24';
   const v6 = String(vm.ipv6_address || '').trim();
-  const v6gw = String(vm.ipv6_gateway || '').trim();
   const v6prefix = String(vm.ipv6_prefix || '').trim() || '64';
   if (mode !== 'nat' && (v4 || v6)) {
     const addresses = [];
     if (mode !== 'ipv6' && v4) addresses.push(`"${v4}/${v4prefix}"`);
     if ((mode === 'ipv6' || mode === 'dual') && v6) addresses.push(`"${v6}/${v6prefix}"`);
-    const routes = [];
-    if (v4gw && mode !== 'ipv6') routes.push(`      - to: 0.0.0.0/0\n        via: ${v4gw}`);
-    if (v6gw && (mode === 'ipv6' || mode === 'dual')) routes.push(`      - to: ::/0\n        via: ${v6gw}`);
     networkConfig = `version: 2
 ethernets:
   vnet0:
     match:
       name: "e*"
-    dhcp4: false
+    dhcp4: true
     dhcp6: false
     addresses:
     ${addresses.map((a) => '      - ' + a).join('\n')}
-    routes:
-${routes.join('\n')}
     nameservers:
       addresses: [1.1.1.1, 8.8.8.8]
 `;
@@ -1702,7 +1699,8 @@ async function getTmateSsh(vm, regen) {
 }
 
 function update(vm, data, user) {
-  const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes', 'owner_id'];
+  const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes', 'owner_id',
+    'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix'];
   const set = [];
   const vals = {};
   for (const f of fields) {
@@ -1711,6 +1709,7 @@ function update(vm, data, user) {
       if (f === 'port_forwards' && Array.isArray(data[f])) vals[f] = JSON.stringify(data[f]);
       else if (f === 'gui_mode' || f === 'start_on_boot') vals[f] = data[f] ? 1 : 0;
       else if (f === 'owner_id') vals[f] = parseInt(data[f], 10);
+      else if (f === 'ip_mode') vals[f] = ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'].includes(String(data[f] || '').trim()) ? String(data[f]).trim() : 'nat';
       else vals[f] = data[f];
     }
   }
@@ -1721,7 +1720,8 @@ function update(vm, data, user) {
   }
   const needSeed = ['hostname', 'username', 'password', 'neofetch_cpu', 'neofetch_mem', 'neofetch_disk', 'neofetch_gpu',
     'cloudinit_files', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_userdata',
-    'ip_mode', 'ip_address', 'ip_gateway', 'ipv6_address', 'timezone', 'locale', 'startup_script']
+    'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix',
+    'timezone', 'locale', 'startup_script']
     .some((f) => data[f] !== undefined);
   if (needSeed) writeSeed(getVm(vm.id) || vm);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:update', details: data });

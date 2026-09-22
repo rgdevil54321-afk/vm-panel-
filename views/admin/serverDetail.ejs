@@ -3,6 +3,10 @@
 <%- include('../partials/topbar') %>
 <%- include('../partials/sidebar') %>
 <div class="main">
+  <%
+    const _v4 = String(vm.ip_address || '').trim();
+    const _static = ['ipv4_shared', 'ipv4_dedicated', 'dual'].includes(String(vm.ip_mode || '')) && !!_v4;
+  %>
   <div class="flex-between mb-3">
     <div>
       <div class="muted text-sm" style="margin-bottom:2px">
@@ -103,7 +107,11 @@
               </td>
             </tr>
             <tr><td class="muted">OS / Codename</td><td><span class="pill pill-blue font-bold"><%= vm.os_type %> <%= vm.codename %></span></td></tr>
-            <tr><td class="muted">SSH Command</td><td><span class="mono" id="sshcmd" data-secret>ssh -p <%= vm.ssh_port %> <%= vm.username %>@<%= vm.node_host || 'localhost' %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshcmd', this)">Copy</button> <button type="button" class="btn btn-sm btn-primary" style="font-size:11.5px;padding:3px 8px" onclick="loadTmate(false, this)">Get Remote SSH (tmate)</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="loadTmate(true, this)" title="Start a fresh tmate session and get a new address">Regenerate SSH</button></td></tr>
+            <tr><td class="muted">SSH Command</td><td>
+              <span class="mono" id="sshcmd" data-secret>ssh -p <%= _static ? 22 : vm.ssh_port %> <%= vm.username %>@<%= _static ? _v4 : (vm.node_host || 'localhost') %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshcmd', this)">Copy</button>
+              <% if (_static) { %><div class="muted text-sm mono" style="margin-top:3px">fallback (always works): ssh -p <%= vm.ssh_port %> <%= vm.username %>@<%= vm.node_host || 'localhost' %></div><% } %>
+              <div style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" style="font-size:11.5px;padding:3px 8px" onclick="loadTmate(false, this)">Get Remote SSH (tmate)</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="loadTmate(true, this)" title="Start a fresh tmate session and get a new address">Regenerate SSH</button></div>
+            </td></tr>
             <tr><td class="muted">Terminal</td><td><a href="/servers/<%= vm.id %>/console" class="btn btn-sm">Launch Web Terminal</a></td></tr>
             <tr><td class="muted">SSH Password</td><td><span class="mono" id="sshpass" data-secret><%= vm.password %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshpass', this)">Copy</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="regenPass(this)">Regenerate</button></td></tr>
             <tr><td class="muted">Disk Image File</td><td class="mono truncate text-sm" style="max-width:240px"><%= vm.img_file %></td></tr>
@@ -111,6 +119,42 @@
             <tr><td class="muted">Created At</td><td class="muted"><%= new Date(vm.created_at).toLocaleString() %></td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Network Configuration -->
+    <div class="card" style="margin-top:18px">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+        Network Configuration
+      </div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr>
+              <td class="muted" style="width:130px">Network Mode</td>
+              <td>
+                <select id="net_ip_mode" style="width:100%;padding:9px 10px;border-radius:8px">
+                  <option value="nat" <%= vm.ip_mode === 'nat' ? 'selected' : '' %>>NAT (default)</option>
+                  <option value="ipv4_shared" <%= vm.ip_mode === 'ipv4_shared' ? 'selected' : '' %>>IPv4 shared</option>
+                  <option value="ipv4_dedicated" <%= vm.ip_mode === 'ipv4_dedicated' ? 'selected' : '' %>>IPv4 dedicated</option>
+                  <option value="ipv6" <%= vm.ip_mode === 'ipv6' ? 'selected' : '' %>>IPv6 only</option>
+                  <option value="dual" <%= vm.ip_mode === 'dual' ? 'selected' : '' %>>Dual stack</option>
+                </select>
+              </td>
+            </tr>
+            <tr><td class="muted">IPv4 Address</td><td><input id="net_ip_address" value="<%= vm.ip_address || '' %>" placeholder="10.10.0.5" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv4 Gateway</td><td><input id="net_ip_gateway" value="<%= vm.ip_gateway || '' %>" placeholder="10.10.0.1" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv4 Prefix</td><td><input id="net_ip_prefix" value="<%= vm.ip_prefix || '24' %>" placeholder="24" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv6 Address</td><td><input id="net_ipv6_address" value="<%= vm.ipv6_address || '' %>" placeholder="2001:db8::5" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv6 Gateway</td><td><input id="net_ipv6_gateway" value="<%= vm.ipv6_gateway || '' %>" placeholder="2001:db8::1" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv6 Prefix</td><td><input id="net_ipv6_prefix" value="<%= vm.ipv6_prefix || '64' %>" placeholder="64" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex-between" style="gap:8px;margin-top:10px">
+        <span class="muted text-sm">Applies on next boot (Stop → Start). The node-port SSH above keeps working regardless — setting a dedicated IP can't break the terminal.</span>
+        <button type="button" class="btn btn-primary" onclick="saveNetwork(this)">Save Network</button>
       </div>
     </div>
 
@@ -224,6 +268,28 @@ async function submitTransfer() {
     setTimeout(() => location.reload(), 700);
   } catch (e) {
     VP.toast(e.message, 'error');
+  }
+}
+
+async function saveNetwork(btn) {
+  const get = (id) => (document.getElementById(id) || {}).value || '';
+  const body = {
+    ip_mode: get('net_ip_mode'),
+    ip_address: get('net_ip_address').trim(),
+    ip_gateway: get('net_ip_gateway').trim(),
+    ip_prefix: get('net_ip_prefix').trim(),
+    ipv6_address: get('net_ipv6_address').trim(),
+    ipv6_gateway: get('net_ipv6_gateway').trim(),
+    ipv6_prefix: get('net_ipv6_prefix').trim(),
+  };
+  try {
+    if (btn) btn.disabled = true;
+    await VP.api('/admin/servers/<%= vm.id %>/network', { method: 'POST', body });
+    VP.toast('Network saved — applies on next boot (Stop → Start)', 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 

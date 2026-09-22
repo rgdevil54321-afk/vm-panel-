@@ -154,6 +154,26 @@ router.post('/admin/servers/:id/transfer', express.json(), (req, res) => {
   }
 });
 
+router.post('/admin/servers/:id/network', (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  const b = req.body || {};
+  try {
+    const updated = vmService.update(vm, {
+      ip_mode: b.ip_mode,
+      ip_address: b.ip_address,
+      ip_gateway: b.ip_gateway,
+      ip_prefix: b.ip_prefix,
+      ipv6_address: b.ipv6_address,
+      ipv6_gateway: b.ipv6_gateway,
+      ipv6_prefix: b.ipv6_prefix,
+    }, req.user);
+    res.json({ ok: true, vm: vmService.serializeVm(updated) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/admin/servers/:id/tmate-status', (req, res) => {
   const vm = vmService.getVm(req.params.id);
   if (!vm) return res.status(404).json({ error: 'Server not found' });
