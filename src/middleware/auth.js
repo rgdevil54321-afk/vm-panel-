@@ -1,5 +1,14 @@
 const authService = require('../services/authService');
 const { settings } = require('../lib/db');
+const crypto = require('crypto');
+
+function ensurePanelKey() {
+  const current = String(settings.get('api.panel_key') || '');
+  if (current) return current;
+  const key = 'vp_panel_' + crypto.randomBytes(24).toString('base64url');
+  settings.set('api.panel_key', key);
+  return key;
+}
 
 function getUserFromReq(req) {
   const candidates = [];
@@ -17,6 +26,13 @@ function getUserFromReq(req) {
   }
 
   for (const token of candidates) {
+    if (token.startsWith('vp_panel_')) {
+      if (token === ensurePanelKey()) {
+        req.apiPanelKey = true;
+        return { id: 0, username: 'panel-api', email: 'api@panel.local', name: 'Panel API', role: 'admin', root_admin: 1, suspended: false, verified: true, credits: 0, discord_id: null };
+      }
+      continue;
+    }
     if (token.startsWith('vp_live_')) {
       const apiKey = require('../services/apiKeyService');
       const found = apiKey.findUserByKey(token);
@@ -96,4 +112,4 @@ function apiAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, optionalAuth, requireAdmin, apiAuth, apiAdmin, getUserFromReq };
+module.exports = { requireAuth, optionalAuth, requireAdmin, apiAuth, apiAdmin, getUserFromReq, ensurePanelKey };

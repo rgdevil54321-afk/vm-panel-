@@ -255,6 +255,7 @@ async function getNodeDetail(nodeId) {
     throw new Error('Node offline: ' + (nodeRegistry.nodeError(nodeId) || 'unreachable'));
   }
   const vms = await nodeRegistry.listVmsOnNode(node).catch(() => []);
+  if (stats && stats.stats && stats.stats.network === undefined) stats.stats.network = { rx_bytes: 0, tx_bytes: 0, rx_kbps: 0, tx_kbps: 0 };
   return { node, stats, vms };
 }
 

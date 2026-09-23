@@ -23,7 +23,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= vms.length %></div>
+        <div class="stat-value" id="heroTotal"><%= vms.length %></div>
         <div class="stat-label">Total Servers</div>
       </div>
     </div>
@@ -33,7 +33,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       </div>
       <div>
-        <div class="stat-value" style="color:#34d399"><%= running %></div>
+        <div class="stat-value" style="color:#34d399" id="heroRunning"><%= running %></div>
         <div class="stat-label">Active &amp; Online</div>
       </div>
     </div>
@@ -43,7 +43,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= vms.reduce((a,v)=>a+v.cpus,0) %></div>
+        <div class="stat-value" id="heroCpu"><%= vms.reduce((a,v)=>a+v.cpus,0) %></div>
         <div class="stat-label">vCPU Cores</div>
       </div>
     </div>
@@ -53,7 +53,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= (vms.reduce((a,v)=>a+v.memory,0)/1024).toFixed(1) %> GB</div>
+        <div class="stat-value" id="heroRam"><%= (vms.reduce((a,v)=>a+v.memory,0)/1024).toFixed(1) %> GB</div>
         <div class="stat-label">RAM Allocated</div>
       </div>
     </div>
@@ -102,7 +102,7 @@
           </thead>
           <tbody>
           <% for (const v of (canSeeAll && allVms.length ? allVms : vms)) { %>
-            <tr id="vm-row-<%= v.id %>" data-mine="<%= v.mine ? 1 : 0 %>">
+            <tr id="vm-row-<%= v.id %>" data-mine="<%= v.mine ? 1 : 0 %>" data-vcpu="<%= v.cpus || 0 %>" data-ram="<%= v.memory || 0 %>" data-status="<%= v.status %>">
               <td>
                 <div class="flex" style="gap:10px">
                   <div style="width:34px;height:34px;border-radius:10px;background:var(--glass);display:grid;place-items:center;border:1px solid var(--border)">
@@ -222,17 +222,26 @@
 let curFilter = 'mine';
 
 function applyFilter() {
-  let n = 0;
+  const q = (document.getElementById('globalSearch')?.value || '').toLowerCase().trim();
   document.querySelectorAll('tbody tr[data-mine]').forEach((tr) => {
     const mine = tr.getAttribute('data-mine') === '1';
-    const show = curFilter === 'all' || mine;
-    tr.style.display = show ? '' : 'none';
-    if (show) n++;
+    const inFilter = curFilter === 'all' || mine;
+    tr.style.display = (!inFilter || (q && !tr.textContent.toLowerCase().includes(q))) ? 'none' : '';
   });
+  refreshHero();
+}
+
+function refreshHero() {
+  const rows = Array.from(document.querySelectorAll('tbody tr[data-mine]')).filter((tr) => tr.style.display !== 'none');
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('heroTotal', rows.length);
+  set('heroRunning', rows.filter((tr) => tr.getAttribute('data-status') === 'running').length);
+  const cpu = rows.reduce((a, tr) => a + parseInt(tr.getAttribute('data-vcpu') || '0', 10), 0);
+  const ram = rows.reduce((a, tr) => a + parseInt(tr.getAttribute('data-ram') || '0', 10), 0);
+  set('heroCpu', cpu);
+  set('heroRam', (ram / 1024).toFixed(1) + ' GB');
   const el = document.getElementById('vmCount');
-  if (el) {
-    el.textContent = n + ' instance' + (n === 1 ? '' : 's') + (curFilter === 'all' ? ' across all servers' : ' configured');
-  }
+  if (el) el.textContent = rows.length + ' instance' + (rows.length === 1 ? '' : 's') + (curFilter === 'all' ? ' across all servers' : ' configured');
 }
 
 function setFilter(f, btn) {
@@ -252,12 +261,7 @@ async function power(id, action) {
   }
 }
 
-document.getElementById('globalSearch')?.addEventListener('input', function () {
-  const q = this.value.toLowerCase().trim();
-  document.querySelectorAll('tbody tr').forEach((tr) => {
-    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
-  });
-});
+document.getElementById('globalSearch')?.addEventListener('input', applyFilter);
 
-<%= canSeeAll && allVms.length > 0 ? 'applyFilter();' : '' %>
+applyFilter();
 </script>

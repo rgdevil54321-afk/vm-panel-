@@ -197,6 +197,9 @@ router.post('/admin/servers/:id/update', (req, res) => {
     notes: b.notes,
     timezone: b.timezone,
     locale: b.locale,
+    vps_type: b.vps_type,
+    expires_at: b.expires_at,
+    backup_slots: b.backup_slots,
     neofetch_cpu: b.neofetch_cpu,
     neofetch_mem: b.neofetch_mem,
     neofetch_disk: b.neofetch_disk,
@@ -207,6 +210,20 @@ router.post('/admin/servers/:id/update', (req, res) => {
     res.json({ ok: true, vm: vmService.serializeVm(updated) });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Renew / reset machine expiry. days>0 extends from now, to=ISO sets exact date,
+// days=0 clears expiry (never expires). Clears expiry-suspension when machine was expired.
+router.post('/admin/servers/:id/renew', (req, res) => {
+  const vm = vmService.getVm(req.params.id);
+  if (!vm) return res.status(404).json({ error: 'Server not found' });
+  const b = req.body || {};
+  try {
+    const updated = vmService.renewExpiry(vm, { days: b.days, to: b.to || null, actor: req.user });
+    res.json({ ok: true, vm: vmService.serializeVm(updated) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 

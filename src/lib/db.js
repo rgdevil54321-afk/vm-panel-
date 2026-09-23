@@ -378,6 +378,18 @@ const defaultSettings = {
   'vm.default_cpus': '2',
   'vm.default_disk': '20G',
   'vm.default_os': 'Ubuntu 24.04',
+  'vm.default_vps_type': 'kvm',
+  'vm.default_backup_slots': '5',
+  'machine.expiry_enabled': '1',
+  'machine.default_expiry_days': '0',
+  'api.panel_key': '',            // master key (vp_panel_...) for bots/APIs; auto-generated on first access
+  'transfer.daily_enabled': '1',  // daily DB transfer code + optional bot DM
+  'panel.model_name': 'Venlix Cloud Node',
+  'panel.resolution_name': '1920x1080',
+  'panel.de_name': 'GNOME',
+  'panel.wm_name': 'Xfwm4',
+  'panel.theme_name': 'Adwaita-dark [GTK2/3]',
+  'panel.terminal_name': 'xterm-256color',
   'vm.os_list': JSON.stringify([
     ['Ubuntu 22.04', 'ubuntu', 'jammy', 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img', 'ubuntu', 'root'],
     ['Ubuntu 24.04', 'ubuntu', 'noble', 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img', 'ubuntu', 'root'],
@@ -544,6 +556,17 @@ const vmNetColumns = {
 };
 const vmNetColNames = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 for (const [col, type] of Object.entries(vmNetColumns)) {
+  if (!vmNetColNames.includes(col)) {
+    db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
+  }
+}
+
+// ---- VPS type (bot/plan category), machine expiry + backup slots/limit ----
+for (const [col, type] of Object.entries({
+  vps_type: "TEXT NOT NULL DEFAULT 'kvm'",   // kvm | nat | storage | highcpu | gaming | backup
+  expires_at: 'TEXT',                          // ISO date when the machine expires (null = never)
+  backup_slots: 'INTEGER',                     // max # backups allowed for this machine
+})) {
   if (!vmNetColNames.includes(col)) {
     db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
   }

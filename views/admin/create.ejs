@@ -171,6 +171,31 @@
           <select id="fPool" class="input" onchange="updateSummary()"><option value="">Default pool</option></select>
           <div class="form-hint">Leave empty to use the active default pool.</div>
         </div>
+
+        <div class="grid grid-3" style="gap:12px;margin-top:16px">
+          <div class="form-group" style="margin:0">
+            <label>VPS Type</label>
+            <select id="fVpsType" class="input" onchange="updateSummary()">
+              <option value="kvm" <%= (settings['vm.default_vps_type'] || 'kvm') === 'kvm' ? 'selected' : '' %>>KVM / VPS</option>
+              <option value="nat" <%= (settings['vm.default_vps_type'] || 'kvm') === 'nat' ? 'selected' : '' %>>NAT VPS</option>
+              <option value="storage" <%= (settings['vm.default_vps_type'] || 'kvm') === 'storage' ? 'selected' : '' %>>Storage VPS</option>
+              <option value="highcpu" <%= (settings['vm.default_vps_type'] || 'kvm') === 'highcpu' ? 'selected' : '' %>>High CPU</option>
+              <option value="gaming" <%= (settings['vm.default_vps_type'] || 'kvm') === 'gaming' ? 'selected' : '' %>>Gaming VPS</option>
+              <option value="backup" <%= (settings['vm.default_vps_type'] || 'kvm') === 'backup' ? 'selected' : '' %>>Backup VPS</option>
+            </select>
+            <div class="form-hint">Category exposed to bots/plans (does not change QEMU hardware).</div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Expiry (days)</label>
+            <input id="fExpiryDays" type="number" min="0" step="1" value="<%= settings['machine.default_expiry_days'] || '0' %>" placeholder="0 = never" oninput="updateSummary()"/>
+            <div class="form-hint">0 = does not expire. Machine is auto-suspended when reached.</div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Backup Slots</label>
+            <input id="fBackupSlots" type="number" min="0" step="1" value="<%= settings['vm.default_backup_slots'] || '5' %>" placeholder="5" oninput="updateSummary()"/>
+            <div class="form-hint">Max automated backups kept for this machine.</div>
+          </div>
+        </div>
       </div>
 
       <!-- 3. Identity & Credentials -->
@@ -702,6 +727,10 @@ async function createVm() {
     fd.append('neofetch_mem', document.getElementById('fNbMem').value.trim());
     fd.append('neofetch_disk', document.getElementById('fNbDisk').value.trim());
   }
+
+  fd.append('vps_type', document.getElementById('fVpsType').value);
+  fd.append('expiry_days', (document.getElementById('fExpiryDays').value || '0'));
+  fd.append('backup_slots', (document.getElementById('fBackupSlots').value || '5'));
 
   if ((document.querySelector('input[name="imgSrc"]:checked') || {}).value === 'upload') {
     const f = document.getElementById('fImg').files[0];

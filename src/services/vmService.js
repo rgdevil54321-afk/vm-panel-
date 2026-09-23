@@ -621,6 +621,26 @@ function dbVms() {
   ).all();
 }
 
+function vmExpiry(row) {
+  const raw = row.expires_at || null;
+  if (!raw) return { at: null, expired: false, days_left: -1 };
+  const at = new Date(raw).getTime();
+  const expired = !isNaN(at) && at <= Date.now();
+  return { at: raw, expired, days_left: isNaN(at) ? -1 : Math.max(0, Math.ceil((at - Date.now()) / 86400000)) };
+}
+
+function expiryFromDays(days) {
+  const d = parseInt(days, 10);
+  if (!d || isNaN(d) || d <= 0) return null;
+  return new Date(Date.now() + d * 86400000).toISOString();
+}
+
+function toBackupSlots(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return parseInt(settings.get('vm.default_backup_slots') || '5', 10);
+  return Math.max(0, n);
+}
+
 function serializeVm(row) {
   if (!row) return null;
   let forwards = [];
@@ -668,6 +688,9 @@ function serializeVm(row) {
     status: remote ? (row.status || 'stopped') : statusOf(row),
     managed: remote,
     dir: vmDir(row),
+    vps_type: row.vps_type || 'kvm',
+    expiry: vmExpiry(row),
+    backup_slots: row.backup_slots != null ? Number(row.backup_slots) : Number(settings.get('vm.default_backup_slots') || '5'),
   };
   if (remote) {
     const c = String(row.neofetch_cpu || '').trim();
@@ -1139,6 +1162,9 @@ async function create({ user, data }) {
       neofetch_mem: adv.neofetch_mem,
       neofetch_disk: adv.neofetch_disk,
       neofetch_gpu: adv.neofetch_gpu,
+      vps_type: String(data.vps_type || settings.get('vm.default_vps_type') || 'kvm'),
+      expires_at: expiryFromDays(data.expiry_days),
+      backup_slots: toBackupSlots(data.backup_slots),
     };
     {
       const c = String(payload.neofetch_cpu || '').trim();
@@ -1176,14 +1202,16 @@ async function create({ user, data }) {
         mem_min, mem_max, ballooning, memory_hotplug, machine_type, firmware, secure_boot, tpm, boot_order, nic_model, nic_count,
         storage_pool, disk_format, additional_disks, cloudinit_userdata, cloudinit_packages, cloudinit_commands, cloudinit_files,
         startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced,
-        ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk, neofetch_gpu)
+        ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk, neofetch_gpu,
+        vps_type, expires_at, backup_slots)
        VALUES (@node_id, @uuid, @owner_id, @name, @os_type, @codename, @img_url, @hostname, @username, @password,
         @disk_size, @memory, @cpus, @ssh_port, @vnc_port, @agent_port, @agent_token, @gui_mode, @port_forwards, @start_on_boot, @startup_command, 'stopped', @notes, @created, @created,
         @description, @tag, @region, @vmid, @cpu_sockets, @cores_per_socket, @threads_per_core, @cpu_model, @cpu_type, @cpu_units, @cpu_limit,
         @mem_min, @mem_max, @ballooning, @memory_hotplug, @machine_type, @firmware, @secure_boot, @tpm, @boot_order, @nic_model, @nic_count,
         @storage_pool, @disk_format, @additional_disks, @cloudinit_userdata, @cloudinit_packages, @cloudinit_commands, @cloudinit_files,
         @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced,
-        @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk, @neofetch_gpu)`
+        @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk, @neofetch_gpu,
+        @vps_type, @expires_at, @backup_slots)`
     ).run({
       node_id: targetNodeId,
       uuid: rv.uuid,
@@ -1255,6 +1283,9 @@ async function create({ user, data }) {
       neofetch_mem: rv.neofetch_mem || adv.neofetch_mem,
       neofetch_disk: rv.neofetch_disk || adv.neofetch_disk,
       neofetch_gpu: rv.neofetch_gpu || adv.neofetch_gpu,
+      vps_type: rv.vps_type || payload.vps_type || 'kvm',
+      expires_at: payload.expires_at || null,
+      backup_slots: payload.backup_slots,
       created: now(),
     });
     const id = Number(info.lastInsertRowid);
@@ -1364,6 +1395,9 @@ async function create({ user, data }) {
     neofetch_mem: adv.neofetch_mem,
     neofetch_disk: adv.neofetch_disk,
     neofetch_gpu: adv.neofetch_gpu,
+    vps_type: String(data.vps_type || settings.get('vm.default_vps_type') || 'kvm'),
+    expires_at: expiryFromDays(data.expiry_days),
+    backup_slots: toBackupSlots(data.backup_slots),
   };
 
   const info = db.prepare(
@@ -1373,14 +1407,16 @@ async function create({ user, data }) {
       mem_min, mem_max, ballooning, memory_hotplug, machine_type, firmware, secure_boot, tpm, boot_order, nic_model, nic_count,
       storage_pool, disk_format, additional_disks, cloudinit_userdata, cloudinit_packages, cloudinit_commands, cloudinit_files,
       startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced,
-      ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk, neofetch_gpu)
+      ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk, neofetch_gpu,
+      vps_type, expires_at, backup_slots)
      VALUES (@node_id, @uuid, @owner_id, @name, @os_type, @codename, @img_url, @hostname, @username, @password,
       @disk_size, @memory, @cpus, @ssh_port, @vnc_port, @agent_port, @agent_token, @gui_mode, @port_forwards, @start_on_boot, @startup_command, @status, @notes, @created, @created,
       @description, @tag, @region, @vmid, @cpu_sockets, @cores_per_socket, @threads_per_core, @cpu_model, @cpu_type, @cpu_units, @cpu_limit,
       @mem_min, @mem_max, @ballooning, @memory_hotplug, @machine_type, @firmware, @secure_boot, @tpm, @boot_order, @nic_model, @nic_count,
       @storage_pool, @disk_format, @additional_disks, @cloudinit_userdata, @cloudinit_packages, @cloudinit_commands, @cloudinit_files,
       @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced,
-      @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk, @neofetch_gpu)`
+      @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk, @neofetch_gpu,
+      @vps_type, @expires_at, @backup_slots)`
   ).run({ ...vm, created: now() });
 
   const id = Number(info.lastInsertRowid);
@@ -1437,6 +1473,16 @@ async function start(vm, { user = null } = {}) {
 
   if (vm.suspended_at && (!user || (user.role !== 'admin' && !user.root_admin))) {
     throw new Error('This VM is suspended because its plan requirement was not met. Restore your plan (invites / boost / renewal) to continue.');
+  }
+
+  if (!user || (user.role !== 'admin' && !user.root_admin)) {
+    const expAt = vm.expires_at || (vm.expiry && vm.expiry.at);
+    if (expAt) {
+      const t = new Date(expAt).getTime();
+      if (!isNaN(t) && t <= Date.now()) {
+        throw new Error('This machine has expired. Renew it from the admin panel to start it again.');
+      }
+    }
   }
 
   if (isRemoteVm(vm)) {
@@ -1702,6 +1748,7 @@ function update(vm, data, user) {
   const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes', 'owner_id',
     'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix',
     'os_type', 'region', 'tag', 'vmid', 'timezone', 'locale',
+    'vps_type', 'expires_at', 'backup_slots',
     'neofetch_cpu', 'neofetch_mem', 'neofetch_disk', 'neofetch_gpu'];
   const set = [];
   const vals = {};
@@ -1712,6 +1759,9 @@ function update(vm, data, user) {
       else if (f === 'gui_mode' || f === 'start_on_boot') vals[f] = data[f] ? 1 : 0;
       else if (f === 'owner_id') vals[f] = parseInt(data[f], 10);
       else if (f === 'ip_mode') vals[f] = ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'].includes(String(data[f] || '').trim()) ? String(data[f]).trim() : 'nat';
+      else if (f === 'expires_at') vals[f] = data[f] ? data[f] : null;
+      else if (f === 'vps_type') vals[f] = String(data[f] || 'kvm');
+      else if (f === 'backup_slots') vals[f] = toBackupSlots(data[f]);
       else vals[f] = data[f];
     }
   }
@@ -1727,6 +1777,33 @@ function update(vm, data, user) {
     .some((f) => data[f] !== undefined);
   if (needSeed) writeSeed(getVm(vm.id) || vm);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:update', details: data });
+  return getVm(vm.id);
+}
+
+function renewExpiry(vm, { days = 0, to = null, actor = null } = {}) {
+  const daysNum = parseInt(days, 10);
+  let target;
+  if (to) {
+    target = new Date(to);
+    if (isNaN(target.getTime())) throw new Error('Invalid expiry date');
+  } else if (daysNum > 0) {
+    target = new Date(Date.now() + daysNum * 86400000);
+  } else {
+    target = null;
+  }
+  const expiresAt = target ? target.toISOString() : null;
+  const exp = vm.expiry || vmExpiry(vm);
+  const nowIso = now();
+  let cleared = false;
+  if (vm.suspended_at && exp.expired) {
+    db.prepare('UPDATE vms SET suspended_at = NULL, updated_at = ? WHERE id = ?').run(nowIso, vm.id);
+    cleared = true;
+  }
+  db.prepare('UPDATE vms SET expires_at = ?, updated_at = ? WHERE id = ?').run(expiresAt, nowIso, vm.id);
+  logActivity({
+    user_id: actor ? actor.id : null, vm_id: vm.id, event: 'vm:renew',
+    details: { days: daysNum, expires_at: expiresAt, cleared_suspension: cleared },
+  });
   return getVm(vm.id);
 }
 
@@ -2075,5 +2152,6 @@ module.exports = {
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
   addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,
+  renewExpiry, vmExpiry,
   setUserVmsSuspended, setUserVmsUnsuspended,
 };

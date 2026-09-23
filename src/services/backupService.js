@@ -14,6 +14,21 @@ function listForVm(vmId) {
   return db.prepare('SELECT * FROM backups WHERE vm_id = ? ORDER BY id DESC').all(vmId);
 }
 
+function getSlotLimit(vm) {
+  const v = vm && vm.backup_slots;
+  if (v != null && !isNaN(Number(v))) return Math.max(0, Number(v));
+  return parseInt(settings.get('vm.default_backup_slots') || '5', 10);
+}
+
+function countFor(vmId) {
+  return db.prepare('SELECT COUNT(*) AS c FROM backups WHERE vm_id = ?').get(vmId).c || 0;
+}
+
+function slotsFor(vmId) {
+  const vm = vmService.getVm(vmId);
+  return { slots: getSlotLimit(vm), used: countFor(vmId), free: Math.max(0, getSlotLimit(vm) - countFor(vmId)) };
+}
+
 function listAll() {
   return db.prepare(
     `SELECT b.*, v.name AS vm_name FROM backups b JOIN vms v ON v.id = b.vm_id ORDER BY b.id DESC`
@@ -21,6 +36,14 @@ function listAll() {
 }
 
 function createBackup(vm, { user = null, name = null, kind = 'full' } = {}) {
+  const slots = getSlotLimit(vm);
+  if (slots === 0) {
+    throw new Error('Backup slots are disabled for this machine (0 slots). Enable slots or edit the VM to raise the limit.');
+  }
+  if (countFor(vm.id) >= slots) {
+    // enforce the slot limit by rotating out the oldest backup
+    pruneBackups(vm.id, slots - 1);
+  }
   if (vmService.isRunning(vm)) {
     // snapshot via qemu-img works on live (qcow2) too
     logger.info('[backup] VM is running; taking qemu snapshot');
@@ -73,4 +96,4 @@ function pruneBackups(vmId, keep = 5) {
   }
 }
 
-module.exports = { listForVm, listAll, createBackup, restoreBackup, deleteBackup, pruneBackups };
+module.exports = { listForVm, listAll, createBackup, restoreBackup, deleteBackup, pruneBackups, getSlotLimit, countFor, slotsFor };

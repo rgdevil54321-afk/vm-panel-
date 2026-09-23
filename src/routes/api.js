@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const authService = require('../services/authService');
 const vmService = require('../services/vmService');
 const bootLogService = require('../services/bootLogService');
@@ -332,10 +333,13 @@ router.get('/vms/:id/files/download', loadVm, async (req, res) => {
 });
 
 // ---------- Backups / Schedules / Subusers ----------
-router.get('/vms/:id/backups', loadVm, (req, res) => res.json({ backups: backupService.listForVm(req.vm.id) }));
+router.get('/vms/:id/backups', loadVm, (req, res) => res.json({ backups: backupService.listForVm(req.vm.id), slots: backupService.slotsFor(req.vm.id) }));
 router.post('/vms/:id/backups', loadVm, json, (req, res) => {
-  try { res.json({ ok: true, backup: backupService.createBackup(req.vm, { user: req.user, name: req.body.name }) }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const slots = backupService.slotsFor(req.vm.id);
+    if (slots.free <= 0) return res.status(400).json({ error: `Backup slot limit reached (${slots.used}/${slots.slots}). Delete a backup or raise the machine's backup slots.` });
+    res.json({ ok: true, backup: backupService.createBackup(req.vm, { user: req.user, name: req.body.name }) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/vms/:id/backups/:bid/restore', loadVm, (req, res) => {
   const b = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
@@ -415,6 +419,55 @@ router.get('/admin/stats', apiAdmin, (req, res) => {
     backups: db.prepare('SELECT COUNT(*) c FROM backups').get().c,
     disk_usage: vmService.totalDiskUsage(),
   });
+});
+
+// ---------- Panel API key (bots & automation) ----------
+const panelKeyGen = require('crypto');
+router.get('/admin/api-key', apiAdmin, (req, res) => {
+  const cb = () => { const k = require('../middleware/auth').ensurePanelKey(); res.json({ key: k }); };
+  cb();
+});
+router.post('/admin/api-key/regenerate', apiAdmin, (req, res) => {
+  const key = 'vp_panel_' + panelKeyGen.randomBytes(24).toString('base64url');
+  settings.set('api.panel_key', key);
+  res.json({ key });
+});
+
+// ---------- DB transfer (export/restore code) ----------
+const dbTransfer = require('../services/dbTransferService');
+router.get('/admin/transfer/export', apiAdmin, async (req, res) => {
+  try {
+    const info = await dbTransfer.exportCode();
+    res.json({ ok: true, ...info });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router.get('/admin/transfer/latest', apiAdmin, (req, res) => {
+  try {
+    const f = dbTransfer.latestFile();
+    if (!f) return res.status(404).json({ error: 'No transfer code saved yet' });
+    res.json({ ok: true, file: f, ...dbTransfer.decode(fs.readFileSync(f, 'utf8')).header });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router.post('/admin/transfer/emergency', apiAdmin, async (req, res) => {
+  try {
+    const file = await dbTransfer.emergencyCode('manual');
+    res.json({ ok: true, file });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router.post('/admin/transfer/restore', apiAdmin, json, (req, res) => {
+  try {
+    const header = dbTransfer.restoreFromCode(req.body.code || '');
+    res.json({ ok: true, header, message: 'Database restored. Panel is restarting in 1 second.' });
+    setTimeout(() => process.exit(0), 1000);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ---------- Wallpapers & Customization API ----------

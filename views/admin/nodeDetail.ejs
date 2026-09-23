@@ -72,9 +72,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/><path d="M4 7l3-3M7 7L4 10M20 7l-3-3M17 7l3 3" opacity="0"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="17" r="1"/><circle cx="19" cy="17" r="1"/></svg>
       </div>
       <div>
-        <div class="stat-value"><%= (detail.stats.network.rx_kbps/1024).toFixed(2) %><span style="font-size:13px;color:var(--text-dim)"> MB/s</span></div>
-        <div class="stat-label">Network RX · TX <%= (detail.stats.network.tx_kbps/1024).toFixed(2) %> MB/s</div>
-        <div class="muted text-sm" style="font-size:11px;margin-top:4px">Total RX <%= (detail.stats.network.rx_bytes/1024/1024/1024).toFixed(2) %> GB · TX <%= (detail.stats.network.tx_bytes/1024/1024/1024).toFixed(2) %> GB</div>
+        <% const net = detail.stats.network && (detail.stats.network.rx_kbps !== undefined) ? detail.stats.network : null; %>
+        <div class="stat-value"><%= net ? (net.rx_kbps / 1024).toFixed(2) : '--' %><span style="font-size:13px;color:var(--text-dim)"> MB/s</span></div>
+        <div class="stat-label">Network RX · TX <%= net ? (net.tx_kbps / 1024).toFixed(2) : '--' %> MB/s</div>
+        <div class="muted text-sm" style="font-size:11px;margin-top:4px">Total RX <%= net ? (net.rx_bytes / 1024 / 1024 / 1024).toFixed(2) : '--' %> GB · TX <%= net ? (net.tx_bytes / 1024 / 1024 / 1024).toFixed(2) : '--' %> GB</div>
       </div>
     </div>
   </div>

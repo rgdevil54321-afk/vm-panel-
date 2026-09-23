@@ -73,11 +73,11 @@ function logoRows(text) {
     const g = BLOCK_FONT[ch] || BLOCK_FONT['?'];
     for (let r = 0; r < 5; r++) base[r] += (i ? ' ' : '') + (g[r] || '    ');
   });
-  // Scale wide: 6x horizontal, 3x tall so the logo reads like neofetch's
-  // chunky banner (wide cells) without getting any taller than before.
+  // Scale: 2x horizontal, 3x tall so the logo reads like neofetch's chunky
+  // banner. Kept modest so the logo stays compact while info rows carry the detail.
   const rows = [];
   for (const r of base) {
-    const wide = r.replace(/./g, (c) => c.repeat(6));
+    const wide = r.replace(/./g, (c) => c.repeat(2));
     rows.push(wide, wide, wide);
   }
   return rows;
@@ -150,12 +150,18 @@ function collect() {
 
   return {
     os: `${os.type()} ${os.release().split('-')[0]}`,
+    model: settings.get('panel.model_name') || 'Venlix Cloud Node',
     kernel: os.release(),
     host: hostname,
     node: settings.get('panel.hostname') || 'Venlix Nodes',
     uptime: getUptime(),
     packages: getPackages(),
     shell: getShell(),
+    resolution: settings.get('panel.resolution_name') || '1920x1080',
+    de: settings.get('panel.de_name') || 'GNOME',
+    wm: settings.get('panel.wm_name') || 'Xfwm4',
+    theme: settings.get('panel.theme_name') || 'Adwaita-dark [GTK2/3]',
+    terminal: settings.get('panel.terminal_name') || 'xterm-256color',
     cpu: `${cpuModel} (${cpus.length} cores)`,
     gpu: getGpu(),
     memory: getMemInfo(),
@@ -172,11 +178,17 @@ function infoLines(info) {
     { isSep: true, width: title.length },
     { key: 'OS',      val: info.os },
   ];
+  if (info.model) lines.push({ key: 'Model', val: info.model });
   if (info.node || info.host) lines.push({ key: 'Host', val: info.node || info.host || 'vps' });
   lines.push({ key: 'Kernel',  val: info.kernel });
   lines.push({ key: 'Uptime',  val: info.uptime });
   lines.push({ key: 'Packages', val: info.packages });
   lines.push({ key: 'Shell',   val: info.shell });
+  lines.push({ key: 'Resolution', val: info.resolution });
+  lines.push({ key: 'DE',      val: info.de });
+  lines.push({ key: 'WM',      val: info.wm });
+  lines.push({ key: 'Theme',   val: info.theme });
+  lines.push({ key: 'Terminal', val: info.terminal });
   lines.push({ key: 'CPU',     val: info.cpu });
   if (info.gpu && info.gpu !== 'Unknown GPU') lines.push({ key: 'GPU', val: info.gpu });
   lines.push({ key: 'Memory',  val: info.memory });

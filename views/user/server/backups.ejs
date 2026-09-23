@@ -5,9 +5,14 @@
 <div class="main">
   <div class="flex-between mb-3">
     <h2 style="font-size:22px">Backups · <%= vm.name %></h2>
-    <button class="btn btn-primary" onclick="createBackup()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Create Backup
-    </button>
+    <div class="flex" style="gap:10px;align-items:center">
+      <span class="pill <%= (slots && slots.free > 0) ? 'pill-green' : 'pill-yellow' %>">
+        Slots <%= slots ? slots.used + '/' + slots.slots : '0/0' %> used
+      </span>
+      <button class="btn btn-primary" onclick="createBackup()" <%= (slots && slots.free <= 0) ? 'disabled title="Backup slot limit reached"' : '' %>>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Create Backup
+      </button>
+    </div>
   </div>
   <%- include('_tabs') %>
 
@@ -47,6 +52,7 @@
 <%- include('../../partials/foot') %>
 <script>
 async function createBackup() {
+  if (<%= slots ? '!(' + slots.free + ' > 0)' : 'false' %>) { VP.toast('Backup slot limit reached. Delete a backup first.', 'error'); return; }
   try {
     const d = await VP.api('/servers/<%= vm.id %>/backups', { method: 'POST', body: { name: 'manual-' + Date.now() } });
     VP.toast('Backup created', 'success');

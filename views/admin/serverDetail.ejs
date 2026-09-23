@@ -31,6 +31,7 @@
       <a class="btn btn-sm" href="/servers/<%= vm.id %>/console">Terminal</a>
       <a class="btn btn-sm" href="/servers/<%= vm.id %>/console?tab=bootlog">Live Boot Logs</a>
       <button class="btn btn-sm btn-primary" onclick="openEdit()">Edit Server</button>
+      <button class="btn btn-sm" onclick="openRenew()">Renew</button>
       <button class="btn btn-sm btn-danger" onclick="del()">Delete Server</button>
     </div>
   </div>
@@ -117,6 +118,30 @@
             <tr><td class="muted">SSH Password</td><td><span class="mono" id="sshpass" data-secret><%= vm.password %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshpass', this)">Copy</button> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="regenPass(this)">Regenerate</button></td></tr>
             <tr><td class="muted">Disk Image File</td><td class="mono truncate text-sm" style="max-width:240px"><%= vm.img_file %></td></tr>
             <tr><td class="muted">Port Forwards</td><td class="mono"><% if (vm.port_forwards && vm.port_forwards.length) { %><% for (const f of vm.port_forwards) { %><span class="pill pill-gray" style="margin-right:4px"><%= f.host %>:<%= f.guest %></span><% } %><% } else { %>None<% } %></td></tr>
+            <tr><td class="muted">VPS Type</td><td><span class="pill pill-blue font-bold"><%= (vm.vps_type || 'kvm').toUpperCase() %></span></td></tr>
+            <tr>
+              <td class="muted">Expires</td>
+              <td>
+                <% const _ex = vm.expiry || null; %>
+                <% if (_ex && _ex.at) { %>
+                  <span class="pill <%= _ex.expired ? 'pill-red' : (_ex.days_left <= 3 ? 'pill-yellow' : 'pill-green') %>">
+                    <%= _ex.expired ? 'EXPIRED' : (_ex.days_left + 'd left') %>
+                  </span>
+                  <span class="muted text-sm" style="margin-left:6px"><%= new Date(_ex.at).toLocaleString() %></span>
+                <% } else { %>
+                  <span class="pill pill-gray">Never</span>
+                <% } %>
+                <button type="button" class="btn btn-sm btn-primary" style="margin-left:8px" onclick="openRenew()">Renew</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="muted">Backup Slots</td>
+              <td>
+                <span class="pill <%= backups.length >= (vm.backup_slots || 5) ? 'pill-yellow' : 'pill-green' %>">
+                  <%= backups.length %> / <%= vm.backup_slots || 5 %> used
+                </span>
+              </td>
+            </tr>
             <tr><td class="muted">Created At</td><td class="muted"><%= new Date(vm.created_at).toLocaleString() %></td></tr>
           </tbody>
         </table>
@@ -167,7 +192,7 @@
     <div style="display:flex;flex-direction:column;gap:18px">
       <div class="card">
         <div class="flex-between mb-2">
-          <div class="card-title" style="margin:0">Backups (<%= backups.length %>)</div>
+          <div class="card-title" style="margin:0">Backups (<%= backups.length %>/<%= vm.backup_slots || 5 %> slots)</div>
           <a href="/servers/<%= vm.id %>/backups" class="btn btn-sm">Manage</a>
         </div>
         <% if (backups.length === 0) { %><div class="muted text-sm">No backups created yet</div><% } else { %>
@@ -285,6 +310,19 @@
         </div>
         <div class="form-group" style="margin:0"><label>Startup Command</label><input id="ed_startup_command" class="input" value="<%= vm.startup_command || '' %>"/></div>
         <div class="form-group" style="margin:0"><label>Notes</label><textarea id="ed_notes" class="input" rows="2"><%= vm.notes || '' %></textarea></div>
+        <div class="form-group" style="margin:0"><label>VPS Type</label>
+          <select id="ed_vps_type" class="input">
+            <% for (const vt of ['kvm', 'nat', 'storage', 'highcpu', 'gaming', 'backup']) { %>
+              <option value="<%= vt %>" <%= (vm.vps_type || 'kvm') === vt ? 'selected' : '' %>><%= vt.toUpperCase() %></option>
+            <% } %>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>Expiry (local time, empty = never)</label>
+          <input id="ed_expires_at" class="input" type="datetime-local" value="<%= vm.expiry && vm.expiry.at ? new Date(vm.expiry.at - new Date(vm.expiry.at).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '' %>"/>
+        </div>
+        <div class="form-group" style="margin:0"><label>Backup Slots (0 = no backups)</label>
+          <input id="ed_backup_slots" class="input" type="number" min="0" step="1" value="<%= vm.backup_slots != null ? vm.backup_slots : 5 %>"/>
+        </div>
       </div>
 
       <div class="card-title mb-2 mt-3" style="font-size:15px">Neofetch Spoof (shown inside the VM)</div>
@@ -307,10 +345,77 @@
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
 
+<!-- Renew Expiry Modal -->
+<div id="renewModal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:220;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
+    <div class="card" style="width:min(460px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+      <div class="flex-between mb-3">
+        <h3 style="font-size:18px;font-weight:700;margin:0">Renew <%= vm.name %></h3>
+        <button type="button" class="btn btn-sm" onclick="closeRenew()">✕</button>
+      </div>
+      <p class="muted text-sm mb-3">
+        <% const _rex = vm.expiry || null; %>
+        Current expiry:
+        <% if (_rex && _rex.at) { %>
+          <strong><%= new Date(_rex.at).toLocaleString() %></strong>
+          <%= _rex.expired ? '(expired)' : '(' + _rex.days_left + 'd left)' %>
+        <% } else { %>Never (no expiry set)<% } %>
+      </p>
+
+      <div class="form-group mb-3">
+        <label>Add days</label>
+        <div class="flex" style="gap:8px">
+          <input id="renewDays" class="input" type="number" min="0" step="1" value="30" style="flex:1"/>
+          <button type="button" class="btn" onclick="document.getElementById('renewDays').value=7">+7</button>
+          <button type="button" class="btn" onclick="document.getElementById('renewDays').value=30">+30</button>
+          <button type="button" class="btn" onclick="document.getElementById('renewDays').value=90">+90</button>
+        </div>
+        <div class="muted text-sm" style="margin-top:6px">Added on top of the current expiry (or from today if none). Use 0 to clear the expiry.</div>
+      </div>
+
+      <div class="form-group mb-3">
+        <label>Or set an exact expiry date (overrides "add days")</label>
+        <input id="renewTo" class="input" type="datetime-local"/>
+      </div>
+
+      <div class="flex right" style="gap:8px">
+        <button type="button" class="btn" onclick="closeRenew()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitRenew(this)">Apply Renewal</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 function openEdit() {
   const m = document.getElementById('editModal');
   if (m) m.style.display = 'block';
+}
+
+function openRenew() {
+  const m = document.getElementById('renewModal');
+  if (m) m.style.display = 'block';
+}
+
+function closeRenew() {
+  const m = document.getElementById('renewModal');
+  if (m) m.style.display = 'none';
+}
+
+async function submitRenew(btn) {
+  const days = parseInt(document.getElementById('renewDays').value || '0', 10) || 0;
+  const toVal = document.getElementById('renewTo').value || '';
+  const body = { days };
+  if (toVal) body.to = new Date(toVal).toISOString();
+  try {
+    if (btn) btn.disabled = true;
+    const r = await VP.api('/admin/servers/<%= vm.id %>/renew', { method: 'POST', body });
+    VP.toast('Expiry updated: ' + ((r.vm && r.vm.expiry && r.vm.expiry.at) ? new Date(r.vm.expiry.at).toLocaleString() : 'never expires'), 'success');
+    setTimeout(() => location.reload(), 900);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
 }
 
 function closeEdit() {
@@ -343,6 +448,9 @@ async function saveEdit(btn) {
     neofetch_mem: val('ed_nf_mem'),
     neofetch_disk: val('ed_nf_disk'),
     neofetch_gpu: val('ed_nf_gpu'),
+    vps_type: val('ed_vps_type'),
+    expires_at: val('ed_expires_at') ? new Date(val('ed_expires_at')).toISOString() : '',
+    backup_slots: val('ed_backup_slots'),
   };
   try {
     if (btn) btn.disabled = true;

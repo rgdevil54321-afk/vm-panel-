@@ -61,6 +61,11 @@ const iconBolt = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
   <a href="/activity" class="nav-link <%= act('activity', page) %>"><span class="v-icon"><%- iconActivity %></span><span><%= t('nav.activity') %></span></a>
   <a href="/settings" class="nav-link <%= page === 'userSettings' ? 'active' : '' %>"><span class="v-icon"><%- iconSettings %></span><span>Settings</span></a>
 
+  <% if (isAdmin) { %>
+  <div class="nav-section-title">Admin Panel</div>
+  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconShield %></span><span>Admin Panel</span></a>
+  <% } %>
+
   <% if (isAdmin && typeof admin !== 'undefined' && admin) { %>
   <div class="nav-section-title">Overview</div>
   <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconGrid %></span><span><%= t('nav.overview') %></span></a>

@@ -425,6 +425,16 @@ function bootstrap() {
   planGuardService.start();
   license.startTick();
   try {
+    require('./services/expiryService').start(parseInt(process.env.EXPIRY_CHECK_MS || '60000', 10));
+  } catch (e) {
+    logger.warn('[panel] expiry watchdog: ' + e.message);
+  }
+  const dbTransfer = require('./services/dbTransferService');
+  // Daily DB transfer code (panel restarts are also covered by server.js handlers)
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  setTimeout(() => { dbTransfer.daily().catch(() => {}); }, 20 * 60 * 1000); // first run 20min after boot
+  setInterval(() => { dbTransfer.daily().catch(() => {}); }, DAY_MS);
+  try {
     require('./services/discordGateway').sync();
   } catch (_) { /* gateway optional */ }
   const nodeRegistry = require('./services/nodeRegistry');

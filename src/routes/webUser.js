@@ -110,7 +110,7 @@ router.get('/servers/:id/files', loadVm, (req, res) => {
 });
 
 router.get('/servers/:id/backups', loadVm, (req, res) => {
-  render(res, 'server/backups', { vm: req.vm, backups: backupService.listForVm(req.vm.id) });
+  render(res, 'server/backups', { vm: req.vm, backups: backupService.listForVm(req.vm.id), slots: backupService.slotsFor(req.vm.id) });
 });
 
 // ---------- Snapshots ----------
@@ -317,8 +317,10 @@ router.post('/servers/:id/resize', loadVm, express.json(), async (req, res) => {
 
 router.post('/servers/:id/backups', loadVm, express.json(), (req, res) => {
   try {
+    const slots = backupService.slotsFor(req.vm.id);
+    if (slots.free <= 0) return res.status(400).json({ error: `Backup slot limit reached (${slots.used}/${slots.slots}). Delete a backup or raise the machine's backup slots.` });
     const backup = backupService.createBackup(req.vm, { user: req.user, name: req.body.name });
-    return res.json({ ok: true, backup });
+    return res.json({ ok: true, backup, slots });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }

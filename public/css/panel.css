@@ -167,6 +167,138 @@ html[data-theme="daylight"] {
   --shadow-lg: 0 18px 45px rgba(15, 23, 42, 0.14);
 }
 
+/* Crimson — deep red + amber embers */
+html[data-theme="crimson"] {
+  --accent: #ef4444;
+  --accent-hover: #dc2626;
+  --accent-light: #f87171;
+  --accent-glow: rgba(239, 68, 68, 0.35);
+  --accent-2: #f59e0b;
+  --accent-2-glow: rgba(245, 158, 11, 0.32);
+  --bg: #17090b;
+  --bg-card: rgba(43, 18, 22, 0.7);
+  --bg-card-hover: rgba(66, 30, 34, 0.85);
+  --bg-input: rgba(20, 8, 10, 0.7);
+  --text: #fef2f2;
+  --text-muted: #fca5a5;
+  --text-dim: #ef4444;
+  --glass: rgba(239, 68, 68, 0.05);
+  --glass-strong: rgba(30, 12, 14, 0.9);
+  --border: rgba(252, 165, 165, 0.1);
+  --border-focus: rgba(239, 68, 68, 0.65);
+  --border-hover: rgba(252, 165, 165, 0.22);
+}
+
+/* Synthwave — neon magenta + cyan grid */
+html[data-theme="synthwave"] {
+  --accent: #f472b6;
+  --accent-hover: #ec4899;
+  --accent-light: #f9a8d4;
+  --accent-glow: rgba(244, 114, 182, 0.35);
+  --accent-2: #22d3ee;
+  --accent-2-glow: rgba(34, 211, 238, 0.32);
+  --bg: #150a1e;
+  --bg-card: rgba(43, 20, 60, 0.7);
+  --bg-card-hover: rgba(62, 30, 86, 0.85);
+  --bg-input: rgba(18, 8, 28, 0.7);
+  --text: #fdf4ff;
+  --text-muted: #f0abfc;
+  --text-dim: #c084fc;
+  --glass: rgba(244, 114, 182, 0.05);
+  --glass-strong: rgba(38, 16, 54, 0.9);
+  --border: rgba(240, 171, 252, 0.1);
+  --border-focus: rgba(244, 114, 182, 0.65);
+  --border-hover: rgba(240, 171, 252, 0.22);
+}
+
+/* Matrix — hacker green terminal */
+html[data-theme="matrix"] {
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
+  --accent-light: #4ade80;
+  --accent-glow: rgba(34, 197, 94, 0.32);
+  --accent-2: #84cc16;
+  --accent-2-glow: rgba(132, 204, 22, 0.3);
+  --bg: #050a05;
+  --bg-card: rgba(9, 25, 12, 0.72);
+  --bg-card-hover: rgba(16, 40, 20, 0.85);
+  --bg-input: rgba(4, 14, 6, 0.7);
+  --text: #f0fdf4;
+  --text-muted: #86efac;
+  --text-dim: #4ade80;
+  --glass: rgba(34, 197, 94, 0.05);
+  --glass-strong: rgba(6, 22, 9, 0.92);
+  --border: rgba(134, 239, 172, 0.1);
+  --border-focus: rgba(34, 197, 94, 0.65);
+  --border-hover: rgba(134, 239, 172, 0.22);
+}
+
+/* Sakura — cherry blossom pink */
+html[data-theme="sakura"] {
+  --accent: #ec4899;
+  --accent-hover: #db2777;
+  --accent-light: #f472b6;
+  --accent-glow: rgba(236, 72, 153, 0.32);
+  --accent-2: #fbbf24;
+  --accent-2-glow: rgba(251, 191, 36, 0.3);
+  --bg: #1a0d14;
+  --bg-card: rgba(50, 20, 40, 0.7);
+  --bg-card-hover: rgba(70, 30, 56, 0.85);
+  --bg-input: rgba(20, 8, 16, 0.7);
+  --text: #fdf2f8;
+  --text-muted: #f9a8d4;
+  --text-dim: #db2777;
+  --glass: rgba(236, 72, 153, 0.05);
+  --glass-strong: rgba(34, 12, 26, 0.9);
+  --border: rgba(249, 168, 212, 0.1);
+  --border-focus: rgba(236, 72, 153, 0.65);
+  --border-hover: rgba(249, 168, 212, 0.22);
+}
+
+/* Graphite — sleek monochrome */
+html[data-theme="graphite"] {
+  --accent: #e2e8f0;
+  --accent-hover: #cbd5e1;
+  --accent-light: #ffffff;
+  --accent-glow: rgba(226, 232, 240, 0.3);
+  --accent-2: #94a3b8;
+  --accent-2-glow: rgba(148, 163, 184, 0.28);
+  --bg: #0b0f15;
+  --bg-card: rgba(24, 30, 40, 0.72);
+  --bg-card-hover: rgba(40, 48, 62, 0.85);
+  --bg-input: rgba(15, 20, 28, 0.72);
+  --text: #f8fafc;
+  --text-muted: #9aa7b8;
+  --text-dim: #64748b;
+  --glass: rgba(255, 255, 255, 0.04);
+  --glass-strong: rgba(22, 28, 38, 0.92);
+  --border: rgba(226, 232, 240, 0.1);
+  --border-focus: rgba(226, 232, 240, 0.55);
+  --border-hover: rgba(226, 232, 240, 0.22);
+}
+
+/* Sunset — warm amber + rose */
+html[data-theme="sunset"] {
+  --accent: #fb923c;
+  --accent-hover: #f97316;
+  --accent-light: #fdba74;
+  --accent-glow: rgba(251, 146, 60, 0.34);
+  --accent-2: #f472b6;
+  --accent-2-glow: rgba(244, 114, 182, 0.32);
+  --bg: #180d0a;
+  --bg-card: rgba(42, 22, 14, 0.7);
+  --bg-card-hover: rgba(60, 32, 20, 0.85);
+  --bg-input: rgba(20, 11, 7, 0.7);
+  --text: #fff7ed;
+  --text-muted: #fdba74;
+  --text-dim: #fb923c;
+  --glass: rgba(251, 146, 60, 0.05);
+  --glass-strong: rgba(30, 16, 10, 0.9);
+  --border: rgba(253, 186, 116, 0.1);
+  --border-focus: rgba(251, 146, 60, 0.65);
+  --border-hover: rgba(253, 186, 116, 0.22);
+}
+
 /* ---------- Global Resets ---------- */
 *, *::before, *::after {
   margin: 0;
