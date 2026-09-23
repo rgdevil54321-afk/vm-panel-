@@ -336,10 +336,10 @@
             </select>
             <div class="form-hint">Non-NAT adds the static IP to the guest on first boot. SSH forwarding via the node port stays intact.</div>
           </div>
-          <div class="form-group" style="margin:0"><label>IPv4 Address</label><input id="fIpAddr" class="input" placeholder="10.10.0.5" list="cHostIps"/><datalist id="cHostIps"></datalist></div>
+          <div class="form-group" style="margin:0"><label>IPv4 Address</label><input id="fIpAddr" class="input" placeholder="10.10.0.5" list="cHostIps" oninput="netPick('4')" onchange="netPick('4')"/><datalist id="cHostIps"></datalist><datalist id="cHostIps6"></datalist></div>
           <div class="form-group" style="margin:0"><label>IPv4 Gateway</label><input id="fIpGw" class="input" placeholder="10.10.0.1"/></div>
           <div class="form-group" style="margin:0"><label>IPv4 Prefix</label><input id="fIpPrefix" class="input" value="24"/></div>
-          <div class="form-group" style="margin:0"><label>IPv6 Address</label><input id="fIp6Addr" class="input" placeholder="2001:db8::5"/></div>
+          <div class="form-group" style="margin:0"><label>IPv6 Address</label><input id="fIp6Addr" class="input" placeholder="2001:db8::5" list="cHostIps6" oninput="netPick('6')" onchange="netPick('6')"/></div>
           <div class="form-group" style="margin:0"><label>IPv6 Gateway</label><input id="fIp6Gw" class="input" placeholder="2001:db8::1"/></div>
           <div class="form-group" style="margin:0"><label>IPv6 Prefix</label><input id="fIp6Prefix" class="input" value="64"/></div>
           <div class="form-group" style="margin:0"><label class="check" style="cursor:pointer;margin-top:20px"><input type="checkbox" id="fNbToggle" onchange="document.getElementById('nbBox').style.display = this.checked ? '' : 'none'"/><span>Spoof neofetch (below)</span></label></div>
@@ -753,16 +753,82 @@ async function createVm() {
 
 // Initial password & summary setup
 let _netDetected = false;
+window._host4 = [];
+window._host6 = [];
+window._gw = '';
+window._gw6 = '';
+function dropCidr(v) { const s = String(v || '').trim(); const i = s.lastIndexOf('/'); return i > 0 ? s.slice(0, i).trim() : s; }
+function v4mask(p) { const m = [0, 0, 0, 0]; let r = Math.max(0, Math.min(32, parseInt(p, 10) || 24)); for (let i = 0; i < 4; i++) { m[i] = r >= 8 ? 255 : (r > 0 ? 256 - (1 << (8 - r)) : 0); r -= 8; if (r < 0) r = 0; } return m; }
+function netBase(ip, prefix) {
+  if (String(ip).includes(':')) {
+    const p = Math.max(0, Math.min(128, parseInt(prefix, 10) || 64));
+    let s = String(ip).toLowerCase(); let head = s, tail = '';
+    const d = s.indexOf('::');
+    if (d >= 0) { head = s.slice(0, d); tail = s.slice(d + 2); }
+    const L = head ? head.split(':') : []; const R = tail ? tail.split(':') : [];
+    const G = L.concat(Array(Math.max(0, 8 - L.length - R.length)).fill('0'), R).map((g) => g.padStart(4, '0'));
+    if (G.length !== 8) return '';
+    const bytes = [];
+    for (const g of G) bytes.push(parseInt(g.slice(0, 2), 16), parseInt(g.slice(2, 4), 16));
+    for (let i = 0; i < 16; i++) {
+      const bp = (i + 1) * 8;
+      if (p < bp) {
+        const k = Math.max(0, 8 - (bp - p));
+        bytes[i] = bytes[i] & (k >= 8 ? 255 : (k > 0 ? 256 - (1 << (8 - k)) : 0));
+      }
+    }
+    const out = [];
+    for (let i = 0; i < 16; i += 2) out.push(((bytes[i] << 8) | bytes[i + 1]).toString(16).padStart(4, '0'));
+    return out.join(':');
+  }
+  const o = String(ip).split('.').map(Number);
+  if (o.length !== 4 || o.some(isNaN)) return '';
+  const m = v4mask(prefix);
+  return o.map((v, i) => v & m[i]).join('.');
+}
+function gwFrom(ip, prefix) {
+  if (ip.includes(':')) { const n = netBase(ip, prefix); return n ? n + ':1' : ''; }
+  const p = Math.max(0, Math.min(32, parseInt(prefix, 10) || 24));
+  if (p >= 31) return ip;
+  const n = netBase(ip, p); if (!n) return '';
+  const parts = n.split('.').map(Number);
+  return parts.slice(0, 3).join('.') + '.' + (parts[3] === 255 ? 254 : parts[3] + 1);
+}
+function netPick(side) {
+  const is6 = side === '6';
+  const addr = document.getElementById(is6 ? 'fIp6Addr' : 'fIpAddr');
+  const gw = document.getElementById(is6 ? 'fIp6Gw' : 'fIpGw');
+  const pre = document.getElementById(is6 ? 'fIp6Prefix' : 'fIpPrefix');
+  let raw = dropCidr(addr.value);
+  if (raw && raw !== addr.value) addr.value = raw;
+  if (!raw) return;
+  const pool = is6 ? window._host6 : window._host4;
+  const hit = (pool || []).find((a) => a.addr === raw);
+  if (hit) {
+    if (!pre.value.trim()) pre.value = String(hit.prefix);
+    if (!gw.value.trim()) gw.value = (is6 ? window._gw6 : window._gw) || '';
+  }
+  if (!gw.value.trim() && raw) gw.value = gwFrom(raw, pre.value || (is6 ? 64 : 24));
+  if (is6) { document.getElementById('fIpPrefix').value = document.getElementById('fIpPrefix').value || '24'; }
+  updateSummary();
+}
 async function maybeDetectNet() {
   const mode = document.getElementById('fIpMode').value;
   if (mode === 'nat' || _netDetected) return;
   try {
     const d = await VP.api('/admin/host/network');
+    window._gw = d.gateway || '';
+    window._gw6 = d.gateway6 || '';
+    window._host4 = (d.addresses || []).map((a) => ({ addr: dropCidr(a.cidr || a.addr), prefix: String(a.prefix || '24') }));
+    window._host6 = (d.addresses_v6 || []).map((a) => ({ addr: dropCidr(a.cidr || a.addr), prefix: String(a.prefix || '64') }));
+    const dl4 = document.getElementById('cHostIps');
+    const dl6 = document.getElementById('cHostIps6');
+    if (dl4) dl4.innerHTML = window._host4.map((a) => '<option value="' + a.addr + '"></option>').join('');
+    if (dl6) dl6.innerHTML = window._host6.map((a) => '<option value="' + a.addr + '"></option>').join('');
     const fill = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value.trim()) el.value = v; };
-    fill('fIpGw', d.gateway);
-    if (d.addresses && d.addresses[0]) fill('fIpPrefix', String(d.addresses[0].prefix || '24'));
-    const dl = document.getElementById('cHostIps');
-    if (dl) dl.innerHTML = (d.addresses || []).map((a) => '<option value="' + a.cidr + '"></option>').join('');
+    fill('fIpGw', window._gw); fill('fIp6Gw', window._gw6);
+    if (window._host4[0]) fill('fIpPrefix', window._host4[0].prefix);
+    if (window._host6[0]) fill('fIp6Prefix', window._host6[0].prefix);
     _netDetected = true;
   } catch (_) {}
 }

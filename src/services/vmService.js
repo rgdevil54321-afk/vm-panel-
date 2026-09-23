@@ -641,6 +641,104 @@ function toBackupSlots(v) {
   return Math.max(0, n);
 }
 
+// ---- Networking helpers: make every chosen IP "just work" ----
+// Strip any trailing /prefix so "10.0.0.5/24" or "2001:db8::5/64" becomes a pure address.
+function stripCidr(addr) {
+  const s = String(addr || '').trim();
+  const slash = s.indexOf('/');
+  return slash > 0 ? s.slice(0, slash).trim() : s;
+}
+
+function sanitizePrefix(p, def, max) {
+  const n = parseInt(p, 10);
+  if (isNaN(n) || n <= 0) return String(def);
+  return String(Math.min(n, max));
+}
+
+// Derive a network address from an IPv4 address + prefix (returns the subnet base).
+function ipv4Network(ip, prefix) {
+  const p = Math.max(0, Math.min(32, parseInt(prefix, 10) || 24));
+  const octets = String(ip).split('.').map((o) => parseInt(o, 10));
+  if (octets.length !== 4 || octets.some((o) => isNaN(o))) return '';
+  const mask = [0, 0, 0, 0].map((_, i) => {
+    const bits = Math.max(0, Math.min(8, p - i * 8));
+    return parseInt('1'.repeat(bits).padEnd(8, '0'), 2);
+  });
+  return octets.map((o, i) => o & mask[i]).join('.');
+}
+
+// Expand an IPv6 address to full 8-hextet form so bit-masking is trivial.
+function expandV6(ip) {
+  const lower = String(ip).toLowerCase();
+  let head = lower;
+  let tail = '';
+  const dbl = lower.indexOf('::');
+  if (dbl >= 0) { head = lower.slice(0, dbl); tail = lower.slice(dbl + 2); }
+  let left = head ? head.split(':') : [];
+  let right = tail ? tail.split(':') : [];
+  if (!head) left = [];
+  const missing = 8 - left.length - right.length;
+  const fill = Array(Math.max(0, missing)).fill('0');
+  const groups = left.concat(fill, right).map((g) => g.padStart(4, '0'));
+  return groups;
+}
+
+function ipv6Network(ip, prefix) {
+  const p = Math.max(0, Math.min(128, parseInt(prefix, 10) || 64));
+  const groups = expandV6(ip);
+  if (groups.length !== 8 || groups.some((g) => /[^0-9a-f]/.test(g))) return '';
+  // mask the first `p` bits across the 8 groups
+  const bytes = [];
+  for (const g of groups) {
+    bytes.push(parseInt(g.slice(0, 2), 16), parseInt(g.slice(2, 4), 16));
+  }
+  for (let i = 0; i < 16; i++) {
+    const bitPos = (i + 1) * 8;
+    if (p < bitPos) {
+      const bitsKept = Math.max(0, 8 - (bitPos - p));
+      bytes[i] = bytes[i] & parseInt('1'.repeat(bitsKept).padEnd(8, '0'), 2);
+    }
+  }
+  const out = [];
+  for (let i = 0; i < 16; i += 2) {
+    out.push(((bytes[i] << 8) | bytes[i + 1]).toString(16).padStart(4, '0'));
+  }
+  return out.join(':');
+}
+
+// Derive the subnet's gateway when the admin didn't provide one:
+// IPv4 → first usable address in the subnet (.1); IPv6 → network base with ::1.
+function deriveGateway(addr, prefix) {
+  const ip = stripCidr(addr);
+  if (!ip) return '';
+  if (ip.includes(':')) {
+    const net = ipv6Network(ip, prefix);
+    if (!net) return '';
+    return net === '' ? '' : net + ':1';
+  }
+  const p = Math.max(0, Math.min(32, parseInt(prefix, 10) || 24));
+  const net = ipv4Network(ip, p);
+  if (!net) return '';
+  if (p >= 31) return ip; // /31 or /32 → no gateway to derive
+  const parts = net.split('.').map(Number);
+  return [...parts.slice(0, 3), parts[3] === 255 ? 254 : parts[3] + 1].join('.');
+}
+
+function resolveVpsType(data, user) {
+  const allowed = ['kvm', 'nat', 'storage', 'highcpu', 'gaming', 'backup'];
+  const given = String(data && data.vps_type || '').trim().toLowerCase();
+  if (allowed.includes(given)) return given;
+  try {
+    if (user && user.id) {
+      const plan = require('./billingService').planOfUser(user.id);
+      if (plan && plan.vps_type && allowed.includes(String(plan.vps_type).toLowerCase())) {
+        return String(plan.vps_type).toLowerCase();
+      }
+    }
+  } catch (_) {}
+  return String(settings.get('vm.default_vps_type') || 'kvm').toLowerCase();
+}
+
 function serializeVm(row) {
   if (!row) return null;
   let forwards = [];
@@ -847,17 +945,42 @@ function writeSeed(vm) {
   // DHCP stays ENABLED on purpose: the panel's own SSH path (node:ssh_port →
   // QEMU hostfwd → guest 22) depends on the slirp DHCP lease (10.0.2.x). The
   // static address is added as a secondary on the same NIC so a dedicated IP
-  // never breaks the web console / terminal connection.
+  // never breaks the web console / terminal connection. Gateways and routes
+  // are derived automatically so a bare "pick an IP" always ends up reachable.
   let networkConfig = null;
   const mode = String(vm.ip_mode || 'nat');
-  const v4 = String(vm.ip_address || '').trim();
-  const v4prefix = String(vm.ip_prefix || '').trim() || '24';
-  const v6 = String(vm.ipv6_address || '').trim();
-  const v6prefix = String(vm.ipv6_prefix || '').trim() || '64';
+  const v4raw = stripCidr(vm.ip_address);
+  const v6raw = stripCidr(vm.ipv6_address);
+  const v4 = v4raw; const v6 = v6raw;
+  const v4prefix = sanitizePrefix(vm.ip_prefix, 24, 32);
+  const v6prefix = sanitizePrefix(vm.ipv6_prefix, 64, 128);
+  const v4gw = (() => {
+    if (mode === 'ipv6') return null;
+    const given = stripCidr(vm.ip_gateway);
+    if (given) return given;
+    if (v4) return deriveGateway(v4, v4prefix);
+    return null;
+  })();
+  const v6gw = (() => {
+    if (mode === 'ipv4_shared' || mode === 'ipv4_dedicated') return null;
+    const given = stripCidr(vm.ipv6_gateway);
+    if (given) return given;
+    if (v6) return deriveGateway(v6, v6prefix);
+    return null;
+  })();
   if (mode !== 'nat' && (v4 || v6)) {
     const addresses = [];
-    if (mode !== 'ipv6' && v4) addresses.push(`"${v4}/${v4prefix}"`);
-    if ((mode === 'ipv6' || mode === 'dual') && v6) addresses.push(`"${v6}/${v6prefix}"`);
+    const routes = [];
+    const dns = ['1.1.1.1', '8.8.8.8'];
+    if (mode !== 'ipv6' && v4) {
+      addresses.push(`"${v4}/${v4prefix}"`);
+      if (v4gw) routes.push(`      - to: default\n        via: ${v4gw}\n        metric: 256`);
+    }
+    if ((mode === 'ipv6' || mode === 'dual') && v6) {
+      addresses.push(`"${v6}/${v6prefix}"`);
+      if (v6gw) routes.push(`      - to: "::/0"\n        via: ${v6gw}\n        metric: 256`);
+      dns.push('2606:4700:4700::1111', '2606:4700:4700::1001');
+    }
     networkConfig = `version: 2
 ethernets:
   vnet0:
@@ -867,8 +990,10 @@ ethernets:
     dhcp6: false
     addresses:
     ${addresses.map((a) => '      - ' + a).join('\n')}
-    nameservers:
-      addresses: [1.1.1.1, 8.8.8.8]
+${routes.length ? `    routes:
+${routes.join('\n')}
+` : ''}    nameservers:
+      addresses: [${dns.join(', ')}]
 `;
   }
 
@@ -1051,12 +1176,20 @@ function normalizeAdvanced(data) {
     locale: String(data.locale || 'en_US.UTF-8').slice(0, 64),
     // ---- Networking (shared/dedicated IPv4, IPv6, NAT) ----
     ip_mode: ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'].includes(data.ip_mode) ? data.ip_mode : 'nat',
-    ip_address: String(data.ip_address || '').trim().slice(0, 64),
-    ip_gateway: String(data.ip_gateway || '').trim().slice(0, 64),
-    ip_prefix: String(data.ip_prefix || '').trim().slice(0, 16),
-    ipv6_address: String(data.ipv6_address || '').trim().slice(0, 64),
-    ipv6_gateway: String(data.ipv6_gateway || '').trim().slice(0, 64),
-    ipv6_prefix: String(data.ipv6_prefix || '').trim().slice(0, 16),
+    ip_address: stripCidr(data.ip_address).slice(0, 64),
+    ip_gateway: (() => {
+      const g = stripCidr(data.ip_gateway);
+      if (g) return g.slice(0, 64);
+      return deriveGateway(data.ip_address, sanitizePrefix(data.ip_prefix, 24, 32)) || '';
+    })(),
+    ip_prefix: sanitizePrefix(data.ip_prefix, 24, 32),
+    ipv6_address: stripCidr(data.ipv6_address).slice(0, 64),
+    ipv6_gateway: (() => {
+      const g = stripCidr(data.ipv6_gateway);
+      if (g) return g.slice(0, 64);
+      return deriveGateway(data.ipv6_address, sanitizePrefix(data.ipv6_prefix, 64, 128)) || '';
+    })(),
+    ipv6_prefix: sanitizePrefix(data.ipv6_prefix, 64, 128),
     // ---- Per-VM neofetch spoof (custom CPU/RAM/disk shown inside the guest) ----
     neofetch_cpu: String(data.neofetch_cpu || '').trim().slice(0, 200),
     neofetch_mem: String(data.neofetch_mem || '').trim().slice(0, 200),
@@ -1162,7 +1295,7 @@ async function create({ user, data }) {
       neofetch_mem: adv.neofetch_mem,
       neofetch_disk: adv.neofetch_disk,
       neofetch_gpu: adv.neofetch_gpu,
-      vps_type: String(data.vps_type || settings.get('vm.default_vps_type') || 'kvm'),
+      vps_type: resolveVpsType(data, user),
       expires_at: expiryFromDays(data.expiry_days),
       backup_slots: toBackupSlots(data.backup_slots),
     };
@@ -1395,7 +1528,7 @@ async function create({ user, data }) {
     neofetch_mem: adv.neofetch_mem,
     neofetch_disk: adv.neofetch_disk,
     neofetch_gpu: adv.neofetch_gpu,
-    vps_type: String(data.vps_type || settings.get('vm.default_vps_type') || 'kvm'),
+    vps_type: resolveVpsType(data, user),
     expires_at: expiryFromDays(data.expiry_days),
     backup_slots: toBackupSlots(data.backup_slots),
   };
@@ -1762,6 +1895,11 @@ function update(vm, data, user) {
       else if (f === 'expires_at') vals[f] = data[f] ? data[f] : null;
       else if (f === 'vps_type') vals[f] = String(data[f] || 'kvm');
       else if (f === 'backup_slots') vals[f] = toBackupSlots(data[f]);
+      else if (f === 'ip_address' || f === 'ipv6_address') vals[f] = stripCidr(data[f]).slice(0, 64);
+      else if (f === 'ip_gateway') { const g = stripCidr(data[f]); vals[f] = (g || deriveGateway(data.ip_address !== undefined ? data.ip_address : vm.ip_address, data.ip_prefix !== undefined ? data.ip_prefix : vm.ip_prefix)).slice(0, 64); }
+      else if (f === 'ipv6_gateway') { const g = stripCidr(data[f]); vals[f] = (g || deriveGateway(data.ipv6_address !== undefined ? data.ipv6_address : vm.ipv6_address, data.ipv6_prefix !== undefined ? data.ipv6_prefix : vm.ipv6_prefix)).slice(0, 64); }
+      else if (f === 'ip_prefix') vals[f] = sanitizePrefix(data[f], 24, 32);
+      else if (f === 'ipv6_prefix') vals[f] = sanitizePrefix(data[f], 64, 128);
       else vals[f] = data[f];
     }
   }

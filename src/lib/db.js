@@ -582,6 +582,7 @@ addPlanCol('grace_days', 'INTEGER NOT NULL DEFAULT 5');
 addPlanCol('duration_days', 'INTEGER NOT NULL DEFAULT 30');
 addPlanCol('ip_include', "TEXT NOT NULL DEFAULT 'ipv4_shared'");
 addPlanCol('renewable', 'INTEGER NOT NULL DEFAULT 1');
+addPlanCol('vps_type', "TEXT NOT NULL DEFAULT 'kvm'");
 
 // user_plans extra runtime columns (set via migrations for existing installs)
 const userPlanCols = db.prepare('PRAGMA table_info(user_plans)').all().map((c) => c.name);

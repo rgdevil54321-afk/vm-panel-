@@ -14,11 +14,19 @@ function getPlan(id) {
 
 // ---------- Plans ----------
 const PLAN_KINDS = ['invite', 'booster', 'paid', 'free'];
+const VPS_TYPES = ['kvm', 'nat', 'storage', 'highcpu', 'gaming', 'backup'];
+
+function planOfUser(userId) {
+  const u = db.prepare('SELECT plan_id FROM users WHERE id = ?').get(Number(userId));
+  if (!u || !u.plan_id) return null;
+  return db.prepare('SELECT * FROM billing_plans WHERE id = ?').get(u.plan_id);
+}
 
 function createPlan(data) {
   const kind = PLAN_KINDS.includes(data.kind) ? data.kind : 'paid';
+  const vpsType = VPS_TYPES.includes(String(data.vps_type || '').toLowerCase()) ? String(data.vps_type).toLowerCase() : 'kvm';
   db.prepare(
-    'INSERT INTO billing_plans (name, description, price, currency, max_vms, max_cpu, max_mem_mb, max_disk_gb, active, created_at, kind, invites_required, boost_required, grace_days, duration_days, ip_include, renewable) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO billing_plans (name, description, price, currency, max_vms, max_cpu, max_mem_mb, max_disk_gb, active, created_at, kind, invites_required, boost_required, grace_days, duration_days, ip_include, renewable, vps_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
   ).run(
     String(data.name || '').trim(),
     String(data.description || ''),
@@ -36,7 +44,8 @@ function createPlan(data) {
     parseInt(data.grace_days, 10) > 0 ? parseInt(data.grace_days, 10) : 5,
     parseInt(data.duration_days, 10) > 0 ? parseInt(data.duration_days, 10) : 30,
     String(data.ip_include || 'ipv4_shared').slice(0, 64),
-    data.renewable === false || data.renewable === 0 || data.renewable === '0' ? 0 : 1
+    data.renewable === false || data.renewable === 0 || data.renewable === '0' ? 0 : 1,
+    vpsType
   );
   return db.prepare('SELECT * FROM billing_plans ORDER BY id DESC LIMIT 1').get();
 }
@@ -45,7 +54,7 @@ function updatePlan(id, data) {
   const plan = getPlan(id);
   if (!plan) return null;
   db.prepare(
-    'UPDATE billing_plans SET name = ?, description = ?, price = ?, currency = ?, max_vms = ?, max_cpu = ?, max_mem_mb = ?, max_disk_gb = ?, active = ?, kind = ?, invites_required = ?, boost_required = ?, grace_days = ?, duration_days = ?, ip_include = ?, renewable = ? WHERE id = ?'
+    'UPDATE billing_plans SET name = ?, description = ?, price = ?, currency = ?, max_vms = ?, max_cpu = ?, max_mem_mb = ?, max_disk_gb = ?, active = ?, kind = ?, invites_required = ?, boost_required = ?, grace_days = ?, duration_days = ?, ip_include = ?, renewable = ?, vps_type = ? WHERE id = ?'
   ).run(
     String(data.name !== undefined ? data.name : plan.name).trim(),
     String(data.description !== undefined ? data.description : plan.description || ''),
@@ -63,6 +72,7 @@ function updatePlan(id, data) {
     data.duration_days !== undefined ? (parseInt(data.duration_days, 10) > 0 ? parseInt(data.duration_days, 10) : 30) : plan.duration_days,
     data.ip_include !== undefined ? String(data.ip_include).slice(0, 64) : plan.ip_include,
     data.renewable !== undefined ? (data.renewable === false || data.renewable === 0 || data.renewable === '0' ? 0 : 1) : plan.renewable,
+    data.vps_type !== undefined ? (VPS_TYPES.includes(String(data.vps_type).toLowerCase()) ? String(data.vps_type).toLowerCase() : plan.vps_type) : plan.vps_type,
     id
   );
   return getPlan(id);

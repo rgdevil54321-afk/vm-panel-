@@ -436,6 +436,78 @@ function agentSeedPayload(vm) {
   ];
 }
 
+// ---- Networking helpers: mirror the panel so every static IP resolves ----
+function stripCidr(addr) {
+  const s = String(addr || '').trim();
+  const slash = s.indexOf('/');
+  return slash > 0 ? s.slice(0, slash).trim() : s;
+}
+
+function sanitizePrefix(p, def, max) {
+  const n = parseInt(p, 10);
+  if (isNaN(n) || n <= 0) return String(def);
+  return String(Math.min(n, max));
+}
+
+function ipv4Network(ip, prefix) {
+  const p = Math.max(0, Math.min(32, parseInt(prefix, 10) || 24));
+  const octets = String(ip).split('.').map((o) => parseInt(o, 10));
+  if (octets.length !== 4 || octets.some((o) => isNaN(o))) return '';
+  const mask = [0, 0, 0, 0].map((_, i) => {
+    const bits = Math.max(0, Math.min(8, p - i * 8));
+    return parseInt('1'.repeat(bits).padEnd(8, '0'), 2);
+  });
+  return octets.map((o, i) => o & mask[i]).join('.');
+}
+
+function expandV6(ip) {
+  const lower = String(ip).toLowerCase();
+  let head = lower;
+  let tail = '';
+  const dbl = lower.indexOf('::');
+  if (dbl >= 0) { head = lower.slice(0, dbl); tail = lower.slice(dbl + 2); }
+  let left = head ? head.split(':') : [];
+  let right = tail ? tail.split(':') : [];
+  if (!head) left = [];
+  const missing = 8 - left.length - right.length;
+  const fill = Array(Math.max(0, missing)).fill('0');
+  const groups = left.concat(fill, right).map((g) => g.padStart(4, '0'));
+  return groups;
+}
+
+function ipv6Network(ip, prefix) {
+  const p = Math.max(0, Math.min(128, parseInt(prefix, 10) || 64));
+  const groups = expandV6(ip);
+  if (groups.length !== 8 || groups.some((g) => /[^0-9a-f]/.test(g))) return '';
+  const bytes = [];
+  for (const g of groups) bytes.push(parseInt(g.slice(0, 2), 16), parseInt(g.slice(2, 4), 16));
+  for (let i = 0; i < 16; i++) {
+    const bitPos = (i + 1) * 8;
+    if (p < bitPos) {
+      const bitsKept = Math.max(0, 8 - (bitPos - p));
+      bytes[i] = bytes[i] & parseInt('1'.repeat(bitsKept).padEnd(8, '0'), 2);
+    }
+  }
+  const out = [];
+  for (let i = 0; i < 16; i += 2) out.push(((bytes[i] << 8) | bytes[i + 1]).toString(16).padStart(4, '0'));
+  return out.join(':');
+}
+
+function deriveGateway(addr, prefix) {
+  const ip = stripCidr(addr);
+  if (!ip) return '';
+  if (ip.includes(':')) {
+    const net = ipv6Network(ip, prefix);
+    return net ? net + ':1' : '';
+  }
+  const p = Math.max(0, Math.min(32, parseInt(prefix, 10) || 24));
+  const net = ipv4Network(ip, p);
+  if (!net) return '';
+  if (p >= 31) return ip;
+  const parts = net.split('.').map(Number);
+  return [...parts.slice(0, 3), parts[3] === 255 ? 254 : parts[3] + 1].join('.');
+}
+
 function writeSeed(vm) {
   const dir = vmDir(vm);
   const passHash = spawnSync('openssl', ['passwd', '-6', vm.password], { encoding: 'utf8' }).stdout.trim();
@@ -529,7 +601,52 @@ ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + user
     path.join(dir, 'meta-data'),
     `instance-id: iid-${vm.uuid || vm.name}\nlocal-hostname: ${vm.hostname || vm.name}\n`
   );
-  const r = spawnSync('cloud-localds', [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data')], { encoding: 'utf8' });
+  // ---- Static IP network-config (same shape the panel writes) ----
+  let networkConfig = null;
+  const mode = String(vm.ip_mode || 'nat');
+  const v4 = stripCidr(vm.ip_address);
+  const v6 = stripCidr(vm.ipv6_address);
+  const v4prefix = sanitizePrefix(vm.ip_prefix, 24, 32);
+  const v6prefix = sanitizePrefix(vm.ipv6_prefix, 64, 128);
+  const v4gw = mode === 'ipv6' ? null : (stripCidr(vm.ip_gateway) || (v4 ? deriveGateway(v4, v4prefix) : ''));
+  const v6gw = (mode === 'ipv4_shared' || mode === 'ipv4_dedicated')
+    ? null : (stripCidr(vm.ipv6_gateway) || (v6 ? deriveGateway(v6, v6prefix) : ''));
+  if (mode !== 'nat' && (v4 || v6)) {
+    const addresses = [];
+    const routes = [];
+    const dns = ['1.1.1.1', '8.8.8.8'];
+    if (mode !== 'ipv6' && v4) {
+      addresses.push(`"${v4}/${v4prefix}"`);
+      if (v4gw) routes.push(`      - to: default\n        via: ${v4gw}\n        metric: 256`);
+    }
+    if ((mode === 'ipv6' || mode === 'dual') && v6) {
+      addresses.push(`"${v6}/${v6prefix}"`);
+      if (v6gw) routes.push(`      - to: "::/0"\n        via: ${v6gw}\n        metric: 256`);
+      dns.push('2606:4700:4700::1111', '2606:4700:4700::1001');
+    }
+    networkConfig = `version: 2
+ethernets:
+  vnet0:
+    match:
+      name: "e*"
+    dhcp4: true
+    dhcp6: false
+    addresses:
+    ${addresses.map((a) => '      - ' + a).join('\n')}
+${routes.length ? `    routes:
+${routes.join('\n')}
+` : ''}    nameservers:
+      addresses: [${dns.join(', ')}]
+`;
+    fs.writeFileSync(path.join(dir, 'network-config'), `#cloud-config\n${networkConfig}`);
+  } else {
+    try { fs.unlinkSync(path.join(dir, 'network-config')); } catch (_) {}
+  }
+  const r = spawnSync('cloud-localds',
+    networkConfig
+      ? [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data'), path.join(dir, 'network-config')]
+      : [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data')],
+    { encoding: 'utf8' });
   if (r.status !== 0) {
     throw new Error(`cloud-localds failed: ${r.stderr || r.stdout}`);
   }

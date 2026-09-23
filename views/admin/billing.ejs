@@ -14,8 +14,8 @@
     <p class="muted text-sm mb-2">Define preset quota tiers. Assign a plan to a user from their detail page — it sets their VM/CPU/RAM/disk limits.</p>
     <div class="table-wrap" style="margin-top:10px">
       <table>
-        <thead><tr><th>Name</th><th>Description</th><th>Price</th><th>VMs</th><th>CPU</th><th>RAM (MB)</th><th>Disk (GB)</th><th>Status</th><th class="right">Actions</th></tr></thead>
-        <tbody id="planRows"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Description</th><th>Price</th><th>VMs</th><th>CPU</th><th>RAM (MB)</th><th>Disk (GB)</th><th>VPS Type</th><th>Status</th><th class="right">Actions</th></tr></thead>
+        <tbody id="planRows"><tr><td colspan="10" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="grid grid-4" style="gap:12px;margin-top:14px">
@@ -25,6 +25,12 @@
       <div class="form-group" style="margin:0"><label>CPU cores</label><input id="pl_cpu" class="input" type="number" value="-1" /></div>
       <div class="form-group" style="margin:0"><label>RAM (MB)</label><input id="pl_mem" class="input" type="number" value="-1" /></div>
       <div class="form-group" style="margin:0"><label>Disk (GB)</label><input id="pl_disk" class="input" type="number" value="-1" /></div>
+      <div class="form-group" style="margin:0"><label>VPS Type</label>
+        <select id="pl_vps_type" class="input">
+          <option value="kvm">KVM</option><option value="nat">NAT</option><option value="storage">Storage</option>
+          <option value="highcpu">High CPU</option><option value="gaming">Gaming</option><option value="backup">Backup</option>
+        </select>
+      </div>
       <div class="form-group" style="margin:0"><label>Description</label><input id="pl_desc" class="input" placeholder="For testing" /></div>
       <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createPlan()">Add Plan</button></div>
     </div>
@@ -107,7 +113,7 @@ async function loadPlans() {
   try {
     const res = await VP.api('/admin/billing/plans');
     const plans = res.plans || [];
-    if (!plans.length) { rows.innerHTML = '<tr><td colspan="9" class="muted">No plans yet.</td></tr>'; return; }
+    if (!plans.length) { rows.innerHTML = '<tr><td colspan="10" class="muted">No plans yet.</td></tr>'; return; }
     rows.innerHTML = plans.map((p) => {
       const on = p.active === 1 || p.active === true;
       return '<tr>'
@@ -118,11 +124,12 @@ async function loadPlans() {
         + '<td class="text-sm">' + lim(p.max_cpu) + '</td>'
         + '<td class="text-sm">' + lim(p.max_mem_mb) + '</td>'
         + '<td class="text-sm">' + lim(p.max_disk_gb) + '</td>'
+        + '<td class="text-sm"><span class="pill pill-blue">' + esc(p.vps_type || 'kvm') + '</span></td>'
         + '<td>' + (on ? '<span class="pill pill-green">active</span>' : '<span class="pill pill-gray">inactive</span>') + '</td>'
         + '<td class="right"><button class="btn btn-sm" onclick="togglePlan(' + p.id + ',' + (on ? 0 : 1) + ')">' + (on ? 'Disable' : 'Enable') + '</button> <button class="btn btn-sm btn-danger" onclick="deletePlan(' + p.id + ')">Delete</button></td>'
         + '</tr>';
     }).join('');
-  } catch (e) { rows.innerHTML = '<tr><td colspan="9" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+  } catch (e) { rows.innerHTML = '<tr><td colspan="10" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
 }
 async function createPlan() {
   const body = {
@@ -132,6 +139,7 @@ async function createPlan() {
     max_cpu: document.getElementById('pl_cpu').value,
     max_mem_mb: document.getElementById('pl_mem').value,
     max_disk_gb: document.getElementById('pl_disk').value,
+    vps_type: document.getElementById('pl_vps_type').value,
     description: document.getElementById('pl_desc').value.trim(),
   };
   if (!body.name) { VP.toast('Enter a plan name', 'warning'); return; }

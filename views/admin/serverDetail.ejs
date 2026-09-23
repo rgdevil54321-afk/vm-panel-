@@ -169,10 +169,10 @@
                 </select>
               </td>
             </tr>
-            <tr><td class="muted">IPv4 Address</td><td><input id="net_ip_address" list="hostIps" value="<%= vm.ip_address || '' %>" placeholder="10.10.0.5 (pick from host, or type)" style="width:100%;padding:8px 10px;border-radius:8px"/><datalist id="hostIps"></datalist></td></tr>
+            <tr><td class="muted">IPv4 Address</td><td><input id="net_ip_address" list="hostIps" value="<%= vm.ip_address || '' %>" placeholder="10.10.0.5 (pick from host, or type)" style="width:100%;padding:8px 10px;border-radius:8px" oninput="netEdit('4')" onchange="netEdit('4')"/><datalist id="hostIps"></datalist><datalist id="hostIps6"></datalist></td></tr>
             <tr><td class="muted">IPv4 Gateway</td><td><input id="net_ip_gateway" value="<%= vm.ip_gateway || '' %>" placeholder="10.10.0.1" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
             <tr><td class="muted">IPv4 Prefix</td><td><input id="net_ip_prefix" value="<%= vm.ip_prefix || '24' %>" placeholder="24" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
-            <tr><td class="muted">IPv6 Address</td><td><input id="net_ipv6_address" value="<%= vm.ipv6_address || '' %>" placeholder="2001:db8::5" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
+            <tr><td class="muted">IPv6 Address</td><td><input id="net_ipv6_address" list="hostIps6" value="<%= vm.ipv6_address || '' %>" placeholder="2001:db8::5" style="width:100%;padding:8px 10px;border-radius:8px" oninput="netEdit('6')" onchange="netEdit('6')"/></td></tr>
             <tr><td class="muted">IPv6 Gateway</td><td><input id="net_ipv6_gateway" value="<%= vm.ipv6_gateway || '' %>" placeholder="2001:db8::1" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
             <tr><td class="muted">IPv6 Prefix</td><td><input id="net_ipv6_prefix" value="<%= vm.ipv6_prefix || '64' %>" placeholder="64" style="width:100%;padding:8px 10px;border-radius:8px"/></td></tr>
           </tbody>
@@ -466,17 +466,23 @@ async function saveEdit(btn) {
 async function loadHostNet(btn) {
   const info = document.getElementById('hostNetInfo');
   const dl = document.getElementById('hostIps');
+  const dl6 = document.getElementById('hostIps6');
   try {
     if (btn) btn.disabled = true;
     const d = await VP.api('/admin/host/network');
     const set = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value.trim()) el.value = v; };
-    const ips = (d.addresses || []).map((a) => a.cidr);
+    const drop = (v) => { const s = String(v || '').trim(); const i = s.lastIndexOf('/'); return i > 0 ? s.slice(0, i).trim() : s; };
+    const ips = (d.addresses || []).map((a) => drop(a.cidr || a.addr));
+    const ip6s = (d.addresses_v6 || []).map((a) => drop(a.cidr || a.addr));
     set('net_ip_gateway', d.gateway);
+    set('net_ipv6_gateway', d.gateway6);
     if (d.addresses && d.addresses[0]) set('net_ip_prefix', String(d.addresses[0].prefix));
+    if (d.addresses_v6 && d.addresses_v6[0]) set('net_ipv6_prefix', String(d.addresses_v6[0].prefix));
     if (dl) dl.innerHTML = ips.map((x) => '<option value="' + x + '"></option>').join('');
-    let msg = 'Detected host: ' + (d.primary_interface || '?') + ' · ' + (ips.join(', ') || 'no IPv4 on host');
-    if (d.gateway) msg += ' · gateway ' + d.gateway;
-    if (d.dns && d.dns.length) msg += ' · DNS ' + d.dns.join(', ');
+    if (dl6) dl6.innerHTML = ip6s.map((x) => '<option value="' + x + '"></option>').join('');
+    let msg = 'Detected host: ' + (d.primary_interface || '?') + ' · IPv4: ' + (ips.join(', ') || 'none') + (ip6s.length ? ' · IPv6: ' + ip6s.join(', ') : '');
+    if (d.gateway) msg += ' · gw4 ' + d.gateway;
+    if (d.gateway6) msg += ' · gw6 ' + d.gateway6;
     if (info) { info.textContent = msg; info.style.display = ''; }
     VP.toast('Host network detected — pick an IP above or type your own', 'success');
   } catch (e) {
@@ -485,6 +491,49 @@ async function loadHostNet(btn) {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+function netEdit(side) {
+  const is6 = side === '6';
+  const raw = (document.getElementById(is6 ? 'net_ipv6_address' : 'net_ip_address').value || '').trim();
+  if (!raw) return;
+  const gw = document.getElementById(is6 ? 'net_ipv6_gateway' : 'net_ip_gateway');
+  const pre = document.getElementById(is6 ? 'net_ipv6_prefix' : 'net_ip_prefix');
+  const prefix = parseInt(pre.value, 10) || (is6 ? 64 : 24);
+  if (gw && !gw.value.trim()) gw.value = netGwFrom(raw, prefix);
+}
+function netGwFrom(ip, prefix) {
+  const drop = (v) => { const s = String(v || '').trim(); const i = s.lastIndexOf('/'); return i > 0 ? s.slice(0, i).trim() : s; };
+  ip = drop(ip);
+  if (ip.includes(':')) {
+    let s = ip.toLowerCase(); let head = s, tail = '';
+    const d = s.indexOf('::');
+    if (d >= 0) { head = s.slice(0, d); tail = s.slice(d + 2); }
+    const L = head ? head.split(':') : []; const R = tail ? tail.split(':') : [];
+    const G = L.concat(Array(Math.max(0, 8 - L.length - R.length)).fill('0'), R).map((g) => g.padStart(4, '0'));
+    if (G.length !== 8) return '';
+    const bytes = [];
+    for (const g of G) bytes.push(parseInt(g.slice(0, 2), 16), parseInt(g.slice(2, 4), 16));
+    const p = Math.max(0, Math.min(128, parseInt(prefix, 10) || 64));
+    for (let i = 0; i < 16; i++) {
+      const bp = (i + 1) * 8;
+      if (p < bp) {
+        const k = Math.max(0, 8 - (bp - p));
+        bytes[i] = bytes[i] & (k >= 8 ? 255 : (k > 0 ? 256 - (1 << (8 - k)) : 0));
+      }
+    }
+    const out = [];
+    for (let i = 0; i < 16; i += 2) out.push(((bytes[i] << 8) | bytes[i + 1]).toString(16).padStart(4, '0'));
+    return out.join(':') + ':1';
+  }
+  const p = Math.max(0, Math.min(32, parseInt(prefix, 10) || 24));
+  if (p >= 31) return ip;
+  const o = ip.split('.').map(Number);
+  if (o.length !== 4 || o.some(isNaN)) return '';
+  let r = p; const m = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) { m[i] = r >= 8 ? 255 : (r > 0 ? 256 - (1 << (8 - r)) : 0); r -= 8; if (r < 0) r = 0; }
+  const base = o.map((v, i) => v & m[i]);
+  return base.slice(0, 3).join('.') + '.' + (base[3] === 255 ? 254 : base[3] + 1);
 }
 
 function openTransferModal() {
