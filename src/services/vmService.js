@@ -202,6 +202,19 @@ function buildQemuArgs(vm) {
   const threads = Math.max(1, parseInt(vm.threads_per_core, 10) || 1);
   const smp = `sockets=${sockets},cores=${cores},threads=${threads}`;
 
+  // Hardware spoof (DMI/SMBIOS + optional hypervisor masking)
+  const spoofHw = String(settings.get('vm.spoof_hw') ?? '1') !== '0';
+  const hideHv = String(settings.get('vm.spoof_hypervisor') || '0') === '1';
+  const scr = (v, d) => String(v && String(v).trim() ? v : d).trim().replace(/,/g, ' ').replace(/'/g, '').slice(0, 60);
+  const uuidOk = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(vm.uuid || ''));
+  const smbiosSpoof = spoofHw ? [
+    `type=0,vendor=${scr(settings.get('vm.spoof_bios_vendor'), 'American Megatrends International, LLC.')},version=${scr(settings.get('vm.spoof_bios_version'), '5.27')},date=${scr(settings.get('vm.spoof_bios_date'), '02/16/2023')}`,
+    `type=1,manufacturer=${scr(settings.get('vm.spoof_sys_manufacturer'), 'Dell Inc.')},product=${scr(settings.get('vm.spoof_sys_product'), 'PowerEdge R740')},version=${scr(settings.get('vm.spoof_sys_version'), 'Not Specified')},serial=${scr(settings.get('vm.spoof_sys_serial'), '2X4C4R2')},family=Server${uuidOk ? `,uuid=${vm.uuid}` : ''}`,
+    `type=2,manufacturer=${scr(settings.get('vm.spoof_board_manufacturer'), 'Dell Inc.')},product=${scr(settings.get('vm.spoof_board_product'), '0CNDVR')},serial=${scr(settings.get('vm.spoof_board_serial'), '/2X4C4R2/CN7476347A00R9.')}`,
+    `type=3,manufacturer=${scr(settings.get('vm.spoof_sys_manufacturer'), 'Dell Inc.')},version=${scr(settings.get('vm.spoof_sys_version'), 'Not Specified')},serial=${scr(settings.get('vm.spoof_sys_serial'), '2X4C4R2')}`,
+  ] : [];
+  const cpuArg = kvmAvailable && hideHv ? `${cpuModel},kvm=off,-hypervisor` : cpuModel;
+
   // Memory: base, optional balloon min + hotplug max
   let memBase = String(vm.memory || '2048');
   const memMax = parseInt(vm.mem_max, 10);
@@ -215,9 +228,13 @@ function buildQemuArgs(vm) {
   const args = [
     '-m', memBase,
     '-smp', smp,
-    '-cpu', cpuModel,
+    '-cpu', cpuArg,
     '-machine', `type=${String(vm.machine_type || 'pc').split(',')[0]},accel=${accelMode}`,
   ];
+  if (smbiosSpoof.length) {
+    for (const s of smbiosSpoof) args.push('-smbios', s);
+    if (uuidOk) args.push('-uuid', vm.uuid);
+  }
 
   // Firmware / UEFI / secure boot / TPM
   const firmware = String(vm.firmware || 'bios');
@@ -1291,6 +1308,18 @@ async function create({ user, data }) {
       ipv6_address: adv.ipv6_address,
       ipv6_gateway: adv.ipv6_gateway,
       ipv6_prefix: adv.ipv6_prefix,
+      spoof_hw: String(settings.get('vm.spoof_hw') ?? '1'),
+      spoof_hypervisor: String(settings.get('vm.spoof_hypervisor') || '0'),
+      spoof_bios_vendor: String(settings.get('vm.spoof_bios_vendor') || ''),
+      spoof_bios_version: String(settings.get('vm.spoof_bios_version') || ''),
+      spoof_bios_date: String(settings.get('vm.spoof_bios_date') || ''),
+      spoof_sys_manufacturer: String(settings.get('vm.spoof_sys_manufacturer') || ''),
+      spoof_sys_product: String(settings.get('vm.spoof_sys_product') || ''),
+      spoof_sys_version: String(settings.get('vm.spoof_sys_version') || ''),
+      spoof_sys_serial: String(settings.get('vm.spoof_sys_serial') || ''),
+      spoof_board_manufacturer: String(settings.get('vm.spoof_board_manufacturer') || ''),
+      spoof_board_product: String(settings.get('vm.spoof_board_product') || ''),
+      spoof_board_serial: String(settings.get('vm.spoof_board_serial') || ''),
       neofetch_cpu: adv.neofetch_cpu,
       neofetch_mem: adv.neofetch_mem,
       neofetch_disk: adv.neofetch_disk,

@@ -297,8 +297,23 @@ function buildQemuArgs(vm) {
   const cores = Math.max(1, parseInt(vm.cores_per_socket, 10) || 1);
   const threads = Math.max(1, parseInt(vm.threads_per_core, 10) || 1);
   const smp = `sockets=${sockets},cores=${cores},threads=${threads}`;
-  const ballooning = String(vm.ballooning) === '1' || String(vm.ballooning) === 'true';
 
+  // Hardware spoof (DMI/SMBIOS + optional hypervisor masking). Values travel
+  // with the VM object (sent by the panel at deploy time). Undefined → on,
+  // with the panel's Dell defaults, so every guest is shielded by default.
+  const spoofHw = String(vm.spoof_hw ?? '1') !== '0';
+  const hideHv = String(vm.spoof_hypervisor || '0') === '1';
+  const scr = (v, d) => String(v && String(v).trim() ? v : d).trim().replace(/,/g, ' ').replace(/'/g, '').slice(0, 60);
+  const uuidOk = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(vm.uuid || ''));
+  const smbiosSpoof = spoofHw ? [
+    `type=0,vendor=${scr(vm.spoof_bios_vendor, 'American Megatrends International, LLC.')},version=${scr(vm.spoof_bios_version, '5.27')},date=${scr(vm.spoof_bios_date, '02/16/2023')}`,
+    `type=1,manufacturer=${scr(vm.spoof_sys_manufacturer, 'Dell Inc.')},product=${scr(vm.spoof_sys_product, 'PowerEdge R740')},version=${scr(vm.spoof_sys_version, 'Not Specified')},serial=${scr(vm.spoof_sys_serial, '2X4C4R2')},family=Server${uuidOk ? `,uuid=${vm.uuid}` : ''}`,
+    `type=2,manufacturer=${scr(vm.spoof_board_manufacturer, 'Dell Inc.')},product=${scr(vm.spoof_board_product, '0CNDVR')},serial=${scr(vm.spoof_board_serial, '/2X4C4R2/CN7476347A00R9.')}`,
+    `type=3,manufacturer=${scr(vm.spoof_sys_manufacturer, 'Dell Inc.')},version=${scr(vm.spoof_sys_version, 'Not Specified')},serial=${scr(vm.spoof_sys_serial, '2X4C4R2')}`,
+  ] : [];
+  const cpuArg = kvmAvailable && hideHv ? `${cpuModel},kvm=off,-hypervisor` : cpuModel;
+
+  const ballooning = String(vm.ballooning) === '1' || String(vm.ballooning) === 'true';
   let memBase = String(vm.memory || '2048');
   const memMax = parseInt(vm.mem_max, 10);
   const memBaseVal = parseInt(memBase, 10);
@@ -308,9 +323,13 @@ function buildQemuArgs(vm) {
   const args = [
     '-m', memBase,
     '-smp', smp,
-    '-cpu', cpuModel,
+    '-cpu', cpuArg,
     '-machine', `type=${String(vm.machine_type || 'pc').split(',')[0]},accel=${accelMode}`,
   ];
+  if (smbiosSpoof.length) {
+    for (const s of smbiosSpoof) args.push('-smbios', s);
+    if (uuidOk) args.push('-uuid', vm.uuid);
+  }
 
   const firmware = String(vm.firmware || 'bios');
   if (firmware === 'uefi' || String(vm.secure_boot || '') === '1') {

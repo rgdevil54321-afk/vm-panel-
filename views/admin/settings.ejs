@@ -189,6 +189,72 @@
           </div>
         </div>
 
+        <!-- 1.6. VM Hardware Spoof (DMI/SMBIOS + hypervisor) -->
+        <hr class="hr" style="margin:24px 0"/>
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">1.6. VM Hardware Spoof (DMI / SMBIOS)</label>
+          <div class="muted text-sm mb-2">By default every VM presents Dell PowerEdge R740 DMI tables instead of QEMU / i440FX, so <code>dmidecode</code>, <code>systemd-detect-virt</code> and VPS-check scripts see a realistic bare-metal server. Optionally also mask the <code>KVM</code> hypervisor CPUID leaf so <code>Virtualization: kvm</code> disappears entirely (minor guest performance trade-off).</div>
+          <div class="grid grid-2" style="gap:16px">
+            <div class="form-group">
+              <label>SMBIOS/DMI Spoof</label>
+              <select name="vm.spoof_hw">
+                <option value="1" <%= String(all['vm.spoof_hw']) === '1' ? 'selected' : '' %>>Enabled (fake DMI tables)</option>
+                <option value="0" <%= String(all['vm.spoof_hw']) === '0' ? 'selected' : '' %>>Disabled (show QEMU)</option>
+              </select>
+              <div class="form-hint mt-1">On by default. Hides "QEMU" · "Standard PC (i440FX + PIIX, 1996)" from guests.</div>
+            </div>
+            <div class="form-group">
+              <label>Hide KVM Detection</label>
+              <select name="vm.spoof_hypervisor">
+                <option value="1" <%= String(all['vm.spoof_hypervisor']) !== '0' ? 'selected' : '' %>>Enabled (hide kvm/hypervisor)</option>
+                <option value="0" <%= String(all['vm.spoof_hypervisor']) === '0' ? 'selected' : '' %>>Disabled</option>
+              </select>
+              <div class="form-hint mt-1">Adds <code>kvm=off,-hypervisor</code> to the guest CPU so <code>systemd-detect-virt</code> → "none". Disable if a guest has clock/performance issues.</div>
+            </div>
+            <div class="form-group">
+              <label>BIOS Vendor</label>
+              <input name="vm.spoof_bios_vendor" value="<%= all['vm.spoof_bios_vendor'] || 'American Megatrends International, LLC.' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>BIOS Version</label>
+              <input name="vm.spoof_bios_version" value="<%= all['vm.spoof_bios_version'] || '5.27' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>BIOS Release Date</label>
+              <input name="vm.spoof_bios_date" value="<%= all['vm.spoof_bios_date'] || '02/16/2023' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>System Manufacturer</label>
+              <input name="vm.spoof_sys_manufacturer" value="<%= all['vm.spoof_sys_manufacturer'] || 'Dell Inc.' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>System Product</label>
+              <input name="vm.spoof_sys_product" value="<%= all['vm.spoof_sys_product'] || 'PowerEdge R740' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>System Version</label>
+              <input name="vm.spoof_sys_version" value="<%= all['vm.spoof_sys_version'] || 'Not Specified' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>System Serial</label>
+              <input name="vm.spoof_sys_serial" value="<%= all['vm.spoof_sys_serial'] || '2X4C4R2' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>Board Manufacturer</label>
+              <input name="vm.spoof_board_manufacturer" value="<%= all['vm.spoof_board_manufacturer'] || 'Dell Inc.' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>Board Product</label>
+              <input name="vm.spoof_board_product" value="<%= all['vm.spoof_board_product'] || '0CNDVR' %>" maxlength="60"/>
+            </div>
+            <div class="form-group">
+              <label>Board Serial</label>
+              <input name="vm.spoof_board_serial" value="<%= all['vm.spoof_board_serial'] || '/2X4C4R2/CN7476347A00R9.' %>" maxlength="60"/>
+            </div>
+          </div>
+          <div class="form-hint mt-2"><b>Note:</b> changes apply on the next VM Start / re-deploy. The host CPU brand string still passes through (that part reads as real Xeon — usually a plus).</div>
+        </div>
+
         <!-- 2. Discord Community -->
         <div class="form-group mb-4">
           <label style="font-size:14px;font-weight:700;color:#fff">2. Discord Community</label>
