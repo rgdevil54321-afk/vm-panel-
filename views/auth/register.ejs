@@ -1,5 +1,15 @@
 <%- include('../partials/head', { title: 'Register' }) %>
 <%- include('../partials/ambient') %>
+<style>
+.vrg-sso { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 12px; border-radius: 10px;
+  background: linear-gradient(135deg, #5865F2, #4752C4); color: #fff; font-weight: 700; font-size: 14px; text-decoration: none;
+  border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 10px 26px rgba(88,101,242,0.4); font-family: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease; }
+.vrg-sso:hover { transform: translateY(-1px); filter: brightness(1.07); box-shadow: 0 14px 32px rgba(88,101,242,0.55); }
+.vrg-or { position: relative; margin: 18px 0 14px; text-align: center; }
+.vrg-or::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--border); }
+.vrg-or span { position: relative; background: var(--bg-card); padding: 0 12px; font-size: 11.5px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.6px; }
+</style>
 <div class="auth-wrap">
   <div class="auth-card" style="position:relative;overflow:hidden">
     <div style="position:absolute;top:-50px;left:50%;transform:translateX(-50%);width:200px;height:120px;background:var(--accent);filter:blur(80px);opacity:0.35;pointer-events:none"></div>
@@ -25,6 +35,14 @@
 
       <% if (typeof error !== 'undefined' && error) { %><div class="alert alert-error"><%= error %></div><% } %>
       <% if (typeof success !== 'undefined' && success) { %><div class="alert alert-success"><%= success %></div><% } %>
+
+      <% if (typeof discordLogin !== 'undefined' && discordLogin) { %>
+        <a href="/auth/discord" class="vrg-sso">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="17" height="17"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4862 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0821.0821 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8917.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6554a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z"/></svg>
+          Create account with Discord
+        </a>
+        <div class="vrg-or"><span>OR SIGN UP WITH EMAIL</span></div>
+      <% } %>
 
       <form method="post" action="/register">
         <div class="form-group">
