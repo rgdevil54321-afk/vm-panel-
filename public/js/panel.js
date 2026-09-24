@@ -107,6 +107,40 @@ window.VP = (() => {
         }
       });
     });
+
+    // ---- mobile sidebar drawer (backdrop + Esc + close on nav) ----
+    const sidebar = qs('.sidebar');
+    const burger = qs('#hamburger');
+    if (sidebar && burger) {
+      let backdrop = qs('.sidebar-backdrop');
+      if (!backdrop) {
+        backdrop = el('div', { class: 'sidebar-backdrop' });
+        document.body.appendChild(backdrop);
+      }
+      const closeDrawer = () => { sidebar.classList.remove('open'); backdrop.classList.remove('show'); burger.setAttribute('aria-expanded', 'false'); };
+      burger.addEventListener('click', () => {
+        const open = sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show', open);
+        burger.setAttribute('aria-expanded', String(open));
+      });
+      backdrop.addEventListener('click', closeDrawer);
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+      sidebar.addEventListener('click', (e) => { if (e.target.closest('a')) closeDrawer(); });
+    }
+
+    // ---- topbar user dropdown ----
+    const menu = qs('#userMenu');
+    if (menu) {
+      const btn = qs('#userMenuBtn', menu);
+      const close = () => { menu.classList.remove('open'); if (btn) btn.setAttribute('aria-expanded', 'false'); };
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = menu.classList.toggle('open');
+        btn.setAttribute('aria-expanded', String(open));
+      });
+      document.addEventListener('click', (e) => { if (!menu.contains(e.target)) close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    }
   });
 
   return { toast, api, qs, qsa, el, fmtBytes, fmtDate, confirmDialog, hide, show, state };

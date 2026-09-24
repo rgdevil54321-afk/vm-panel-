@@ -823,6 +823,8 @@ function serializeVm(row) {
           region: String(row.region || ''),
           ipv4: String(row.ip_address || ''),
           ipv6: String(row.ipv6_address || ''),
+          gateway: String(row.ip_gateway || ''),
+          gateway6: String(row.ipv6_gateway || ''),
         });
       } catch (_) {}
     }
@@ -1036,6 +1038,8 @@ ${routes.join('\n')}
         region: String(vm.region || ''),
         ipv4: String(vm.ip_address || ''),
         ipv6: String(vm.ipv6_address || ''),
+        gateway: String(vm.ip_gateway || ''),
+        gateway6: String(vm.ipv6_gateway || ''),
       }),
     });
     writeFiles.push({

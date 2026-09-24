@@ -73,12 +73,13 @@ function logoRows(text) {
     const g = BLOCK_FONT[ch] || BLOCK_FONT['?'];
     for (let r = 0; r < 5; r++) base[r] += (i ? ' ' : '') + (g[r] || '    ');
   });
-  // Scale: 2x horizontal, 3x tall so the logo reads like neofetch's chunky
-  // banner. Kept modest so the logo stays compact while info rows carry the detail.
+  // Keep the logo COMPACT (like the original): 1x horizontal so 'VN' stays ~9
+  // columns wide; 2x tall keeps a chunky banner while the info lines carry the
+  // detail and width. NOTE: a regenerated banner only shows up after deploy /
+  // re-seeding an existing VM.
   const rows = [];
   for (const r of base) {
-    const wide = r.replace(/./g, (c) => c.repeat(2));
-    rows.push(wide, wide, wide);
+    rows.push(r, r);
   }
   return rows;
 }
@@ -194,7 +195,9 @@ function infoLines(info) {
   lines.push({ key: 'Memory',  val: info.memory });
   lines.push({ key: 'Disk',    val: info.disk });
   if (info.ipv4) lines.push({ key: 'IPv4', val: info.ipv4 });
+  if (info.ipv4 && info.gateway) lines.push({ key: 'IPv4 Gateway', val: info.gateway });
   if (info.ipv6) lines.push({ key: 'IPv6', val: info.ipv6 });
+  if (info.ipv6 && info.gateway6) lines.push({ key: 'IPv6 Gateway', val: info.gateway6 });
   if (info.region) lines.push({ key: 'Region', val: info.region });
   return lines;
 }
@@ -326,6 +329,8 @@ function fetchShellScript(overrides = {}) {
   if (overrides.gpu !== undefined) info.gpu = String(overrides.gpu);
   if (overrides.ipv4) info.ipv4 = String(overrides.ipv4);
   if (overrides.ipv6) info.ipv6 = String(overrides.ipv6);
+  if (overrides.gateway) info.gateway = String(overrides.gateway);
+  if (overrides.gateway6) info.gateway6 = String(overrides.gateway6);
   if (overrides.region) info.region = String(overrides.region);
   const banner = renderColorWith(info);
   const b64 = Buffer.from(banner + '\n', 'utf8').toString('base64');
@@ -351,6 +356,10 @@ function motdText(overrides = {}) {
   if (overrides.memory) info.memory = String(overrides.memory);
   if (overrides.disk) info.disk = String(overrides.disk);
   if (overrides.host) info.host = String(overrides.host);
+  if (overrides.ipv4) info.ipv4 = String(overrides.ipv4);
+  if (overrides.ipv6) info.ipv6 = String(overrides.ipv6);
+  if (overrides.gateway) info.gateway = String(overrides.gateway);
+  if (overrides.gateway6) info.gateway6 = String(overrides.gateway6);
   return renderPlainWith(info);
 }
 
