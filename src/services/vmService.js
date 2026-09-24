@@ -1716,6 +1716,10 @@ async function start(vm, { user = null } = {}) {
     if (!node) throw new Error('Node not found for this VM');
     try {
       await syncSeedToNode(node, vm);
+    } catch (e) {
+      logger.warn('[vm] seed sync to node failed (continuing): ' + e.message);
+    }
+    try {
       await nodeRegistry.startVmOnNode(node, vm);
     } catch (e) {
       throw new Error('Node start failed: ' + e.message);
@@ -1834,6 +1838,10 @@ async function restart(vm, user) {
     if (!node) throw new Error('Node not found for this VM');
     try {
       await syncSeedToNode(node, vm);
+    } catch (e) {
+      logger.warn('[vm] seed sync to node failed (continuing): ' + e.message);
+    }
+    try {
       await nodeRegistry.restartVmOnNode(node, vm);
     } catch (e) {
       throw new Error('Node restart failed: ' + e.message);
