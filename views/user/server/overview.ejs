@@ -247,8 +247,8 @@
                 <td class="mono">
                   <% if (vm.ip_address) { %>
                     <span style="color:var(--accent-2);font-weight:700"><%= vm.ip_address %><%= vm.ip_prefix ? ('/' + vm.ip_prefix) : '' %></span>
-                  <% } else if (vm.network_mode === 'nat') { %>
-                    <span style="color:var(--accent-2);font-weight:700"><%= vm.node_host %></span> <span class="muted" style="font-size:11px">(shared — reachable via node)</span>
+                  <% } else if (['nat','ipv4_shared'].includes(vm.network_mode) && vm.connect_host) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.connect_host %></span> <span class="muted" style="font-size:11px">(shared IPv4 — reachable via node)</span>
                   <% } else { %>
                     <span class="muted">—</span>
                   <% } %>

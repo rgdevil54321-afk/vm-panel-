@@ -773,6 +773,21 @@ function serializeVm(row) {
   const v4 = String(row.ip_address || '').trim();
   const v6 = String(row.ipv6_address || '').trim();
   const staticV4 = ['ipv4_shared', 'ipv4_dedicated', 'dual'].includes(ipMode) && !!v4;
+  // Shared IPv4 (SDT-BOT "shared IPv4" concept): NAT / ipv4_shared VMs have no
+  // address of their own — they are all reachable THROUGH the panel node's own
+  // reachable IPv4 on a unique forwarded port. Use the node host when it is a
+  // real non-loopback address, else auto-detect the node's public IPv4 once
+  // (cached via hostDetect) so the SSH/overview hint is never 127.0.0.1.
+  let sharedV4 = null;
+  if (node_host && node_host !== '127.0.0.1' && node_host !== 'localhost' && node_host !== '::1' && !String(node_host).includes(':')) {
+    sharedV4 = node_host;
+  } else if (!staticV4) {
+    try {
+      const nd = require('./hostDetect').detectNetwork();
+      const a = (nd.addresses || []).find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x.addr) && !String(x.addr).startsWith('127.'));
+      if (a) sharedV4 = a.addr;
+    } catch (_) {}
+  }
   const modeLabels = {
     nat: 'NAT (shared port forward)',
     ipv4_shared: 'IPv4 shared',
@@ -789,9 +804,9 @@ function serializeVm(row) {
     node_name: node_name || 'Venlix Node',
     network_mode: ipMode,
     network_mode_label: modeLabels[ipMode] || ipMode,
-    connect_host: staticV4 ? v4 : (node_host || 'localhost'),
+    connect_host: staticV4 ? v4 : (sharedV4 || node_host || 'localhost'),
     connect_port: staticV4 ? 22 : row.ssh_port,
-    connect_ip: staticV4 ? v4 : (v6 || node_host || 'localhost'),
+    connect_ip: staticV4 ? v4 : (v6 || sharedV4 || node_host || 'localhost'),
     gui_mode: !!row.gui_mode,
     start_on_boot: !!row.start_on_boot,
     ballooning: row.ballooning === 1 || row.ballooning === '1',
