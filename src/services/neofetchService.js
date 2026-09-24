@@ -66,6 +66,67 @@ function logoText() {
   const raw = String(settings.get('panel.logo_text') || DEFAULT_LOGO_TEXT).toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
   return (raw || DEFAULT_LOGO_TEXT).slice(0, 4);
 }
+
+// ── Optional pixel/block logo drawn in the admin Neofetch designer ────
+// When 'neofetch.logo_grid' is set, it replaces the block-text logo everywhere
+// (banner preview, /etc/venlix/vn-ascii.txt, guest venlix-fetch, MOTD).
+const LOGO_COLOR_CODES = {
+  logo: '\x1b[1;34m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+};
+const LOGO_CHARS = new Set(('█▓▒░▄▀▌▐─│┼┌┐└┘┬├┤┴•●○■□◆◇★☆+-*/\\=<>^_|:.~@#%&$!?0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz').split(''));
+
+// Sanitize a grid sent from the admin designer into { grid: [[{ch,fg}…]…] }.
+function sanitizeLogoGrid(raw) {
+  if (!raw || !Array.isArray(raw.grid)) return null;
+  const rows = raw.grid.slice(0, 40).map((r) => {
+    if (!Array.isArray(r)) return [];
+    return r.slice(0, 60).map((c) => {
+      const ch = String((c && c.ch) || ' ');
+      return { ch: LOGO_CHARS.has(ch) ? ch : ' ', fg: (c && c.fg && LOGO_COLOR_CODES[c.fg]) ? c.fg : null };
+    });
+  });
+  while (rows.length && rows[rows.length - 1].every((c) => !c.ch || c.ch === ' ')) rows.pop();
+  if (!rows.length) return null;
+  return { grid: rows };
+}
+
+function customLogoGrid() {
+  const raw = settings.get('neofetch.logo_grid');
+  if (!raw) return null;
+  try {
+    return sanitizeLogoGrid(JSON.parse(raw));
+  } catch (_) { return null; }
+}
+
+// Resolve the effective logo art. Custom grid -> per-cell colored rows, else the
+// configured block-text logo (single accent color handled by the renderer).
+function logoArt() {
+  const g = customLogoGrid();
+  if (g) {
+    const plain = g.grid.map((row) => row.map((c) => c.ch).join(''));
+    const width = Math.max(...plain.map((r) => r.length), 1);
+    const colored = g.grid.map((row) => row.map((c) => {
+      if (!c.ch || c.ch === ' ') return ' ';
+      return (LOGO_COLOR_CODES[c.fg] || A.logo) + c.ch + A.reset;
+    }).join(''));
+    return { plain, colored, width };
+  }
+  const rows = logoRows(logoText());
+  return { plain: rows, colored: null, width: logoWidth(rows) };
+}
+
+// Structured grid of the current block-text logo (used to seed the designer).
+function defaultLogoGrid() {
+  return { grid: logoRows(logoText()).map((row) => Array.from(row).map((ch) => ({ ch, fg: ch === ' ' ? null : 'logo' }))) };
+}
 function logoRows(text) {
   const chars = String(text || DEFAULT_LOGO_TEXT).toUpperCase().slice(0, 4).split('');
   const base = ['', '', '', '', ''];
@@ -216,8 +277,9 @@ function plainBar() {
 function renderPlain() {
   const info = collect();
   const lines = infoLines(info);
-  const logo = logoRows(logoText());
-  const logoW = logoWidth(logo);
+  const art = logoArt();
+  const logo = art.plain;
+  const logoW = art.width;
   const topPad = Math.max(0, Math.floor((logo.length - lines.length) / 2));
   const total = Math.max(logo.length, lines.length + topPad);
   const rows = [];
@@ -249,15 +311,21 @@ function renderColor() {
 
 function renderColorWith(info) {
   const lines = infoLines(info);
-  const logo = logoRows(logoText());
-  const logoW = logoWidth(logo);
+  const art = logoArt();
+  const logo = art.plain;
+  const logoW = art.width;
   const topPad = Math.max(0, Math.floor((logo.length - lines.length) / 2));
   const total = Math.max(logo.length, lines.length + topPad);
   const rows = [];
 
   for (let i = 0; i < total; i++) {
     const rawLeft = i < logo.length ? logo[i] : '';
-    const leftColored = A.logo + rawLeft.padEnd(logoW, ' ') + A.reset;
+    let leftColored;
+    if (art.colored) {
+      leftColored = (i < art.colored.length ? art.colored[i] : '') + ' '.repeat(Math.max(0, logoW - rawLeft.length));
+    } else {
+      leftColored = A.logo + rawLeft.padEnd(logoW, ' ') + A.reset;
+    }
 
     const li = i - topPad;
     const line = (li >= 0 && li < lines.length) ? lines[li] : null;
@@ -280,7 +348,7 @@ function renderColorWith(info) {
 
 // ── Exportable banner artifacts (neofetch / fastfetch / screenfetch / motd) ──
 function logoPlain() {
-  return logoRows(logoText()).join('\n');
+  return logoArt().plain.join('\n');
 }
 
 // Full plain banner with a configurable host/label (used for motd / SSH login).
@@ -295,8 +363,9 @@ function bannerText(hostOverride = null, overrides = {}) {
 
 function renderPlainWith(info) {
   const lines = infoLines(info);
-  const logo = logoRows(logoText());
-  const logoW = logoWidth(logo);
+  const art = logoArt();
+  const logo = art.plain;
+  const logoW = art.width;
   const topPad = Math.max(0, Math.floor((logo.length - lines.length) / 2));
   const total = Math.max(logo.length, lines.length + topPad);
   const rows = [];
@@ -377,5 +446,9 @@ module.exports = {
   bannerText,
   motdText,
   fetchShellScript,
+  customLogoGrid,
+  defaultLogoGrid,
+  sanitizeLogoGrid,
+  logoArt,
   LOGO_RAW,
 };

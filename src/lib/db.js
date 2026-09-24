@@ -418,6 +418,7 @@ const defaultSettings = {
   'vm.spoof_board_product': '0CNDVR',
   'vm.spoof_board_serial': '/2X4C4R2/CN7476347A00R9.',
   'vm.data_disk_default': '10G',
+  'neofetch.logo_grid': '',
   'billing.enabled': '0',
   'billing.base_price': '0',
   'billing.ram_price': '0',

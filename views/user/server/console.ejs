@@ -122,9 +122,9 @@
 /* Resizable Terminal Wrapper & 4-Corner Handles */
 .terminal-wrapper {
   position: relative;
-  min-height: 380px;
-  min-width: 320px;
-  height: calc(100vh - 400px);
+  min-height: 360px;
+  min-width: 380px;
+  height: calc(100vh - 350px);
   width: 100%;
   background: #060913;
   border-radius: 12px;
@@ -222,21 +222,41 @@
 
 .fullscreen-pane {
   position: fixed !important;
-  top: 0 !important;
   left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
+  top: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
   z-index: 99999 !important;
   border-radius: 0 !important;
-  padding: 16px !important;
   background: #060913 !important;
   box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  padding: 14px 18px 18px !important;
+  overflow: hidden !important;
 }
 .fullscreen-pane .terminal-wrapper {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
   width: 100% !important;
-  height: calc(100vh - 85px) !important;
-  min-height: calc(100vh - 85px) !important;
+  height: auto !important;
 }
+.fullscreen-pane #termPanes {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.fullscreen-pane .term-pane.show {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+body.term-fullscreen { overflow: hidden !important; }
 body.term-fullscreen .sidebar,
 body.term-fullscreen .topbar,
 body.term-fullscreen .vx-discord-fab,
@@ -954,7 +974,7 @@ body.term-fullscreen #bgOverlay {
     const wrapper = document.getElementById(wrapperId);
     if (!wrapper) return;
     wrapper.style.width = '100%';
-    wrapper.style.height = wrapperId === 'bootTermWrapper' ? 'calc(100vh - 400px)' : 'calc(100vh - 400px)';
+    wrapper.style.height = 'calc(100vh - 350px)';
     setTimeout(() => {
       if (wrapperId === 'bootTermWrapper') {
         if (bootFit) bootFit.fit();

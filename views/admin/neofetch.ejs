@@ -50,6 +50,37 @@
 @media (max-width: 640px) {
   .term-body pre { font-size: 11px; }
 }
+/* ── Logo designer ── */
+.edesc { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; padding: 16px 20px 20px; }
+.etools { display: flex; flex-direction: column; gap: 14px; min-width: 150px; }
+.egroup { display: flex; flex-direction: column; gap: 6px; }
+.egroup > .elabel { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+.epal { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.elbtn {
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(8,12,23,0.9); border: 1px solid var(--border); border-radius: 7px;
+  color: #e2e8f0; font-family: Consolas, 'Courier New', monospace; font-size: 13px;
+  cursor: pointer; line-height: 1; padding: 0;
+}
+.elbtn.active { border-color: #38bdf8; box-shadow: inset 0 0 0 1px #38bdf8; background: rgba(56,189,248,0.12); }
+.ewatch { width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); cursor: pointer; padding: 0; }
+.ewatch.active { outline: 2px solid #fff; outline-offset: 2px; }
+.esize { display: inline-flex; align-items: center; gap: 6px; }
+.esize button {
+  width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+  background: rgba(8,12,23,0.9); color: #e2e8f0; cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+}
+.esize b { min-width: 24px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: #e2e8f0; }
+#logoGridWrap {
+  display: grid; gap: 2px; background: #05080f; border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px; width: max-content; max-width: 100%; max-height: 520px; overflow: auto;
+}
+.lcell {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  background: #0a101e; border: none; border-radius: 3px; font-family: Consolas, 'Courier New', monospace;
+  font-size: 13px; line-height: 1; padding: 0; cursor: pointer; color: #e2e8f0;
+}
+.lcell-empty { background: transparent; }
 </style>
 
 <div class="main">
@@ -72,7 +103,7 @@
 
   <% if (typeof updated !== 'undefined' && updated) { %><div class="alert alert-success">Saved!</div><% } %>
 
-  <div class="grid grid-2" style="gap:20px;align-items:start;grid-template-columns:minmax(0,1fr) minmax(0,420px)">
+  <div class="grid grid-2" style="gap:20px;align-items:start;grid-template-columns:minmax(0,2.4fr) minmax(300px,1fr)">
     <!-- Terminal banner -->
     <div class="term-shell">
       <div class="term-head">
@@ -137,9 +168,189 @@
       </div>
     </div>
   </div>
+
+  <!-- Banner logo designer -->
+  <div class="card" style="margin-top:20px;overflow:hidden">
+    <% const __js = (v) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); %>
+    <script>window.NF_LOGO = { grid: <%- logoGrid ? __js(logoGrid) : 'null' %>, def: <%- __js(defaultGrid) %> };</script>
+    <div class="flex-between" style="padding:18px 20px 0;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="card-title" style="font-size:17px;margin:0 0 6px">Banner Logo Designer</div>
+        <p class="muted text-sm" style="margin:0">Draw a block logo shown at the top of every banner. Each block is one terminal character — applies to the preview above, guest neofetch/motd, and the MOTD/login banner.</p>
+      </div>
+      <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-sm" id="logoLoadDef">Load default VN</button>
+        <button type="button" class="btn btn-sm" id="logoClear">Clear</button>
+        <button type="button" class="btn btn-sm" id="logoInvert">Invert</button>
+        <button type="button" class="btn btn-sm btn-primary" id="logoSave">Save Logo</button>
+      </div>
+    </div>
+    <div class="edesc">
+      <div class="etools">
+        <div class="egroup">
+          <div class="elabel">Brush</div>
+          <div class="epal" id="logoPal">
+            <% const __pal = ['█','▓','▒','░','▄','▀','│','─','┌','┐','└','┘','●','○','■','◆','★','+','#','=','·','*']; %>
+            <% __pal.forEach((c,i)=>{ %><button type="button" class="elbtn<%= i===0?' active':'' %>" data-ch="<%= c %>"><%= c %></button><% }) %>
+            <button type="button" class="elbtn" data-ch=" ">&#9251;</button>
+          </div>
+        </div>
+        <div class="egroup">
+          <div class="elabel">Color</div>
+          <div class="epal" id="logoCols">
+            <% const __cols = [['logo','#7aa2ff'],['red','#f87171'],['green','#4ade80'],['yellow','#facc15'],['blue','#60a5fa'],['magenta','#c084fc'],['cyan','#22d3ee'],['white','#e2e8f0'],['gray','#64748b']]; %>
+            <% __cols.forEach((c,i)=>{ %><button type="button" class="ewatch<%= i===0?' active':'' %>" data-col="<%= c[0] %>" style="background:<%= c[1] %>" title="<%= c[0] %>"></button><% }) %>
+          </div>
+        </div>
+        <div class="egroup">
+          <div class="elabel">Canvas</div>
+          <div class="epal">
+            <span class="muted text-sm">Rows</span>
+            <span class="esize"><button type="button" id="logoRowM">&minus;</button><b id="logoRowsVal">10</b><button type="button" id="logoRowP">+</button></span>
+            <span class="muted text-sm">Cols</span>
+            <span class="esize"><button type="button" id="logoColM">&minus;</button><b id="logoColsVal">9</b><button type="button" id="logoColP">+</button></span>
+          </div>
+        </div>
+        <div class="muted text-sm" style="font-size:12px">Drag to paint &middot; right-click to erase</div>
+      </div>
+      <div id="logoGridWrap"></div>
+    </div>
+  </div>
 </div>
 
 <%- include('../partials/foot') %>
+
+<script>
+(function () {
+  var INIT = window.NF_LOGO || {};
+  var COLOR_HEX = { logo:'#7aa2ff', red:'#f87171', green:'#4ade80', yellow:'#facc15', blue:'#60a5fa', magenta:'#c084fc', cyan:'#22d3ee', white:'#e2e8f0', gray:'#64748b' };
+  var MAX_ROWS = 40, MAX_COLS = 60;
+  var gridWrap = document.getElementById('logoGridWrap');
+  var rows = 10, cols = 9, grid = [], cells = [];
+  var tool = '█', color = 'logo', painting = false;
+
+  function buildGrid(r, c) {
+    grid = [];
+    for (var i = 0; i < r; i++) {
+      grid.push([]);
+      for (var j = 0; j < c; j++) grid[i].push({ ch: ' ', fg: null });
+    }
+  }
+  function ensureSize() {
+    if (!grid.length) { buildGrid(rows, cols); return; }
+    for (var r = 0; r < grid.length; r++) while (grid[r].length < cols) grid[r].push({ ch: ' ', fg: null });
+    while (grid.length < rows) grid.push(Array.from({ length: cols }, function () { return { ch: ' ', fg: null }; }));
+    for (var r2 = 0; r2 < grid.length; r2++) if (grid[r2].length > cols) grid[r2] = grid[r2].slice(0, cols);
+  }
+  function paintVisual(b, cell) {
+    if (!cell.ch || cell.ch === ' ') {
+      b.textContent = ''; b.className = 'lcell lcell-empty'; b.style.color = ''; b.style.textShadow = '';
+    } else {
+      b.textContent = cell.ch; b.className = 'lcell';
+      var hex = COLOR_HEX[cell.fg] || COLOR_HEX.logo;
+      b.style.color = hex; b.style.textShadow = '0 0 6px ' + hex;
+    }
+  }
+  function setCell(r, c, ch) {
+    grid[r][c] = { ch: ch, fg: (ch === ' ' ? null : color) };
+    paintVisual(cells[r][c], grid[r][c]);
+  }
+  function makeCell(r, c) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lcell';
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); painting = true; setCell(r, c, tool); });
+    b.addEventListener('mouseenter', function () { if (painting) setCell(r, c, tool); });
+    b.addEventListener('contextmenu', function (e) { e.preventDefault(); setCell(r, c, ' '); });
+    cells[r][c] = b;
+    return b;
+  }
+  function render() {
+    gridWrap.innerHTML = '';
+    gridWrap.style.gridTemplateColumns = 'repeat(' + cols + ', 22px)';
+    cells = [];
+    for (var r = 0; r < rows; r++) {
+      cells.push([]);
+      for (var c = 0; c < cols; c++) {
+        var b = makeCell(r, c);
+        gridWrap.appendChild(b);
+        paintVisual(b, grid[r][c]);
+      }
+    }
+    document.getElementById('logoRowsVal').textContent = rows;
+    document.getElementById('logoColsVal').textContent = cols;
+  }
+  function fromData(g) {
+    var src = (g && g.grid && g.grid.length) ? g.grid : null;
+    rows = src ? src.length : 10;
+    cols = src ? Math.max.apply(null, src.map(function (r) { return (r && r.length) || 0; })) : 9;
+    rows = Math.min(Math.max(rows || 1, 1), MAX_ROWS);
+    cols = Math.min(Math.max(cols || 1, 1), MAX_COLS);
+    buildGrid(rows, cols);
+    if (src) {
+      src.forEach(function (row, r) {
+        if (!row) return;
+        row.forEach(function (cell, c) {
+          if (r < rows && c < cols) {
+            var ch = (cell && cell.ch) || ' ';
+            grid[r][c] = { ch: ch, fg: (cell && cell.fg) || null };
+          }
+        });
+      });
+    }
+    render();
+  }
+  function trimTrailing() {
+    while (grid.length && grid[grid.length - 1].every(function (c) { return c.ch === ' '; })) grid.pop();
+    if (!grid.length) buildGrid(1, cols);
+  }
+
+  document.addEventListener('mouseup', function () { painting = false; });
+
+  document.getElementById('logoPal').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-ch]');
+    if (!b) return;
+    tool = b.getAttribute('data-ch');
+    document.querySelectorAll('#logoPal .elbtn').forEach(function (x) { x.classList.toggle('active', x === b); });
+  });
+  document.getElementById('logoCols').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-col]');
+    if (!b) return;
+    color = b.getAttribute('data-col');
+    document.querySelectorAll('#logoCols .ewatch').forEach(function (x) { x.classList.toggle('active', x === b); });
+  });
+  document.getElementById('logoRowM').addEventListener('click', function () { if (rows > 1) { rows--; ensureSize(); render(); } });
+  document.getElementById('logoRowP').addEventListener('click', function () { if (rows < MAX_ROWS) { rows++; ensureSize(); render(); } });
+  document.getElementById('logoColM').addEventListener('click', function () { if (cols > 1) { cols--; ensureSize(); render(); } });
+  document.getElementById('logoColP').addEventListener('click', function () { if (cols < MAX_COLS) { cols++; ensureSize(); render(); } });
+  document.getElementById('logoLoadDef').addEventListener('click', function () { fromData(INIT.def); });
+  document.getElementById('logoClear').addEventListener('click', function () { buildGrid(rows, cols); render(); });
+  document.getElementById('logoInvert').addEventListener('click', function () {
+    for (var r = 0; r < grid.length; r++) for (var c = 0; c < grid[r].length; c++) {
+      grid[r][c] = grid[r][c].ch === ' ' ? { ch: (tool === ' ' ? '█' : tool), fg: color } : { ch: ' ', fg: null };
+    }
+    render();
+  });
+  document.getElementById('logoSave').addEventListener('click', function () {
+    trimTrailing();
+    var payload = { grid: grid.map(function (row) { return row.map(function (x) { return { ch: x.ch, fg: x.fg }; }); }) };
+    fetch('/admin/neofetch/logo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + vpToken() },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.ok) {
+        if (window.VP && VP.toast) VP.toast('Logo saved — new banners apply on next VM Start', 'success');
+        setTimeout(function () { location.reload(); }, 700);
+      } else if (window.VP && VP.toast) VP.toast('Save failed', 'error');
+    }).catch(function (e) {
+      if (window.VP && VP.toast) VP.toast('Save failed: ' + e.message, 'error');
+    });
+  });
+
+  fromData(INIT.grid || INIT.def);
+})();
+</script>
 
 <script>
 async function copyPlain() {

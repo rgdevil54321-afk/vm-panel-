@@ -476,12 +476,26 @@ router.get('/admin/neofetch', (req, res) => {
   const bannerColor = neofetchService.renderColor();
   const bannerPlain = neofetchService.renderPlain();
   const stats = nodeService.getNodeLiveStats();
-  render(res, 'neofetch', { info, bannerColor, bannerPlain, stats });
+  const logoGrid = neofetchService.customLogoGrid();
+  const defaultGrid = neofetchService.defaultLogoGrid();
+  render(res, 'neofetch', { info, bannerColor, bannerPlain, stats, logoGrid, defaultGrid });
 });
 
 router.get('/admin/neofetch/raw', (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.send(neofetchService.renderPlain());
+});
+
+router.post('/admin/neofetch/logo', express.json(), (req, res) => {
+  const cleaned = neofetchService.sanitizeLogoGrid(req.body);
+  if (cleaned) {
+    settings.set('neofetch.logo_grid', JSON.stringify(cleaned));
+    activity.logActivity({ user_id: req.user.id, event: 'admin:neofetch_logo_update' });
+    return res.json({ ok: true });
+  }
+  settings.set('neofetch.logo_grid', '');
+  activity.logActivity({ user_id: req.user.id, event: 'admin:neofetch_logo_cleared' });
+  return res.json({ ok: true, cleared: true });
 });
 
 router.get('/admin/settings', (req, res) => {
