@@ -21,6 +21,7 @@ const navbarStyle = settings['panel.navbar_style'] || 'glass';
 <title><%= panelName %> - <%= title %></title>
 <link rel="icon" href="<%= favicon %>"/>
 <link rel="stylesheet" href="/css/panel.css?v=<%= panelBootId %>"/>
+<link rel="stylesheet" href="/css/polish.css?v=<%= panelBootId %>"/>
 <script src="/js/audio.js?v=<%= panelBootId %>" defer></script>
 <script src="/js/secretblur.js?v=<%= panelBootId %>" defer></script>
 <% if (typeof styles !== 'undefined') { for (const s of styles) { %><link rel="stylesheet" href="<%= s %>"/><% } } %>
