@@ -808,14 +808,11 @@ function serializeVm(row) {
     backup_slots: row.backup_slots != null ? Number(row.backup_slots) : Number(settings.get('vm.default_backup_slots') || '5'),
   };
   if (remote) {
-    const c = String(row.neofetch_cpu || '').trim();
-    const m = String(row.neofetch_mem || '').trim();
-    const d = String(row.neofetch_disk || '').trim();
-    const g = String(row.neofetch_gpu || '').trim();
-    if (c || m || d || g) {
+    const ov = neofetchOverrides(row);
+    if (ov.spoofOn) {
       try {
         out.neofetch_banner = neofetchService.fetchShellScript({
-          cpu: c, memory: m, disk: d, gpu: g,
+          cpu: ov.cpu, memory: ov.mem, disk: ov.disk, gpu: ov.gpu,
           host: String(row.hostname || row.name),
           user: String(row.username || ''),
           os: guestOsLabel(row),
@@ -927,6 +924,23 @@ function provisionAdditionalDisks(vm, dir) {
   vm._dataDisks = meta;
 }
 
+// Resolve neofetch banner settings for a VM. Per-VM custom values win; any
+// blank field falls back to the panel's Host Identity (host CPU/GPU/RAM/disk).
+// The banner is baked whenever the VM's hardware spoofing is enabled, even if
+// no per-VM field is customised - otherwise a fresh VM leaks its real specs.
+function neofetchOverrides(vm) {
+  const spHw = String(vm && vm.spoof_hw !== undefined && vm.spoof_hw !== null
+    ? vm.spoof_hw
+    : (settings.get('vm.spoof_hw') ?? '1'));
+  return {
+    spoofOn: spHw !== '0' && spHw !== 0 && spHw !== false,
+    cpu: String((vm && vm.neofetch_cpu) || '').trim() || String(settings.get('panel.cpu_name') || '').trim(),
+    mem: String((vm && vm.neofetch_mem) || '').trim() || String(settings.get('panel.ram_name') || '').trim(),
+    disk: String((vm && vm.neofetch_disk) || '').trim() || String(settings.get('panel.disk_name') || '').trim(),
+    gpu: String((vm && vm.neofetch_gpu) || '').trim() || String(settings.get('panel.gpu_name') || '').trim(),
+  };
+}
+
 function writeSeed(vm) {
   const dir = vmDir(vm);
   const passHash = spawnSync('openssl', ['passwd', '-6', vm.password], { encoding: 'utf8' }).stdout.trim();
@@ -1017,20 +1031,18 @@ ${routes.join('\n')}
   }
 
   // ---- Per-VM neofetch spoof (custom CPU/RAM/disk shown inside the guest) ----
-  const spoofCpu = String(vm.neofetch_cpu || '').trim();
-  const spoofMem = String(vm.neofetch_mem || '').trim();
-  const spoofDisk = String(vm.neofetch_disk || '').trim();
-  const spoofGpu = String(vm.neofetch_gpu || '').trim();
-  const spoofOn = !!(spoofCpu || spoofMem || spoofDisk || spoofGpu);
-  if (spoofOn) {
+  // Baked whenever hardware spoofing is on; per-VM values fall back to the host
+  // identity so guests always show a VN banner instead of real specs.
+  const ov = neofetchOverrides(vm);
+  if (ov.spoofOn) {
     writeFiles.push({
       path: '/usr/local/bin/venlix-fetch',
       permissions: '0755',
       content: neofetchService.fetchShellScript({
-        cpu: spoofCpu,
-        memory: spoofMem,
-        disk: spoofDisk,
-        gpu: spoofGpu,
+        cpu: ov.cpu,
+        memory: ov.mem,
+        disk: ov.disk,
+        gpu: ov.gpu,
         host: String(vm.hostname || vm.name),
         user: String(vm.username || ''),
         os: guestOsLabel(vm),
@@ -1058,7 +1070,7 @@ ${routes.join('\n')}
   let commands = [];
   try { commands = JSON.parse(vm.cloudinit_commands || '[]'); } catch (_) { commands = []; }
   for (const c of commands) if (c) runcmds.push(String(c));
-  if (spoofOn) {
+  if (ov.spoofOn) {
     runcmds.push('chmod +x /usr/local/bin/venlix-fetch || true');
     runcmds.push('test -d /etc/venlix || mkdir -p /etc/venlix || true');
     runcmds.push(`for _b in neofetch fastfetch screenfetch; do _p=/usr/local/bin/$_b; if [ -e "$_p" ] && [ ! -L "$_p" ]; then mv -f "$_p" "$_p.venlix-real" 2>/dev/null || true; fi; ln -sf /usr/local/bin/venlix-fetch "$_p"; done`);
@@ -1333,15 +1345,13 @@ async function create({ user, data }) {
       backup_slots: toBackupSlots(data.backup_slots),
     };
     {
-      const c = String(payload.neofetch_cpu || '').trim();
-      const m = String(payload.neofetch_mem || '').trim();
-      const d = String(payload.neofetch_disk || '').trim();
-      const g = String(payload.neofetch_gpu || '').trim();
-      if (c || m || d || g) {
+      const ov = neofetchOverrides(payload);
+      if (ov.spoofOn) {
         try {
           payload.neofetch_banner = neofetchService.fetchShellScript({
-            cpu: c, memory: m, disk: d, host: payload.hostname, user: payload.username,
-            os: guestOsLabel(payload), gpu: g, node: node.name, region: payload.region,
+            cpu: ov.cpu, memory: ov.mem, disk: ov.disk, gpu: ov.gpu,
+            host: payload.hostname, user: payload.username,
+            os: guestOsLabel(payload), node: node.name, region: payload.region,
             ipv4: payload.ip_address, ipv6: payload.ipv6_address,
             gateway: payload.ip_gateway, gateway6: payload.ipv6_gateway,
           });
