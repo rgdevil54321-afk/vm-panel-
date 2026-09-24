@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const authService = require('../services/authService');
 const mailService = require('../services/mailService');
 const discordService = require('../services/discordService');
+const googleService = require('../services/googleService');
 const config = require('../lib/config');
 const { db, settings } = require('../lib/db');
 const activity = require('../services/activityService');
@@ -14,6 +15,7 @@ function render(res, view, vars = {}) {
     user: null,
     settings: settings.all(),
     discordLogin: discordService.oauthConfigured(),
+    googleLogin: googleService.oauthConfigured(),
     ...vars,
   });
 }
@@ -28,15 +30,30 @@ const discordErrs = {
   suspended: 'This account is suspended.',
 };
 
+const googleErrs = {
+  google_denied: 'Google authorization was cancelled.',
+  google_badstate: 'Google authorization expired or was tampered with. Please try again.',
+  google_oauth_failed: 'Google sign-in failed. Please try again.',
+  google_not_configured: 'Google sign-in is not configured yet.',
+  google_no_email: 'Google did not return an email address — use another sign-in method.',
+  google_register_disabled: 'Registration is disabled — sign in with an existing account instead.',
+  google_tfa: 'This account has 2FA enabled — sign in with your password.',
+};
+
+const authErrs = { ...discordErrs, ...googleErrs };
+
 router.get('/login', (req, res) => {
   if (req.user) return res.redirect('/dashboard');
-  render(res, 'login', { error: discordErrs[req.query.err] || null });
+  render(res, 'login', { error: authErrs[req.query.err] || null });
 });
 
 // ---- Discord OAuth2 login / auto-register ----
-function dcbRedirectUri(req) {
+function oauthRedirectUri(req, path) {
   const proto = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
-  return proto + '://' + req.get('host') + '/auth/discord/callback';
+  return proto + '://' + req.get('host') + path;
+}
+function dcbRedirectUri(req) {
+  return oauthRedirectUri(req, '/auth/discord/callback');
 }
 function dcbState() {
   const nonce = crypto.randomBytes(16).toString('hex');
@@ -106,6 +123,83 @@ router.get('/auth/discord/callback', async (req, res) => {
   db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_avatar = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
     .run(did, String(me.data.username || '').slice(0, 64), discordService.cdnAvatar(me.data), new Date().toISOString(), new Date().toISOString(), newUser.id);
   activity.logActivity({ user_id: newUser.id, event: 'auth:register', details: { via: 'discord', discord_id: did }, ip });
+  const { token } = authService.finishLogin(newUser, ip);
+  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+  return res.redirect('/dashboard');
+});
+
+// ---- Google OAuth2 login / auto-register (mirrors the Discord flow) ----
+function gaClientState() {
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const mac = crypto.createHmac('sha256', config.jwtSecret).update(nonce).digest('hex');
+  return nonce + '.' + mac;
+}
+function gaStateOk(state, cookieVal) {
+  const a = Buffer.from(String(state || ''));
+  const b = Buffer.from(String(cookieVal || ''));
+  return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+router.get('/auth/google', (req, res) => {
+  if (req.user) return res.redirect('/dashboard');
+  if (!googleService.oauthConfigured()) return res.redirect('/login?err=google_not_configured');
+  const st = gaClientState();
+  res.cookie('gcstate', st, { httpOnly: true, sameSite: 'lax', maxAge: 10 * 60 * 1000, path: '/auth/google' });
+  res.redirect(googleService.authorizeUrl(oauthRedirectUri(req, '/auth/google/callback'), st));
+});
+
+router.get('/auth/google/callback', async (req, res) => {
+  const clearState = () => res.clearCookie('gcstate', { path: '/auth/google' });
+  const { code, state, error } = req.query;
+  if (error) { clearState(); return res.redirect('/login?err=google_denied'); }
+  if (!gaStateOk(state, req.cookies.gcstate)) { clearState(); return res.redirect('/login?err=google_badstate'); }
+  clearState();
+  const tok = await googleService.exchangeCode(String(code || ''), oauthRedirectUri(req, '/auth/google/callback'));
+  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/login?err=google_oauth_failed');
+  const me = await googleService.getOAuthUser(tok.data.access_token);
+  if (!me.ok || !me.data || !me.data.sub) return res.redirect('/login?err=google_oauth_failed');
+  const gid = String(me.data.sub);
+  const ip = req.ip || req.socket.remoteAddress;
+  const user = db.prepare('SELECT * FROM users WHERE google_id = ?').get(gid);
+  if (user) {
+    if (user.suspended) return res.redirect('/login?err=suspended');
+    if (user.tfa_enabled) return res.redirect('/login?err=google_tfa');
+    const { token } = authService.finishLogin(user, ip);
+    res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+    return res.redirect('/dashboard');
+  }
+  if (settings.get('security.allow_register') === '0') return res.redirect('/login?err=google_register_disabled');
+  const email = String(me.data.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.redirect('/login?err=google_no_email');
+  const local = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24) || 'user';
+  let uname = local;
+  if (uname.length < 3) uname = ('u_' + uname + gid.slice(-6)).replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
+  uname = uname.slice(0, 32);
+  let candidate = uname;
+  for (let i = 1; db.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate); i++) {
+    candidate = (uname + '_' + i).slice(0, 32);
+  }
+  let finalEmail = email;
+  for (let i = 1; db.prepare('SELECT 1 FROM users WHERE email = ?').get(finalEmail); i++) {
+    const at = email.indexOf('@');
+    finalEmail = email.slice(0, at) + '.' + i + email.slice(at);
+  }
+  let newUser;
+  try {
+    newUser = authService.createUser({
+      username: candidate,
+      email: finalEmail,
+      password: crypto.randomBytes(24).toString('hex'),
+      name: String(me.data.name || me.data.email || candidate).slice(0, 64),
+      role: 'user',
+      verified: !!me.data.email_verified,
+    });
+  } catch (e) {
+    return res.redirect('/login?err=' + encodeURIComponent(e.message));
+  }
+  db.prepare('UPDATE users SET google_id = ?, google_name = ?, google_avatar = ?, google_linked_at = ?, updated_at = ? WHERE id = ?')
+    .run(gid, String(me.data.name || '').slice(0, 64), String(me.data.picture || '').slice(0, 500), new Date().toISOString(), new Date().toISOString(), newUser.id);
+  activity.logActivity({ user_id: newUser.id, event: 'auth:register', details: { via: 'google', google_id: gid }, ip });
   const { token } = authService.finishLogin(newUser, ip);
   res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
   return res.redirect('/dashboard');

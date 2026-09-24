@@ -281,6 +281,26 @@
           </div>
         </div>
 
+        <!-- 2.5. Google OAuth (Login with Google) -->
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">2.5. Google OAuth (Login with Google)</label>
+          <div class="muted text-sm mb-2">Add a <b>Login with Google</b> button on the login &amp; register pages. Create an OAuth 2.0 Client ID at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style="color:var(--accent-2)">Google Cloud Console → Credentials → Create Credentials → OAuth client ID</a> (application type <b>Web application</b>). Add the callback below as an <b>Authorized redirect URI</b> — Google requires HTTPS.</div>
+          <div class="grid grid-2" style="gap:16px">
+            <div class="form-group">
+              <label>Client ID</label>
+              <input name="google.client_id" value="<%= all['google.client_id'] || '' %>" placeholder="1234567890-xxxx.apps.googleusercontent.com" autocomplete="off"/>
+              <div class="form-hint mt-1">The OAuth 2.0 Client ID, ending in <code>.apps.googleusercontent.com</code>.</div>
+            </div>
+            <div class="form-group">
+              <label>Client Secret</label>
+              <input name="google.client_secret" type="password" value="<%= all['google.client_secret'] || '' %>" autocomplete="off"/>
+              <div class="form-hint mt-1">The OAuth Client Secret. Clear both fields to hide the Google button. Authorized redirect URI: <code>https://YOUR-PANEL/auth/google/callback</code></div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="hr" style="margin:24px 0"/>
+
         <!-- 3. Panel Logo -->
         <div class="mb-4">
           <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">3. Panel Logo</label>

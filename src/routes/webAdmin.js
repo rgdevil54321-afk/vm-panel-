@@ -516,6 +516,7 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
     'panel.music_loop', 'panel.music_volume', 'panel.navbar_style', 'panel.navbar_transparent',
     'panel.navbar_blur', 'panel.accent', 'panel.theme',
     'panel.discord_url', 'panel.discord_enabled', 'panel.discord_code', 'panel.secret_blur',
+    'google.client_id', 'google.client_secret',
     'panel.hostname', 'panel.cpu_name', 'panel.gpu_name', 'panel.ram_name', 'panel.disk_name',
     'panel.logo_text',
   ]) save(key);

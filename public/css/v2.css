@@ -121,6 +121,24 @@ b, strong { font-weight: 650; }
    SIDEBAR
    ============================================================================ */
 .sidebar { width: var(--sidebar-w); padding: 18px 12px 80px; }
+.sidebar .admin-panel-btn {
+  display: flex; align-items: center; gap: 10px; margin: 4px 8px 8px; padding: 10px 12px;
+  border-radius: 11px; text-decoration: none; font-size: 13px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 85%, #000), var(--accent-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 4px 16px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.14);
+  transition: transform 0.14s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+.sidebar .admin-panel-btn:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 6px 22px var(--accent-glow); }
+.sidebar .admin-panel-btn:active { transform: translateY(0); }
+.sidebar .admin-panel-btn .v-icon { display: grid; place-items: center; width: 17px; height: 17px; }
+.sidebar .admin-panel-btn.active { box-shadow: 0 6px 22px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.2); }
+@media (prefers-reduced-motion: reduce) {
+  .sidebar .admin-panel-btn, .sidebar .admin-panel-btn:hover { transform: none; }
+}
+@media (max-width: 768px) {
+  .sidebar .admin-panel-btn { justify-content: center; }
+}
 .sidebar .nav-section-title {
   font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase;
   color: var(--text-dim); padding: 14px 10px 6px;

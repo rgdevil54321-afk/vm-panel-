@@ -438,6 +438,9 @@ const defaultSettings = {
   // ---- Neofetch host identity overrides (CPU / GPU / RAM / DISK shown in banner) ----
   'panel.ram_name': '',
   'panel.disk_name': '',
+  // ---- Google OAuth (Login with Google on the auth pages) ----
+  'google.client_id': '',
+  'google.client_secret': '',
 };
 
 const vmsColumns = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
@@ -610,6 +613,10 @@ addUserExtraCol('discord_id', 'TEXT');
 addUserExtraCol('discord_name', 'TEXT');
 addUserExtraCol('discord_avatar', 'TEXT');
 addUserExtraCol('discord_linked_at', 'TEXT');
+addUserExtraCol('google_id', 'TEXT');
+addUserExtraCol('google_name', 'TEXT');
+addUserExtraCol('google_avatar', 'TEXT');
+addUserExtraCol('google_linked_at', 'TEXT');
 
 function seedSettings() {
   const stmt = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

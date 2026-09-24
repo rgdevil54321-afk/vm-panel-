@@ -63,7 +63,7 @@ const iconBolt = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 
   <% if (isAdmin) { %>
   <div class="nav-section-title">Admin Panel</div>
-  <a href="/admin" class="nav-link <%= act('admin-dashboard', page) %>"><span class="v-icon"><%- iconShield %></span><span>Admin Panel</span></a>
+  <a href="/admin" class="admin-panel-btn <%= (page && page.indexOf('admin') === 0) ? 'active' : '' %>"><span class="v-icon"><%- iconShield %></span><span>Admin Panel</span></a>
   <% } %>
 
   <% if (isAdmin && typeof admin !== 'undefined' && admin) { %>
