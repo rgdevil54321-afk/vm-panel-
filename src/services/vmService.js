@@ -774,10 +774,14 @@ function serializeVm(row) {
   const v6 = String(row.ipv6_address || '').trim();
   const staticV4 = ['ipv4_shared', 'ipv4_dedicated', 'dual'].includes(ipMode) && !!v4;
   // Shared IPv4 (SDT-BOT "shared IPv4" concept): NAT / ipv4_shared VMs have no
-  // address of their own — they are all reachable THROUGH the panel node's own
-  // reachable IPv4 on a unique forwarded port. Use the node host when it is a
-  // real non-loopback address, else auto-detect the node's public IPv4 once
-  // (cached via hostDetect) so the SSH/overview hint is never 127.0.0.1.
+  // address of their own - they are all reachable THROUGH the panel node's own
+  // reachable IPv4 on a unique forwarded port. Preference (SDT-BOT order):
+  //   1) node's Tailscale 100.x mesh IPv4 (reachable from ANY of your devices,
+  //      no public IPv4 needed - this is exactly how SDT-BOT makes an ipv6-
+  //      only node share an IPv4);
+  //   2) node host if it is a real non-loopback address;
+  //   3) else auto-detect the node's public IPv4 once (cached via hostDetect)
+  //      so the SSH/overview hint is never 127.0.0.1.
   let sharedV4 = null;
   if (node_host && node_host !== '127.0.0.1' && node_host !== 'localhost' && node_host !== '::1' && !String(node_host).includes(':')) {
     sharedV4 = node_host;

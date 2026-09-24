@@ -2,6 +2,22 @@
 const os = require('os');
 const { execSync } = require('child_process');
 
+function isTailscaleV4(ip) {
+  const p = String(ip || '').split('.').map(Number);
+  return p.length === 4 && p[0] === 100 && p[1] >= 64 && p[1] <= 127;
+}
+
+function isPrivateV4(ip) {
+  const p = String(ip || '').split('.').map(Number);
+  if (p.length !== 4 || p.some((n) => !Number.isFinite(n))) return false;
+  if (p[0] === 10 || p[0] === 127) return true;
+  if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
+  if (p[0] === 192 && p[1] === 168) return true;
+  if (p[0] === 169 && p[1] === 254) return true;
+  if (isTailscaleV4(ip)) return true;
+  return false;
+}
+
 function run(cmd) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 4000 }).trim(); } catch (_) { return ''; }
 }
