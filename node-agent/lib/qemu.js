@@ -582,9 +582,7 @@ function writeSeed(vm) {
   }
   const userData = String(vm.cloudinit_userdata || '').trim();
 
-  fs.writeFileSync(
-    path.join(dir, 'user-data'),
-    `#cloud-config
+  const seedUserData = `#cloud-config
 output:
   all: '| tee -a /dev/ttyS0 /dev/console'
 hostname: ${vm.hostname || vm.name}
@@ -614,11 +612,16 @@ runcmd:
 ${agentSeedPayload(vm).map((c) => '  - ' + c).join('\n')}
 ${runcmds.map((c) => '  - ' + c).join('\n')}
 ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + userData : ''}
-`
-  );
+`;
+
+  fs.writeFileSync(path.join(dir, 'user-data'), seedUserData);
+  // Include a content hash in the instance-id so cloud-init re-runs its
+  // per-instance modules (write_files/runcmd/passwords) whenever the seed
+  // actually changes, instead of staying stuck on a stale first-boot config.
+  const seedRev = crypto.createHash('sha1').update(seedUserData).digest('hex').slice(0, 10);
   fs.writeFileSync(
     path.join(dir, 'meta-data'),
-    `instance-id: iid-${vm.uuid || vm.name}\nlocal-hostname: ${vm.hostname || vm.name}\n`
+    `instance-id: iid-${vm.uuid || vm.name}-${seedRev}\nlocal-hostname: ${vm.hostname || vm.name}\n`
   );
   // ---- Static IP network-config (same shape the panel writes) ----
   let networkConfig = null;
