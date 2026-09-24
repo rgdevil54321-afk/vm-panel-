@@ -795,6 +795,18 @@ async function createVm({ data, osList }) {
     cloudinit_files: JSON.stringify(Array.isArray(data.cloudinit_files) ? data.cloudinit_files : []),
     startup_script: data.startup_script || '',
     neofetch_banner: data.neofetch_banner || '',
+    spoof_hw: String(data.spoof_hw ?? '1'),
+    spoof_hypervisor: String(data.spoof_hypervisor || '0'),
+    spoof_bios_vendor: data.spoof_bios_vendor || '',
+    spoof_bios_version: data.spoof_bios_version || '',
+    spoof_bios_date: data.spoof_bios_date || '',
+    spoof_sys_manufacturer: data.spoof_sys_manufacturer || '',
+    spoof_sys_product: data.spoof_sys_product || '',
+    spoof_sys_version: data.spoof_sys_version || '',
+    spoof_sys_serial: data.spoof_sys_serial || '',
+    spoof_board_manufacturer: data.spoof_board_manufacturer || '',
+    spoof_board_product: data.spoof_board_product || '',
+    spoof_board_serial: data.spoof_board_serial || '',
     install_guest_agent: (data.install_guest_agent === true || data.install_guest_agent === 1 || data.install_guest_agent === '1') ? 1 : 0,
     enable_monitoring: (data.enable_monitoring === true || data.enable_monitoring === 1 || data.enable_monitoring === '1') ? 1 : 0,
     enable_backups: (data.enable_backups === true || data.enable_backups === 1 || data.enable_backups === '1') ? 1 : 0,
@@ -927,7 +939,10 @@ function startVm(vm) {
   if (!vm.img_file || !fs.existsSync(vm.img_file)) {
     prepareImage(vm);
   }
-  if (!fs.existsSync(vm.seed_file)) writeSeed(vm);
+  // Re-bake the seed on every start so template fixes and config pushes
+  // (banner, spoof, hostname, ...) reach existing VMs. The instance-id carries
+  // a content hash, so cloud-init only re-runs when the seed actually changed.
+  writeSeed(vm);
   if (!vm.vnc_port) {
     vm.vnc_port = allocHostPort(vm, 'vnc_port', 25901, 26000);
     state.upsertVm(vm);
@@ -1055,7 +1070,9 @@ function updateVm(vm, data) {
     'description', 'tag', 'region', 'vmid', 'cpu_sockets', 'cores_per_socket', 'threads_per_core', 'cpu_model', 'cpu_units', 'cpu_limit', 'mem_min', 'mem_max',
     'ballooning', 'memory_hotplug', 'machine_type', 'firmware', 'secure_boot', 'tpm', 'boot_order', 'nic_model', 'nic_count', 'storage_pool', 'disk_format',
     'additional_disks', 'cloudinit_userdata', 'cloudinit_packages', 'cloudinit_commands', 'cloudinit_files', 'startup_script', 'install_guest_agent',
-    'neofetch_banner',
+    'neofetch_banner', 'spoof_hw', 'spoof_hypervisor', 'spoof_bios_vendor', 'spoof_bios_version', 'spoof_bios_date',
+    'spoof_sys_manufacturer', 'spoof_sys_product', 'spoof_sys_version', 'spoof_sys_serial',
+    'spoof_board_manufacturer', 'spoof_board_product', 'spoof_board_serial',
     'enable_monitoring', 'enable_backups', 'backup_schedule', 'timezone', 'locale', 'advanced'];
   for (const f of fields) {
     if (data[f] !== undefined) {

@@ -1645,6 +1645,55 @@ async function create({ user, data }) {
   return getVm(id);
 }
 
+// Push the current seed input (banner, spoof toggles, cloud-init inputs) to a
+// remote agent before start/restart so config changes reach the guest, even for
+// VMs that were created before the feature existed. The agent re-seeds and the
+// instance-id hash makes cloud-init re-apply only when content actually changed.
+async function syncSeedToNode(node, vm) {
+  const data = {
+    hostname: vm.hostname,
+    username: vm.username,
+    password: vm.password,
+    timezone: vm.timezone,
+    locale: vm.locale,
+    cloudinit_userdata: vm.cloudinit_userdata,
+    cloudinit_packages: vm.cloudinit_packages,
+    cloudinit_commands: vm.cloudinit_commands,
+    cloudinit_files: vm.cloudinit_files,
+    startup_script: vm.startup_script,
+    spoof_hw: String(vm.spoof_hw !== undefined && vm.spoof_hw !== null ? vm.spoof_hw : (settings.get('vm.spoof_hw') ?? '1')),
+    spoof_hypervisor: String(settings.get('vm.spoof_hypervisor') || '0'),
+    spoof_bios_vendor: String(settings.get('vm.spoof_bios_vendor') || ''),
+    spoof_bios_version: String(settings.get('vm.spoof_bios_version') || ''),
+    spoof_bios_date: String(settings.get('vm.spoof_bios_date') || ''),
+    spoof_sys_manufacturer: String(settings.get('vm.spoof_sys_manufacturer') || ''),
+    spoof_sys_product: String(settings.get('vm.spoof_sys_product') || ''),
+    spoof_sys_version: String(settings.get('vm.spoof_sys_version') || ''),
+    spoof_sys_serial: String(settings.get('vm.spoof_sys_serial') || ''),
+    spoof_board_manufacturer: String(settings.get('vm.spoof_board_manufacturer') || ''),
+    spoof_board_product: String(settings.get('vm.spoof_board_product') || ''),
+    spoof_board_serial: String(settings.get('vm.spoof_board_serial') || ''),
+  };
+  const ov = neofetchOverrides(vm);
+  if (ov.spoofOn) {
+    try {
+      data.neofetch_banner = neofetchService.fetchShellScript({
+        cpu: ov.cpu, memory: ov.mem, disk: ov.disk, gpu: ov.gpu,
+        host: String(vm.hostname || vm.name),
+        user: String(vm.username || ''),
+        os: guestOsLabel(vm),
+        node: String(node.name || ''),
+        region: String(vm.region || ''),
+        ipv4: String(vm.ip_address || ''),
+        ipv6: String(vm.ipv6_address || ''),
+        gateway: String(vm.ip_gateway || ''),
+        gateway6: String(vm.ipv6_gateway || ''),
+      });
+    } catch (_) {}
+  }
+  await nodeRegistry.patchVmOnNode(node, vm, data);
+}
+
 async function start(vm, { user = null } = {}) {
   if (isRunning(vm)) return { ok: true, message: 'already running', status: 'running' };
 
@@ -1666,6 +1715,7 @@ async function start(vm, { user = null } = {}) {
     const node = remoteNodeFor(vm);
     if (!node) throw new Error('Node not found for this VM');
     try {
+      await syncSeedToNode(node, vm);
       await nodeRegistry.startVmOnNode(node, vm);
     } catch (e) {
       throw new Error('Node start failed: ' + e.message);
@@ -1783,6 +1833,7 @@ async function restart(vm, user) {
     const node = remoteNodeFor(vm);
     if (!node) throw new Error('Node not found for this VM');
     try {
+      await syncSeedToNode(node, vm);
       await nodeRegistry.restartVmOnNode(node, vm);
     } catch (e) {
       throw new Error('Node restart failed: ' + e.message);

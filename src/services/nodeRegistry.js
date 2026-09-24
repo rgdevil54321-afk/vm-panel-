@@ -240,6 +240,9 @@ async function restartVmOnNode(node, vm) {
 async function deleteVmOnNode(node, vm) {
   return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}` });
 }
+async function patchVmOnNode(node, vm, data) {
+  return agentJson(node, { method: 'PATCH', path: `/vms/${vm.uuid}`, body: JSON.stringify(data || {}) });
+}
 async function resizeVmOnNode(node, vm, newSize) {
   return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/resize`, body: JSON.stringify({ disk_size: newSize }) });
 }
@@ -458,7 +461,7 @@ function nodeError(nodeId) {
 module.exports = {
   now, allNodes, getNode, createNode, updateNode, deleteNode, nodeVmCount,
   agentRequest, agentJson, fetchNodeStats, probeNode, startHeartbeat, stopHeartbeat,
-  createVmOnNode, startVmOnNode, stopVmOnNode, restartVmOnNode, deleteVmOnNode,
+  createVmOnNode, startVmOnNode, stopVmOnNode, restartVmOnNode, deleteVmOnNode, patchVmOnNode,
   resizeVmOnNode, vmStatsOnNode, vmStatusOnNode, vmBootLogOnNode, listVmsOnNode,
   reinstallVmOnNode, tmateVmOnNode,
   syncOsToNode, pushUpdateToNode, pushUpdateToAll, onboardNodeByKey,
