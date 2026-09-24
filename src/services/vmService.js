@@ -1343,6 +1343,7 @@ async function create({ user, data }) {
             cpu: c, memory: m, disk: d, host: payload.hostname, user: payload.username,
             os: guestOsLabel(payload), gpu: g, node: node.name, region: payload.region,
             ipv4: payload.ip_address, ipv6: payload.ipv6_address,
+            gateway: payload.ip_gateway, gateway6: payload.ipv6_gateway,
           });
         } catch (_) {}
       }
