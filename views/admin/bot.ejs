@@ -7,7 +7,19 @@
     <h2 style="font-size:22px">Discord Bot</h2>
     <div class="flex" style="gap:8px">
       <button class="btn btn-sm" onclick="loadStatus()">Refresh</button>
+      <button class="btn btn-sm btn-success" id="btnBotStart" onclick="botControl('start')">Start</button>
+      <button class="btn btn-sm btn-warning" id="btnBotRestart" onclick="botControl('restart')">Restart</button>
+      <button class="btn btn-sm btn-danger" id="btnBotStop" onclick="botControl('stop')">Stop</button>
       <button class="btn btn-sm btn-primary" onclick="runGuard()">Run PlanGuard Now</button>
+    </div>
+  </div>
+
+  <div class="card mb-3" id="botControlCard">
+    <div class="card-title">Bot Runtime</div>
+    <p class="muted text-sm mb-2">Start brings the bot online and resumes the PlanGuard sweep. Stop takes it offline and pauses the sweep. Restart reconnects without restarting the panel.</p>
+    <div class="flex" style="gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="pill" id="botRuntimePill">unknown</span>
+      <span class="muted text-sm" id="botRuntimeText">Loading runtime state…</span>
     </div>
   </div>
 
@@ -235,6 +247,43 @@ async function saveStatusManager() {
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 
+function renderBotRuntime(res, gw) {
+  const pill = document.getElementById('botRuntimePill');
+  const text = document.getElementById('botRuntimeText');
+  if (!pill || !text) return;
+  let cls = 'pill-gray', label = 'stopped', detail = '';
+  if (!res.configured) {
+    label = 'not configured'; detail = 'Add a bot token below, then press Start.';
+  } else if (gw.running) {
+    cls = 'pill-green'; label = 'online';
+    detail = 'Presence: "' + (gw.current || '') + '" · PlanGuard sweep ' + (res.enabled ? 'active' : 'paused') + '.';
+  } else if (gw.intended) {
+    cls = 'pill-yellow'; label = 'connecting'; detail = 'Waiting for the Discord gateway…';
+  } else {
+    label = 'stopped'; detail = 'The bot is offline. PlanGuard sweeps are paused.';
+  }
+  pill.className = 'pill ' + cls;
+  pill.textContent = label;
+  text.textContent = detail;
+}
+
+async function botControl(action) {
+  const map = { start: 'Start the Discord bot now?', stop: 'Stop the Discord bot? PlanGuard sweeps will pause until you start it again.', restart: 'Restart the Discord bot? This reconnects it to Discord without restarting the panel.' };
+  const ok = await VP.confirmDialog(map[action] || 'Continue?', { title: 'Bot ' + action, okText: action.charAt(0).toUpperCase() + action.slice(1), danger: action === 'stop' });
+  if (!ok) return;
+  const btns = ['btnBotStart', 'btnBotRestart', 'btnBotStop'].map((id) => document.getElementById(id)).filter(Boolean);
+  btns.forEach((b) => { b.disabled = true; });
+  try {
+    const res = await VP.api(API_URL + '/lifecycle', { method: 'POST', body: { action } });
+    VP.toast('Bot ' + action + ' requested', 'success');
+    setTimeout(loadStatus, 900);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+  } finally {
+    btns.forEach((b) => { b.disabled = false; });
+  }
+}
+
 async function loadStatus() {
   const box = document.getElementById('botStatus');
   try {
@@ -257,9 +306,11 @@ async function loadStatus() {
     document.getElementById('sm_type').value = gw.type || 'watching';
     document.getElementById('sm_rotate').checked = !!gw.rotate;
     document.getElementById('sm_interval').value = gw.interval || 30;
-    document.getElementById('sm_live').textContent = gw.running
-      ? 'now showing: "' + (gw.current || '') + '"'
-      : (gw.intended ? 'connecting…' : 'paused');
+     document.getElementById('sm_live').textContent = gw.running
+       ? 'now showing: "' + (gw.current || '') + '"'
+       : (gw.intended ? 'connecting…' : 'paused');
+     renderBotRuntime(res, gw);
+
 
     const brand = res.me
       ? '<img src="' + esc(PROFILE_AVATAR) + '" alt="" style="width:34px;height:34px;border-radius:8px;vertical-align:middle;margin-right:8px"/>'

@@ -92,7 +92,12 @@ async function checkPlanRow(up) {
   let need = null;
   let have = null;
 
-  if (plan.kind === 'invite') {
+  if (plan.kind === 'paid_once') {
+    // One-time payment: the plan is paid for, so it never lapses. Ignore any
+    // stale expiry so a paid-once VM can only be suspended by hand.
+    ok = true;
+    detail = 'paid once - no expiry';
+  } else if (plan.kind === 'invite') {
     const required = Number(plan.invites_required) || 0;
     need = required;
     if (!required) {

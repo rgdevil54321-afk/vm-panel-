@@ -208,15 +208,16 @@ function getShell() {
 
 function collect() {
   const cpus = os.cpus();
-  const hostname = settings.get('panel.hostname') || 'Venlix Nodes';
+  const branding = require('../lib/branding');
+  const hostname = branding.hostname();
   const cpuModel = settings.get('panel.cpu_name') || (cpus[0] ? cpus[0].model : 'x86_64 Processor');
 
   return {
     os: `${os.type()} ${os.release().split('-')[0]}`,
-    model: settings.get('panel.model_name') || 'Venlix Cloud Node',
+    model: settings.get('panel.model_name') || branding.name() + ' Cloud Node',
     kernel: os.release(),
     host: hostname,
-    node: settings.get('panel.hostname') || 'Venlix Nodes',
+    node: hostname,
     uptime: getUptime(),
     packages: getPackages(),
     shell: getShell(),

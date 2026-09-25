@@ -185,9 +185,9 @@ function getNodeLiveStats() {
   pushHistoryPoint(cpuStats.overall, memPct, netStats.rx_kbps, netStats.tx_kbps);
 
   // Branded overlay: the panel's "host name" / CPU / GPU are admin-configurable
-  // (default "Venlix Nodes"). If a custom value is set it overrides the real
+  // (default: the panel name). If a custom value is set it overrides the real
   // hardware everywhere in the UI and in the neofetch banner.
-  const displayHost = settings.get('panel.hostname') || 'Venlix Nodes';
+  const displayHost = require('../lib/branding').hostname();
   const realCpu = cpus[0] ? cpus[0].model : 'x86_64 Processor';
   const customCpu = settings.get('panel.cpu_name');
   const customGpu = settings.get('panel.gpu_name');

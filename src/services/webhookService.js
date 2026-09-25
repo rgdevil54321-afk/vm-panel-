@@ -2,6 +2,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const { db } = require('../lib/db');
+const branding = require('../lib/branding');
 
 function getWebhooks(vm) {
   let hooks = [];
@@ -35,14 +36,14 @@ function buildDiscordBody(event, payload) {
       color,
       fields: fields.slice(0, 12),
       timestamp: new Date().toISOString(),
-      footer: { text: 'Venlix Nodes' },
+      footer: { text: branding.name() },
     }],
-    username: 'Venlix Nodes',
+    username: branding.name(),
   };
 }
 
 function buildTelegramBody(event, payload) {
-  const lines = ['<b>Venlix Nodes</b>', '<b>Event:</b> <code>' + event + '</code>'];
+  const lines = ['<b>' + branding.name() + '</b>', '<b>Event:</b> <code>' + event + '</code>'];
   if (payload) {
     for (const [k, v] of Object.entries(payload)) {
       lines.push('<b>' + String(k) + ':</b> <code>' + String(v) + '</code>');

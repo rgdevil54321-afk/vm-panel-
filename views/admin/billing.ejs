@@ -31,6 +31,19 @@
           <option value="highcpu">High CPU</option><option value="gaming">Gaming</option><option value="backup">Backup</option>
         </select>
       </div>
+      <div class="form-group" style="margin:0"><label>Plan Type</label>
+        <select id="pl_kind" class="input" onchange="syncKindFields()">
+          <option value="paid">Paid (recurring, expires)</option>
+          <option value="paid_once">Paid Once (never expires)</option>
+          <option value="invite">Invite (Discord invite uses)</option>
+          <option value="booster">Booster (Discord server boost)</option>
+          <option value="free">Free (no requirement)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0"><label>Invites Required</label><input id="pl_invites" class="input" type="number" min="0" value="0" /></div>
+      <div class="form-group" style="margin:0"><label>Requires Discord Boost</label><label class="flex" style="gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="pl_boosts" /><span class="text-sm">User must be boosting the server</span></label></div>
+      <div class="form-group" style="margin:0"><label>Duration (days)</label><input id="pl_duration" class="input" type="number" min="0" value="30" /></div>
+      <div class="form-group" style="margin:0"><label>Grace (days)</label><input id="pl_grace" class="input" type="number" min="0" value="3" /></div>
       <div class="form-group" style="margin:0"><label>Description</label><input id="pl_desc" class="input" placeholder="For testing" /></div>
       <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createPlan()">Add Plan</button></div>
     </div>
@@ -44,9 +57,10 @@
         <button class="btn btn-sm" id="tabInvite" onclick="setSector('invite')">Invite</button>
         <button class="btn btn-sm" id="tabBooster" onclick="setSector('booster')">Booster</button>
         <button class="btn btn-sm" id="tabPaid" onclick="setSector('paid')">Paid</button>
+        <button class="btn btn-sm" id="tabPaidOnce" onclick="setSector('paid_once')">Paid Once</button>
       </div>
     </div>
-    <p class="muted text-sm mb-2">PlanGuard sweeps these every <code class="mono">bot.check_interval_min</code> min: unmet invite/boost requirements warn first, then suspend after the plan's grace period. Paid plans suspend once past expiry + grace. Assigning a paid plan sets its expiry; invite/booster plans rely on the linked Discord account.</p>
+    <p class="muted text-sm mb-2">PlanGuard sweeps these every <code class="mono">bot.check_interval_min</code> min: unmet invite/boost requirements warn first, then suspend after the plan's grace period. Paid plans suspend once past expiry + grace. <strong>Paid Once</strong> plans never expire and are never auto-suspended. Assigning a paid plan sets its expiry; invite/booster plans rely on the linked Discord account.</p>
     <div class="table-wrap" style="margin-top:10px">
       <table>
         <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Invite Code</th><th>Renewals</th><th>Last Check</th><th class="right">Actions</th></tr></thead>
@@ -131,6 +145,21 @@ async function loadPlans() {
     }).join('');
   } catch (e) { rows.innerHTML = '<tr><td colspan="10" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
 }
+function syncKindFields() {
+  const k = document.getElementById('pl_kind').value;
+  const map = {
+    pl_invites: k === 'invite',
+    pl_boosts: k === 'booster',
+    pl_duration: k === 'paid',
+    pl_grace: k === 'paid',
+  };
+  for (const [id, on] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.disabled = !on;
+    el.parentElement.style.opacity = on ? '1' : '0.4';
+  }
+}
 async function createPlan() {
   const body = {
     name: document.getElementById('pl_name').value.trim(),
@@ -140,6 +169,11 @@ async function createPlan() {
     max_mem_mb: document.getElementById('pl_mem').value,
     max_disk_gb: document.getElementById('pl_disk').value,
     vps_type: document.getElementById('pl_vps_type').value,
+    kind: document.getElementById('pl_kind').value,
+    invites_required: document.getElementById('pl_invites').value,
+    boost_required: document.getElementById('pl_boosts').checked ? 1 : 0,
+    duration_days: document.getElementById('pl_duration').value,
+    grace_days: document.getElementById('pl_grace').value,
     description: document.getElementById('pl_desc').value.trim(),
   };
   if (!body.name) { VP.toast('Enter a plan name', 'warning'); return; }
@@ -255,11 +289,13 @@ function setSector(k) {
   document.getElementById('tabInvite').classList.toggle('btn-primary', k === 'invite');
   document.getElementById('tabBooster').classList.toggle('btn-primary', k === 'booster');
   document.getElementById('tabPaid').classList.toggle('btn-primary', k === 'paid');
+  document.getElementById('tabPaidOnce').classList.toggle('btn-primary', k === 'paid_once');
   loadSectors();
 }
 function sectorOf(p) {
   if (p.plan_kind === 'invite') return 'invite';
   if (p.plan_kind === 'booster') return 'booster';
+  if (p.plan_kind === 'paid_once') return 'paid_once';
   return 'paid';
 }
 async function loadSectors() {
@@ -271,12 +307,13 @@ async function loadSectors() {
     rows.innerHTML = all.map((p) => {
       const st = p.status;
       const pill = st === 'active' ? 'pill-green' : st === 'warned' ? 'pill-yellow' : st === 'suspended' ? 'pill-red' : 'pill-gray';
-      const need = sector === 'invite' ? p.invites_required : (sector === 'booster' ? 'boost' : p.duration_days + 'd');
+      const need = sector === 'invite' ? p.invites_required : (sector === 'booster' ? 'boost' : (sector === 'paid_once' ? 'one-time' : p.duration_days + 'd'));
+      const once = sector === 'paid_once';
       return '<tr>'
         + '<td class="text-sm" style="font-weight:600">' + esc(p.username || ('#' + p.user_id)) + ' <span class="muted" style="font-weight:400">' + (p.discord_name ? '@' + esc(p.discord_name) : '') + '</span></td>'
         + '<td class="text-sm muted">' + esc(p.plan_name) + ' <span class="muted text-sm">/' + esc(p.plan_kind) + '</span></td>'
         + '<td><span class="pill ' + pill + '">' + esc(st) + '</span></td>'
-        + '<td class="text-sm muted">' + (p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '-') + '</td>'
+        + '<td class="text-sm muted">' + (once ? '<span title="Paid once - never expires">never</span>' : (p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '-')) + '</td>'
         + '<td class="mono text-sm">' + esc(p.invite_code || '-') + (sector === 'invite' ? ' <span class="muted">/ ' + esc(need) + '</span>' : '') + '</td>'
         + '<td class="text-sm">' + p.renewals + '</td>'
         + '<td class="text-sm muted">' + (p.last_check_at ? new Date(p.last_check_at).toLocaleString() : 'never') + '<br/><span class="muted text-sm">' + esc(p.last_check_detail || '') + '</span></td>'
@@ -320,6 +357,7 @@ async function cancelPlan(id) {
   try { await VP.api('/admin/billing/user-plans/' + id + '/cancel', { method: 'POST' }); VP.toast('Plan cancelled', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
 }
 
+syncKindFields();
 setSector('invite');
 loadPlans();
 loadCoupons();

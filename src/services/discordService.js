@@ -4,8 +4,11 @@
 'use strict';
 const https = require('https');
 const { settings } = require('../lib/db');
+const branding = require('../lib/branding');
 
 const API = 'https://discord.com/api/v10';
+// User-Agent is what Discord shows in client/network inspectors; brand it.
+const USER_AGENT = branding.slug() + '/1.0';
 
 function request(token, path, method = 'GET', body = null) {
   return new Promise((resolve) => {
@@ -19,7 +22,7 @@ function request(token, path, method = 'GET', body = null) {
         headers: {
           'Authorization': 'Bot ' + token,
           'Content-Type': 'application/json',
-          'User-Agent': 'VenlixNodes/1.0',
+          'User-Agent': USER_AGENT,
           ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
         },
       },
@@ -177,7 +180,7 @@ function oauthPost(path, params) {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(body),
-          'User-Agent': 'VenlixNodes/1.0',
+          'User-Agent': USER_AGENT,
         },
       },
       (res) => {
@@ -214,7 +217,7 @@ function requestBearer(token, path, method = 'GET') {
       new URL('https://discord.com/api/v10' + path),
       {
         method,
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'User-Agent': 'VenlixNodes/1.0' },
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
       },
       (res) => {
         let buf = '';

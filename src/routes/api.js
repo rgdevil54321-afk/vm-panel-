@@ -811,6 +811,33 @@ router.post('/admin/bot/presence', apiAdmin, json, async (req, res) => {
   }
 });
 
+// Start / stop / restart the Discord bot without restarting the whole panel.
+router.post('/admin/bot/lifecycle', apiAdmin, json, async (req, res) => {
+  try {
+    const gw = require('../services/discordGateway');
+    const d = require('../services/discordService');
+    const action = String((req.body || {}).action || '').toLowerCase();
+    if (!['start', 'stop', 'restart'].includes(action)) {
+      return res.status(400).json({ ok: false, error: 'action must be start, stop or restart' });
+    }
+    if (!d.botConfigured()) {
+      return res.status(400).json({ ok: false, error: 'Bot token not configured' });
+    }
+    if (action === 'stop') {
+      settings.set('bot.enabled', '0');
+      gw.stop();
+    } else {
+      settings.set('bot.enabled', '1');
+      if (action === 'restart') gw.stop();
+      gw.start();
+    }
+    activity.logActivity({ user_id: req.user.id, event: 'admin:bot_' + action });
+    res.json({ ok: true, action, enabled: String(settings.get('bot.enabled') || '0') === '1', gateway: gw.state() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.get('/admin/bot/guilds', apiAdmin, async (req, res) => {
   const d = require('../services/discordService');
   if (!d.botConfigured()) return res.status(400).json({ ok: false, guilds: [], error: 'Bot token not configured' });

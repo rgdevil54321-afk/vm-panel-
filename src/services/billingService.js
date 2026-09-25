@@ -13,7 +13,10 @@ function getPlan(id) {
 }
 
 // ---------- Plans ----------
-const PLAN_KINDS = ['invite', 'booster', 'paid', 'free'];
+// paid_once = a single payment that never expires (PlanGuard never suspends it).
+const PLAN_KINDS = ['invite', 'booster', 'paid', 'paid_once', 'free'];
+// Kinds that receive a computed expiry date when assigned to a user.
+const EXPIRING_KINDS = ['paid'];
 const VPS_TYPES = ['kvm', 'nat', 'storage', 'highcpu', 'gaming', 'backup'];
 
 function planOfUser(userId) {
@@ -227,7 +230,11 @@ function assignPlanToUser(user, plan, { assignedBy = null, days = null, inviteCo
   applyPlanToUser(plan, user);
   const kind = plan.kind || 'paid';
   const dur = days && days > 0 ? days : (plan.duration_days > 0 ? plan.duration_days : parseInt(require('./db').settings.get('plans.default_renew_days') || '30', 10));
-  const expires = kind === 'paid' ? new Date(Date.now() + dur * 86400000).toISOString() : null;
+  // Only a time-boxed subscription gets an expiry. invite / booster / paid_once
+  // / free stay open until manually suspended.
+  const expires = EXPIRING_KINDS.includes(kind)
+    ? new Date(Date.now() + dur * 86400000).toISOString()
+    : null;
   db.prepare(
     `INSERT INTO user_plans (user_id, plan_id, assigned_by, assigned_at, expires_at, renewals, status, note, invite_code)
      VALUES (?,?,?,?,?,0,'active',?,?)`

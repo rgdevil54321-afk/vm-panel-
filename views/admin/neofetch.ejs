@@ -160,7 +160,7 @@
         <p class="muted text-sm" style="margin:0">
           The <b>Host Name</b>, <b>CPU</b> and <b>GPU</b> are configurable in
           <a href="/admin/settings#general">Settings → General → Host Identity</a>.
-          Default host name is <b>Venlix Nodes</b>. Whatever you set is shown here in
+          Default host name is <b><%= settings['panel.name'] || 'Venlix Nodes' %></b>. Whatever you set is shown here in
           the neofetch banner <i>and</i> everywhere the machine is identified: the admin
           dashboard, node telemetry, and server overview. Set any name you want —
           it doesn't have to match the real hardware.

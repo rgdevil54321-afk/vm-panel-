@@ -1,4 +1,4 @@
-// Discord Gateway presence connection for the Venlix bot.
+// Discord Gateway presence connection, branded from the panel name.
 // REST-only bots show as OFFLINE in Discord. This lightweight gateway client
 // connects with intents=0 (no events needed), keeps the heartbeat alive and
 // announces an online presence so the bot appears ONLINE in every server it
@@ -12,6 +12,7 @@ let WebSocket = null;
 try { WebSocket = require('ws'); } catch (_) { /* ws optional */ }
 
 const GATEWAY = 'wss://gateway.discord.gg/?v=10&encoding=json';
+const branding = require('../lib/branding');
 
 const ACTIVITY_TYPES = { playing: 0, streaming: 1, listening: 2, watching: 3, custom: 4, competing: 5 };
 
@@ -56,7 +57,7 @@ function activityType() {
 function statusLines() {
   const raw = String(get('bot.presence', ''));
   const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  return lines.length ? lines : ['Venlix panel'];
+  return lines.length ? lines : [branding.botPresence()];
 }
 
 function rotateEnabled() { return String(get('bot.presence_rotate', '1')) === '1'; }
@@ -68,8 +69,11 @@ function rotateInterval() {
 
 function buildActivity(name) {
   const t = activityType();
-  const activity = { name: String(name || 'Venlix panel').slice(0, 128), type: ACTIVITY_TYPES[t] };
-  if (t === 'streaming') activity.url = 'https://twitch.tv/venlix';
+  const activity = { name: String(name || branding.botPresence()).slice(0, 128), type: ACTIVITY_TYPES[t] };
+  // Discord rejects a streaming activity with an empty url, so only set it
+  // when the operator configured one.
+  const url = branding.twitchUrl();
+  if (t === 'streaming' && url) activity.url = url;
   return activity;
 }
 
@@ -143,7 +147,7 @@ function onMessage(raw) {
       if (sessionId && lastSeq != null) {
         send({ op: 6, d: { token: token(), session_id: sessionId, seq: lastSeq } });
       } else {
-        send({ op: 2, d: { token: token(), intents: 0, properties: { os: 'linux', browser: 'VenlixNodes', device: 'VenlixNodes' }, presence: presence() } });
+        send({ op: 2, d: { token: token(), intents: 0, properties: { os: 'linux', browser: branding.slug(), device: branding.slug() }, presence: presence() } });
       }
       break;
     }

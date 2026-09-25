@@ -153,6 +153,40 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
+        <!-- 1b. Branding -->
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">1b. Branding (panel-wide)</label>
+          <div class="muted text-sm mb-2">
+            Every user-visible mention of the panel name comes from here &mdash; the Discord bot
+            status, webhook embeds, email subjects, neofetch banner, share card and
+            <code class="mono">User-Agent</code>. Change the name above and all of them follow.
+          </div>
+          <div class="grid grid-2" style="gap:16px">
+            <div class="form-group">
+              <label>Tagline</label>
+              <input name="panel.tagline" value="<%= all['panel.tagline'] || '' %>" placeholder="Reliable KVM VPS Hosting" />
+              <div class="muted text-sm">Short descriptor used on the share card and in page titles.</div>
+            </div>
+            <div class="form-group">
+              <label>Bot status suffix</label>
+              <input name="panel.bot_blurb" value="<%= all['panel.bot_blurb'] || '' %>" placeholder="panel" oninput="syncBotPresencePreview()" />
+              <div class="muted text-sm">The bot shows &ldquo;<span class="mono" id="botPresencePreview">-</span>&rdquo; as its Discord status.</div>
+            </div>
+            <div class="form-group">
+              <label>Streaming / Twitch URL</label>
+              <input name="panel.twitch_url" value="<%= all['panel.twitch_url'] || '' %>" placeholder="https://twitch.tv/yourchannel" />
+              <div class="muted text-sm">Only used if the bot presence type is <strong>Streaming</strong>. Leave blank to show no link.</div>
+            </div>
+            <div class="form-group">
+              <label>Support URL</label>
+              <input name="panel.support_url" value="<%= all['panel.support_url'] || '' %>" placeholder="https://discord.gg/yourinvite" />
+              <div class="muted text-sm">Optional help link used across the panel.</div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="hr" style="margin:24px 0"/>
+
         <!-- 1c. Link sharing & announcement -->
         <div class="form-group mb-4">
           <label style="font-size:14px;font-weight:700;color:#fff">1.6. Link Preview &amp; Announcement</label>
@@ -609,7 +643,7 @@
           
           <div id="inspectorCard" class="card" style="padding:20px;border:1px solid var(--accent);background:var(--bg-card);box-shadow:0 8px 30px rgba(0,0,0,0.5)">
             <div class="flex-between mb-2">
-              <span class="font-bold" style="font-size:15px">Venlix Nodes System</span>
+              <span class="font-bold" style="font-size:15px"><%= all['panel.name'] || 'Venlix Nodes' %> System</span>
               <span class="pill pill-green">Online &amp; Active</span>
             </div>
             <p class="muted text-sm mb-3">This card live-renders your glassmorphism blur and transparency in real-time as you adjust sliders.</p>
@@ -1433,9 +1467,18 @@ function toggleFaviconMode(mode) {
 }
 
 function updatePanelNamePreview(val) {
-  const fallback = document.getElementById('liveLogoFallback');
-  if (fallback) fallback.textContent = val.trim() || 'Venlix Nodes';
-}
+ const fallback = document.getElementById('liveLogoFallback');
+ if (fallback) fallback.textContent = val.trim() || 'Venlix Nodes';
+ syncBotPresencePreview();
+ }
+ syncBotPresencePreview();
+ function syncBotPresencePreview() {
+ const el = document.getElementById('botPresencePreview');
+ if (!el) return;
+ const nm = (document.getElementById('panelNameInput') || {}).value || '';
+ const bl = document.querySelector('[name="panel.bot_blurb"]');
+ el.textContent = (nm.trim() || 'Venlix Nodes') + ' ' + ((bl && bl.value.trim()) || 'panel');
+ }
 
 function updateLogoPreview(url) {
   const box = document.getElementById('logoPreviewBox');
