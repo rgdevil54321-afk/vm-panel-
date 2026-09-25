@@ -632,10 +632,15 @@ const S = {
   rubric(v) {
     return (typeof v === 'number' || typeof v === 'boolean') ? String(v) : v;
   },
+  parseValue(raw) {
+    const v = typeof raw === 'string' ? raw : String(raw);
+    if (/^-?\d+$/.test(v)) return v;
+    try { return this.rubric(JSON.parse(v)); } catch (_) { return v; }
+  },
   get(key, fallback = null) {
     const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
     if (!row) return fallback;
-    try { return this.rubric(JSON.parse(row.value)); } catch (_) { return row.value; }
+    return this.parseValue(row.value);
   },
   set(key, value) {
     db.prepare(
@@ -646,7 +651,7 @@ const S = {
     const rows = db.prepare('SELECT key, value FROM settings').all();
     const out = {};
     for (const r of rows) {
-      try { out[r.key] = this.rubric(JSON.parse(r.value)); } catch (_) { out[r.key] = r.value; }
+      out[r.key] = this.parseValue(r.value);
     }
     return out;
   },
