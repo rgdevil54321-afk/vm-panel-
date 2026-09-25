@@ -105,6 +105,15 @@ router.post('/servers/:id/bootlog/clear', loadVm, (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/servers/:id/bootlog/diagnose', loadVm, (req, res) => {
+  try {
+    const result = require('../services/bootLogAiService').diagnose(req.vm);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/servers/:id/files', loadVm, (req, res) => {
   render(res, 'server/files', { vm: req.vm });
 });

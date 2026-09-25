@@ -318,7 +318,7 @@
           </select>
         </div>
         <div class="form-group" style="margin:0"><label>Expiry (local time, empty = never)</label>
-          <input id="ed_expires_at" class="input" type="datetime-local" value="<%= vm.expiry && vm.expiry.at ? new Date(vm.expiry.at - new Date(vm.expiry.at).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '' %>"/>
+          <input id="ed_expires_at" class="input" type="datetime-local" value="<%= (() => { const _d = vm.expiry && vm.expiry.at ? new Date(vm.expiry.at) : null; return _d && !isNaN(_d.getTime()) ? new Date(_d.getTime() - _d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; })() %>"/>
         </div>
         <div class="form-group" style="margin:0"><label>Backup Slots (0 = no backups)</label>
           <input id="ed_backup_slots" class="input" type="number" min="0" step="1" value="<%= vm.backup_slots != null ? vm.backup_slots : 5 %>"/>

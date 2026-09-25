@@ -2,11 +2,23 @@ const { Client } = require('ssh2');
 const path = require('path');
 const logger = require('../lib/logger');
 
-function connect(vm, { readyTimeout = 5000 } = {}) {
+// Where the panel must dial to reach a guest: NAT / shared-IP VMs live behind a
+// port forward on the node's own reachable address, dedicated-IP guests answer
+// on their own address. Loopback is only correct for VMs on the panel's box.
+function sshTarget(vm) {
+  let host = '127.0.0.1';
+  let port = Number(vm && vm.ssh_port) || 22;
+  try {
+    const s = require('./vmService').serializeVm(vm);
+    if (s && s.connect_host) host = String(s.connect_host);
+    const p = Number(s && s.connect_port);
+    if (p) port = p;
+  } catch (_) {}
+  return { host, port };
+}
+
+function attempt(vm, host, port, readyTimeout) {
   return new Promise((resolve, reject) => {
-    if (!vm || !vm.ssh_port || !vm.username) {
-      return reject(new Error('VM has no SSH configuration'));
-    }
     const conn = new Client();
     let settled = false;
     const timer = setTimeout(() => {
@@ -23,8 +35,8 @@ function connect(vm, { readyTimeout = 5000 } = {}) {
       if (!settled) { settled = true; reject(err); }
     });
     conn.connect({
-      host: '127.0.0.1',
-      port: vm.ssh_port,
+      host,
+      port,
       username: vm.username,
       password: vm.password,
       readyTimeout,
@@ -32,6 +44,19 @@ function connect(vm, { readyTimeout = 5000 } = {}) {
       keepaliveCountMax: 5,
     });
   });
+}
+
+async function connect(vm, { readyTimeout = 5000 } = {}) {
+  if (!vm || !vm.ssh_port || !vm.username) {
+    throw new Error('VM has no SSH configuration');
+  }
+  const { host, port } = sshTarget(vm);
+  try {
+    return await attempt(vm, host, port, readyTimeout);
+  } catch (err) {
+    if (host === '127.0.0.1') throw err;
+    return attempt(vm, '127.0.0.1', Number(vm.ssh_port) || 22, readyTimeout);
+  }
 }
 
 function exec(conn, cmd, { timeout = 30000 } = {}) {

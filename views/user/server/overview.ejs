@@ -243,24 +243,18 @@
             <tbody>
               <tr><td class="muted" style="width:140px">Network Mode</td><td><span class="pill pill-gray"><%= vm.network_mode_label %></span></td></tr>
               <tr>
-                <td class="muted">IPv4 Address</td>
+                <td class="muted">IP Address</td>
                 <td class="mono">
-                  <% if (vm.ip_address) { %>
-                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ip_address %><%= vm.ip_prefix ? ('/' + vm.ip_prefix) : '' %></span>
+                  <% if (['ipv4_shared','ipv4_dedicated','dual'].includes(vm.network_mode) && vm.ip_address) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ip_address %></span>
+                  <% } else if (vm.network_mode === 'ipv6' && vm.ipv6_address) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ipv6_address %></span>
                   <% } else if (['nat','ipv4_shared'].includes(vm.network_mode) && vm.connect_host) { %>
-                    <span style="color:var(--accent-2);font-weight:700"><%= vm.connect_host %></span> <span class="muted" style="font-size:11px">(shared IPv4 — reachable via node)</span>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.connect_host %></span> <span class="muted" style="font-size:11px">(shared — no dedicated IP)</span>
+                  <% } else if (vm.ipv6_address) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ipv6_address %></span>
                   <% } else { %>
-                    <span class="muted">—</span>
-                  <% } %>
-                </td>
-              </tr>
-              <tr>
-                <td class="muted">IPv6 Address</td>
-                <td class="mono">
-                  <% if (vm.ipv6_address) { %>
-                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ipv6_address %><%= vm.ipv6_prefix ? ('/' + vm.ipv6_prefix) : '' %></span>
-                  <% } else { %>
-                    <span class="muted">—</span>
+                    <span class="muted">None</span>
                   <% } %>
                 </td>
               </tr>

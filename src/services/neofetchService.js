@@ -99,11 +99,12 @@ function sanitizeLogoGrid(raw) {
 }
 
 function customLogoGrid() {
-  const raw = settings.get('neofetch.logo_grid');
+  let raw = settings.get('neofetch.logo_grid');
   if (!raw) return null;
-  try {
-    return sanitizeLogoGrid(JSON.parse(raw));
-  } catch (_) { return null; }
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (_) { return null; }
+  }
+  return sanitizeLogoGrid(raw);
 }
 
 // Resolve the effective logo art. Custom grid -> per-cell colored rows, else the

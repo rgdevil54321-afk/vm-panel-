@@ -771,9 +771,21 @@ body.term-fullscreen #bgOverlay {
       }
     });
 
+    // True when the viewport is already parked at the newest output, so we only
+    // force-scroll on writes the user was already following.
+    function termAtBottom(term) {
+      try {
+        const b = term && term.buffer && term.buffer.active;
+        if (!b) return true;
+        return b.viewportY >= b.baseY;
+      } catch (_) { return true; }
+    }
+
     socket.on('console:buffer', ({ sessionId, text }) => {
       const entry = createTerminalPane(sessionId);
+      const stick = termAtBottom(entry.term);
       try { entry.term.clear(); entry.term.write(text || ''); } catch (_) {}
+      if (stick) { try { entry.term.scrollToBottom(); } catch (_) {} }
     });
 
     socket.on('console:ready', ({ sessionId, replayed }) => {
@@ -789,7 +801,10 @@ body.term-fullscreen #bgOverlay {
 
     socket.on('console:data', ({ sessionId, text }) => {
       const entry = terms.get(sessionId);
-      if (entry) entry.term.write(text);
+      if (!entry) return;
+      const stick = termAtBottom(entry.term);
+      entry.term.write(text);
+      if (stick) { try { entry.term.scrollToBottom(); } catch (_) {} }
     });
 
     socket.on('console:close', ({ sessionId, reason }) => {
