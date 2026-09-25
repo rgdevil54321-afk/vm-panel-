@@ -103,13 +103,27 @@ function restoreFromCodeFile(file) {
 async function notifyOwner(codeInfo, label) {
   try {
     const { settings } = require('../lib/db');
-    if (String(settings.get('bot.enabled') || '0') !== '1') return;
+    if (String(settings.get('bot.enabled') || '0') !== '1') {
+      logger.warn('[transfer] bot disabled - owner NOT notified for ' + label + ' (code saved to ' + path.basename(codeInfo.file) + ')');
+      return;
+    }
     const db = dbConn();
     const discord = require('./discordService');
+    // Must match the admin test used everywhere else (role = 'admin' OR
+    // root_admin = 1). Querying root_admin alone silently matched nobody on
+    // panels where the owner only has role = 'admin'.
     const admins = db.prepare(
-      "SELECT * FROM users WHERE root_admin = 1 AND discord_id IS NOT NULL AND discord_id != ''"
+      "SELECT * FROM users WHERE (role = 'admin' OR root_admin = 1) AND discord_id IS NOT NULL AND discord_id != ''"
     ).all();
-    if (!admins.length) return;
+    if (!admins.length) {
+      const anyAdmin = db.prepare("SELECT username, discord_id FROM users WHERE role = 'admin' OR root_admin = 1").all();
+      logger.warn(
+        '[transfer] no admin has a linked Discord account - owner NOT notified for ' + label +
+        '. Admins: ' + (anyAdmin.length ? anyAdmin.map((a) => a.username + (a.discord_id ? '' : ' (unlinked)')).join(', ') : 'none') +
+        '. Code saved to ' + path.basename(codeInfo.file) + '.'
+      );
+      return;
+    }
     const key = String(settings.get('api.panel_key') || '');
     const base = key
       ? `\nFetchable from the panel API with header \`Authorization: Bearer ${key.slice(0, 8)}...\``
@@ -126,6 +140,7 @@ async function notifyOwner(codeInfo, label) {
       try {
         const r = await discord.sendDm(a.discord_id, msg);
         if (!r || !r.ok) logger.warn('[transfer] DM notify failed: ' + ((r && r.error) || (r && r.status)));
+        else logger.info('[transfer] owner notified (' + label + ') via ' + a.username);
       } catch (_) {}
     }
   } catch (e) {
@@ -150,9 +165,12 @@ async function emergencyCode(reason) {
 async function daily() {
   try {
     const { settings } = require('../lib/db');
-    if (String(settings.get('transfer.daily_enabled') || '1') === '0') return null;
+    if (String(settings.get('transfer.daily_enabled') || '1') === '0') {
+      logger.info('[transfer] daily export disabled (transfer.daily_enabled=0)');
+      return null;
+    }
     const info = await exportCode();
-    logger.info(`[transfer] daily code saved: ${path.basename(info.file)}`);
+    logger.info('[transfer] daily code saved: ' + path.basename(info.file));
     notifyOwner(info, 'DAILY').catch(() => {});
     return info.file;
   } catch (e) {
