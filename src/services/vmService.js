@@ -783,14 +783,18 @@ function serializeVm(row) {
   //   3) else auto-detect the node's public IPv4 once (cached via hostDetect)
   //      so the SSH/overview hint is never 127.0.0.1.
   let sharedV4 = null;
-  if (node_host && node_host !== '127.0.0.1' && node_host !== 'localhost' && node_host !== '::1' && !String(node_host).includes(':')) {
-    sharedV4 = node_host;
-  } else if (!staticV4) {
+  if (!staticV4) {
     try {
       const nd = require('./hostDetect').detectNetwork();
-      const a = (nd.addresses || []).find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x.addr) && !String(x.addr).startsWith('127.'));
-      if (a) sharedV4 = a.addr;
+      const v4s = (nd.addresses || []).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x.addr) && !String(x.addr).startsWith('127.'));
+      const ts = v4s.find((x) => { const p = String(x.addr).split('.').map(Number); return p[0] === 100 && p[1] >= 64 && p[1] <= 127; });
+      const pub = v4s.find((x) => { const p = String(x.addr).split('.').map(Number); return !(p[0] === 10 || p[0] === 192 && p[1] === 168 || p[0] === 172 && p[1] >= 16 && p[1] <= 31 || p[0] === 169 && p[1] === 254); });
+      if (ts) sharedV4 = ts.addr;
+      else if (pub) sharedV4 = pub.addr;
     } catch (_) {}
+    if (!sharedV4 && node_host && node_host !== '127.0.0.1' && node_host !== 'localhost' && node_host !== '::1' && !String(node_host).includes(':')) {
+      sharedV4 = node_host;
+    }
   }
   const modeLabels = {
     nat: 'NAT (shared port forward)',
