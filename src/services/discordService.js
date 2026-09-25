@@ -148,12 +148,20 @@ function fillTemplate(tpl, vars) {
 }
 
 // ---------- User Discord linking via OAuth2 (identify) ----------
+function oauthClientId() {
+  return String(settings.get('oauth.discord_client_id') || '').trim() || String(settings.get('bot.client_id') || '').trim();
+}
+
+function oauthClientSecret() {
+  return String(settings.get('oauth.discord_client_secret') || '').trim() || String(settings.get('bot.client_secret') || '').trim();
+}
+
 function oauthConfigured() {
-  return !!(String(settings.get('bot.client_id') || '').trim() && String(settings.get('bot.client_secret') || '').trim());
+  return !!(oauthClientId() && oauthClientSecret());
 }
 
 function authorizeUrl(redirectUri, state) {
-  const cid = encodeURIComponent(String(settings.get('bot.client_id') || '').trim());
+  const cid = encodeURIComponent(oauthClientId());
   const redir = encodeURIComponent(redirectUri);
   const st = encodeURIComponent(state);
   return `https://discord.com/api/oauth2/authorize?client_id=${cid}&response_type=code&redirect_uri=${redir}&scope=identify&state=${st}&prompt=consent`;
@@ -192,8 +200,8 @@ function oauthPost(path, params) {
 
 async function exchangeCode(code, redirectUri) {
   return oauthPost('/oauth2/token', {
-    client_id: String(settings.get('bot.client_id') || '').trim(),
-    client_secret: String(settings.get('bot.client_secret') || '').trim(),
+    client_id: oauthClientId(),
+    client_secret: oauthClientSecret(),
     grant_type: 'authorization_code',
     code,
     redirect_uri: redirectUri,

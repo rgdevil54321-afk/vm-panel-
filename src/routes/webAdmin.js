@@ -445,6 +445,7 @@ router.post('/admin/bot/config', express.json(), (req, res) => {
   for (const key of [
     'bot.token', 'bot.guild_id', 'bot.enabled', 'bot.check_interval_min',
     'bot.dm_warn', 'bot.dm_suspend', 'bot.dm_restore', 'bot.client_id', 'bot.client_secret',
+    'oauth.discord_client_id', 'oauth.discord_client_secret',
     'bot.presence', 'bot.presence_type', 'bot.presence_state', 'bot.presence_rotate', 'bot.presence_interval',
   ]) {
     if (body[key] !== undefined) settings.set(key, String(body[key]));

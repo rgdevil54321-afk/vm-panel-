@@ -32,6 +32,17 @@
         <input id="bc_csec" class="input" type="password" value="<%= String(settings['bot.client_secret'] || '') %>" autocomplete="off" />
       </div>
       <div class="form-group" style="margin:0">
+        <label>Sign-in Application ID <span class="muted">(optional)</span></label>
+        <input id="bc_ocid" class="input" value="<%= String(settings['oauth.discord_client_id'] || '') %>" placeholder="leave blank to reuse the bot app above" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Sign-in Client Secret <span class="muted">(optional)</span></label>
+        <input id="bc_ocsec" class="input" type="password" value="<%= String(settings['oauth.discord_client_secret'] || '') %>" placeholder="leave blank to reuse the bot secret" autocomplete="off" />
+      </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1">
+        <label class="text-sm muted" style="margin:0">Use a separate sign-in application if you don't want login to share the bot's app. Its only redirect URI: <code>https://YOUR-PANEL/auth/discord/callback</code></label>
+      </div>
+      <div class="form-group" style="margin:0">
         <label>PlanGuard check interval (minutes)</label>
         <input id="bc_interval" class="input" type="number" min="1" value="<%= String(settings['bot.check_interval_min'] || '15') %>" />
       </div>
@@ -178,6 +189,8 @@ async function saveBotConfig() {
     'bot.guild_id': get('bc_guild').trim(),
     'bot.client_id': get('bc_cid').trim(),
     'bot.client_secret': get('bc_csec').trim(),
+    'oauth.discord_client_id': get('bc_ocid').trim(),
+    'oauth.discord_client_secret': get('bc_ocsec').trim(),
     'bot.enabled': document.getElementById('bc_enabled').checked ? '1' : '0',
     'bot.check_interval_min': get('bc_interval').trim(),
     'bot.dm_warn': get('bc_dm_warn'),
