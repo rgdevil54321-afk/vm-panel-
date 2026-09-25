@@ -20,10 +20,13 @@ router.use((req, res, next) => { res.locals.admin = true; next(); });
 router.use(requireAdmin);
 
 function render(res, view, vars = {}) {
+  const req = res.req;
+  const proto = (req.secure || String(req.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https') ? 'https' : 'http';
   res.render(`admin/${view}`, {
     page: 'admin-' + view,
     user: res.req.user,
     settings: settings.all(),
+    siteUrl: proto + '://' + req.get('host'),
     ...vars,
   });
 }
@@ -210,6 +213,20 @@ router.post('/admin/servers/:id/update', (req, res) => {
     res.json({ ok: true, vm: vmService.serializeVm(updated) });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Push the current neofetch/logo spoof into a running guest. VMs only receive
+// the banner at first boot, so edits made later need to be re-applied.
+router.post('/admin/vms/:id/neofetch-apply', async (req, res) => {
+  try {
+    const vm = vmService.getVm(parseInt(req.params.id, 10));
+    if (!vm) return res.status(404).json({ error: 'Server not found' });
+    await vmService.applyNeofetchSpoof(vm);
+    activity.logActivity({ user_id: req.user.id, event: 'admin:vm_neofetch_applied' });
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -532,8 +549,10 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
     'panel.navbar_blur', 'panel.accent', 'panel.theme',
     'panel.discord_url', 'panel.discord_enabled', 'panel.discord_code', 'panel.secret_blur',
     'google.client_id', 'google.client_secret',
-    'panel.hostname', 'panel.cpu_name', 'panel.gpu_name', 'panel.ram_name', 'panel.disk_name',
-    'panel.logo_text',
+  'panel.hostname', 'panel.cpu_name', 'panel.gpu_name', 'panel.ram_name', 'panel.disk_name',
+  'panel.logo_text', 'panel.og_title', 'panel.og_image', 'panel.description',
+  'panel.announcement_enabled', 'panel.announcement_version', 'panel.announcement_title',
+  'panel.announcement_body', 'panel.announcement_image',
   ]) save(key);
   save('panel.wallpapers_api_key');
   for (const key of ['mail.host', 'mail.port', 'mail.secure', 'mail.user', 'mail.pass', 'mail.from']) save(key);

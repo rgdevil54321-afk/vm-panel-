@@ -332,6 +332,10 @@
         <div class="form-group" style="margin:0"><label>Memory</label><input id="ed_nf_mem" class="input" placeholder="64GiB" value="<%= vm.neofetch_mem || '' %>"/></div>
         <div class="form-group" style="margin:0"><label>Disk</label><input id="ed_nf_disk" class="input" placeholder="2TB (nvme)" value="<%= vm.neofetch_disk || '' %>"/></div>
       </div>
+      <div class="flex" style="gap:10px;margin-top:12px;align-items:center">
+        <button type="button" class="btn btn-sm" id="btnApplyNf" onclick="applyNeofetchSpoof(this)">Apply to running VM</button>
+        <span class="muted text-sm">Pushes this banner into a server that is already running. Leave blank to use the VM's allocated specs.</span>
+      </div>
 
       <div class="flex right" style="gap:8px;margin-top:18px">
         <span class="muted text-sm" style="margin-right:auto;align-self:center">Password / spoof / OS apply on the next Start. Disk resize keeps existing data.</span>
@@ -459,6 +463,25 @@ async function saveEdit(btn) {
     setTimeout(() => location.reload(), 900);
   } catch (e) {
     VP.toast(e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function applyNeofetchSpoof(btn) {
+  const fields = ['ed_nf_cpu', 'ed_nf_gpu', 'ed_nf_mem', 'ed_nf_disk'];
+  const body = {};
+  for (const id of fields) {
+    const el = document.getElementById(id);
+    if (el) body[id.replace('ed_nf_', 'neofetch_')] = el.value.trim();
+  }
+  if (btn) btn.disabled = true;
+  try {
+    await VP.api('/admin/servers/<%= vm.id %>/update', { method: 'POST', body });
+    await VP.api('/admin/vms/<%= vm.id %>/neofetch-apply', { method: 'POST' });
+    VP.toast('Neofetch banner applied to the running VM', 'success');
+  } catch (e) {
+    VP.toast(e.message, 'error');
+  } finally {
     if (btn) btn.disabled = false;
   }
 }

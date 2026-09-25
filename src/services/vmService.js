@@ -830,7 +830,7 @@ function serializeVm(row) {
     expiry: vmExpiry(row),
     backup_slots: row.backup_slots != null ? Number(row.backup_slots) : Number(settings.get('vm.default_backup_slots') || '5'),
   };
-  if (remote) {
+  {
     const ov = neofetchOverrides(row);
     if (ov.spoofOn) {
       try {
@@ -965,6 +965,27 @@ function neofetchOverrides(vm) {
     disk: String((vm && vm.neofetch_disk) || '').trim() || String(settings.get('panel.disk_name') || '').trim() || alloc.disk,
     gpu: String((vm && vm.neofetch_gpu) || '').trim() || String(settings.get('panel.gpu_name') || '').trim(),
   };
+}
+
+// Install the spoofed banner into a guest that already exists. VMs only get
+// venlix-fetch at first boot via cloud-init, so changing specs or saving a logo
+// has no effect until this pushes the script and re-links the fetch binaries.
+async function applyNeofetchSpoof(vm) {
+  const ser = serializeVm(vm);
+  const banner = String(ser && ser.neofetch_banner || '').trim();
+  if (!banner) throw new Error('Neofetch banner is disabled or empty for this server');
+  const ssh = require('./sshService');
+  const script = Buffer.from(banner, 'utf8').toString('base64');
+  const cmd = [
+    `echo '${script}' | base64 -d > /usr/local/bin/venlix-fetch`,
+    'chmod 0755 /usr/local/bin/venlix-fetch',
+    `for _b in neofetch fastfetch screenfetch; do _p=/usr/local/bin/$_b; if [ -e "$_p" ] && [ ! -L "$_p" ]; then mv -f "$_p" "$_p.venlix-real" 2>/dev/null || true; fi; ln -sf /usr/local/bin/venlix-fetch "$_p"; done`,
+    `printf 'alias neofetch=venlix-fetch\\nalias fastfetch=venlix-fetch\\nalias screenfetch=venlix-fetch\\n' > /etc/profile.d/vn-fetch.sh`,
+    'chmod 0644 /etc/profile.d/vn-fetch.sh',
+  ].join(' && ');
+  const r = await ssh.withExec(vm, cmd, { timeout: 30000 });
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to install the neofetch banner');
+  return { ok: true };
 }
 
 function writeSeed(vm) {
@@ -2415,7 +2436,7 @@ async function setUserVmsUnsuspended(userId) {
 module.exports = {
   VM_DIR, vmDir, dbVms, getVm, create, start, stop, restart, remove, update,
   resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, allocPort, allocVncPort, allocAgentPort,
-  parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner,
+    parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner, applyNeofetchSpoof,
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
   addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,

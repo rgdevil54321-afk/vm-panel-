@@ -16,14 +16,17 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-function render(res, view, vars = {}) {
-  res.render(`user/${view}`, {
+  function render(res, view, vars = {}) {
+    const req = res.req;
+    const proto = (req.secure || String(req.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https') ? 'https' : 'http';
+    res.render(`user/${view}`, {
     page: view,
     user: res.req.user,
     settings: settings.all(),
+    siteUrl: proto + '://' + req.get('host'),
     ...vars,
-  });
-}
+    });
+  }
 
 function myVms(user) {
   return db.prepare(
@@ -90,6 +93,14 @@ router.get('/servers/:id/status', loadVm, async (req, res) => {
 
 router.get('/servers/:id/console', loadVm, (req, res) => {
   render(res, 'server/console', { vm: req.vm });
+});
+
+router.get('/privacy', (req, res) => {
+  render(res, 'privacy', {});
+});
+
+router.get('/terms', (req, res) => {
+  render(res, 'terms', {});
 });
 
 router.get('/servers/:id/bootlog', loadVm, (req, res) => {

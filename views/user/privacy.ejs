@@ -1,0 +1,35 @@
+<%- include('../partials/head', { title: 'Privacy Policy' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<div class="main">
+  <h2 style="font-size:22px" class="mb-3">Privacy Policy</h2>
+  <div class="card" style="line-height:1.7">
+    <p class="muted">Last updated: <%= new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) %></p>
+
+    <h3 style="margin-top:22px">What we collect</h3>
+    <p>We store the account details you provide when signing up or logging in — typically an email address, a username, and a hashed password. If you sign in with Google or Discord we store only the provider's user ID, display name and email address, never your password.</p>
+
+    <h3 style="margin-top:22px">Server and billing records</h3>
+    <p>For every VPS we keep the service record: name, allocated resources, network configuration, creation and expiry dates, and the state of the machine. Payment details are handled by our payment processor and are never stored on this panel.</p>
+
+    <h3 style="margin-top:22px">Technical logs</h3>
+    <p>We keep short-lived operational logs used to diagnose problems with a machine (for example boot logs and service error output). These are used for troubleshooting and are not shared with third parties.</p>
+
+    <h3 style="margin-top:22px">Cookies</h3>
+    <p>We use a session cookie to keep you signed in and to remember interface preferences such as your theme. We do not use advertising or cross-site tracking cookies.</p>
+
+    <h3 style="margin-top:22px">Who we share it with</h3>
+    <p>We do not sell your data. Information is only disclosed where required to operate the service — for example our infrastructure host, our payment processor, or where disclosure is required by law.</p>
+
+    <h3 style="margin-top:22px">Data retention and deletion</h3>
+    <p>Account and service data is kept for as long as your account is active. You may request deletion of your account and data at any time by contacting support; we will remove personal information unless retention is required for legal or abuse-prevention purposes.</p>
+
+    <h3 style="margin-top:22px">Security</h3>
+    <p>Passwords are hashed and never stored in plain text. Access to the panel is restricted to administrators, and each server is reached through its own forwarded port over a private network. No method of transmission or storage is completely infallible, but we apply reasonable safeguards to protect your data.</p>
+
+    <h3 style="margin-top:22px">Contact</h3>
+    <p>Questions about this policy can be raised with support through the panel.</p>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>

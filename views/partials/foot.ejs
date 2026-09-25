@@ -1,3 +1,96 @@
+<footer class="panel-footer">
+  <div class="pf-mark">Made By <strong>Tired MC</strong></div>
+  <div class="pf-links">
+    <a href="/terms">Terms &amp; Rules</a>
+    <span class="pf-sep">&bull;</span>
+    <a href="/privacy">Privacy Policy</a>
+    <span class="pf-sep">&bull;</span>
+    <a href="/terms#acceptable-use">Acceptable Use</a>
+    <span class="pf-sep">&bull;</span>
+    <span>All rights reserved</span>
+  </div>
+  <div class="pf-copy">&copy; <%= new Date().getFullYear() %> <%= (settings['panel.name'] || 'Venlix Nodes') %>. All rights reserved.</div>
+</footer>
+
+<% if (settings['panel.announcement_enabled'] === '1' || settings['panel.announcement_enabled'] === true) { %>
+<div class="announce-backdrop" id="announceBackdrop" style="display:none">
+  <div class="announce-card" role="dialog" aria-modal="true" aria-label="Announcement">
+    <button class="announce-x" onclick="closeAnnounce()" aria-label="Close">&times;</button>
+    <% if (settings['panel.announcement_image']) { %>
+      <img class="announce-img" src="<%= settings['panel.announcement_image'] %>" alt=""/>
+    <% } %>
+    <h3 class="announce-title"><%= settings['panel.announcement_title'] || 'Announcement' %></h3>
+    <div class="announce-body"><%= settings['panel.announcement_body'] || '' %></div>
+    <button class="btn btn-primary announce-ok" onclick="closeAnnounce()">Got it</button>
+  </div>
+</div>
+<script>
+(function () {
+  var KEY = 'vp_announce_seen';
+  var ver = <%- JSON.stringify(String(settings['panel.announcement_version'] || '1')) %>;
+  try {
+    if (localStorage.getItem(KEY) === ver) return;
+  } catch (_) {}
+  var bd = document.getElementById('announceBackdrop');
+  if (!bd) return;
+  bd.style.display = 'flex';
+  window.closeAnnounce = function () {
+    bd.style.display = 'none';
+    try { localStorage.setItem(KEY, ver); } catch (_) {}
+  };
+  bd.addEventListener('click', function (e) { if (e.target === bd) window.closeAnnounce(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.closeAnnounce(); });
+})();
+</script>
+<% } %>
+
+<style>
+.panel-footer {
+  margin: 28px 0 10px;
+  padding: 18px 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.panel-footer .pf-mark { font-size: 14px; letter-spacing: .2px; }
+.panel-footer .pf-mark strong { color: var(--accent-2); font-weight: 700; }
+.panel-footer .pf-links { margin: 6px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+.panel-footer .pf-links a { color: var(--text-dim); text-decoration: none; border-bottom: 1px solid transparent; }
+.panel-footer .pf-links a:hover { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+.panel-footer .pf-sep { opacity: .45; }
+.panel-footer .pf-copy { font-size: 12px; opacity: .75; }
+.announce-backdrop {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(4, 6, 14, .72);
+  backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.announce-card {
+  position: relative;
+  width: 100%; max-width: 520px;
+  max-height: 86vh; overflow-y: auto;
+  background: var(--card, #151a2e);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 26px 24px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+  text-align: center;
+}
+.announce-x {
+  position: absolute; top: 10px; right: 12px;
+  background: transparent; border: 0; color: var(--text-dim);
+  font-size: 26px; line-height: 1; cursor: pointer; padding: 4px 8px;
+}
+.announce-x:hover { color: #fff; }
+.announce-img { width: 100%; border-radius: 10px; margin-bottom: 14px; }
+.announce-title { margin: 0 0 10px; font-size: 19px; }
+.announce-body { color: var(--text-dim); font-size: 14px; line-height: 1.65; white-space: pre-line; }
+.announce-ok { margin-top: 18px; min-width: 120px; }
+</style>
+
 <script src="/js/panel.js?v=<%= panelBootId %>"></script>
 <script src="/js/palette.js?v=<%= panelBootId %>"></script>
 <% if (typeof scripts !== 'undefined') { for (const s of scripts) { %><script src="<%= s %>"></script><% } } %>

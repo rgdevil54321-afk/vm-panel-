@@ -39,6 +39,37 @@ function createWebApp() {
   app.use(express.static(path.join(config.root, 'public')));
   app.use('/uploads', express.static(path.join(config.root, 'public/uploads')));
 
+  // Branded share card for link unfurls (Discord/iMessage/Slack/Twitter).
+  // Public on purpose: unfurl crawlers are never authenticated.
+  app.get('/og-image.svg', (req, res) => {
+    const all = res.locals.settings || {};
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const name = esc(all['panel.name'] || 'Venlix Nodes');
+    const desc = esc(all['panel.description'] || all['panel.meta_description'] || 'High-performance KVM VPS hosting with NVMe storage, DDoS protection and private Tailscale networking.');
+    const accent = esc(all['panel.accent'] || '#6366f1');
+    const initial = esc((all['panel.name'] || 'V').trim().charAt(0).toUpperCase());
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="Segoe UI, Arial, Helvetica, sans-serif">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#0b1020"/><stop offset="100%" stop-color="#161b33"/>
+</linearGradient></defs>
+<rect width="1200" height="630" fill="url(#bg)"/>
+<circle cx="1060" cy="110" r="240" fill="${accent}" opacity="0.18"/>
+<circle cx="140" cy="560" r="180" fill="${accent}" opacity="0.12"/>
+<rect x="72" y="70" width="104" height="104" rx="24" fill="${accent}"/>
+<text x="124" y="140" font-size="54" font-weight="700" fill="#fff" text-anchor="middle">${initial}</text>
+<text x="200" y="128" font-size="54" font-weight="700" fill="#ffffff">${name}</text>
+<text x="74" y="262" font-size="40" font-weight="600" fill="#e8ecff">Reliable KVM VPS hosting</text>
+<text x="74" y="322" font-size="27" fill="#a9b2d6">${desc.slice(0, 96)}</text>
+<text x="74" y="382" font-size="27" fill="#a9b2d6">${desc.slice(96, 190)}</text>
+<rect x="74" y="440" width="330" height="52" rx="26" fill="${accent}" opacity="0.22"/>
+<text x="239" y="475" font-size="24" font-weight="600" fill="#dfe4ff" text-anchor="middle">NVMe &#183; DDoS &#183; Tailscale</text>
+<text x="74" y="560" font-size="24" fill="#7f89b5">Made By Tired MC</text>
+</svg>`;
+    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(svg);
+  });
+
   // expose auth for middleware
   const { optionalAuth } = require('./middleware/auth');
   app.use(optionalAuth);

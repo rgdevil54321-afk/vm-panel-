@@ -12,6 +12,11 @@ const theme = settings['panel.theme'] || 'dark';
 const navbarTransparent = settings['panel.navbar_transparent'] === '1' || settings['panel.navbar_transparent'] === 1 || settings['panel.navbar_transparent'] === true;
 const navbarBlur = settings['panel.navbar_blur'] === '1' || settings['panel.navbar_blur'] === 1 || settings['panel.navbar_blur'] === true;
 const navbarStyle = settings['panel.navbar_style'] || 'glass';
+const panelDesc = settings['panel.description'] || settings['panel.meta_description'] || ('High-performance KVM VPS hosting — ' + panelName + '. Fast NVMe storage, DDoS protection and private Tailscale networking.');
+const baseUrl = (typeof siteUrl !== 'undefined' && siteUrl) ? siteUrl : '';
+const ogImgRaw = settings['panel.og_image'] || settings['panel.logo_url'] || settings['panel.logo_file'] || '/og-image.svg';
+const ogImage = /^https?:\/\//i.test(ogImgRaw) ? ogImgRaw : (baseUrl + ogImgRaw);
+const shareTitle = settings['panel.og_title'] || (panelName + ' - VPS Panel');
 %><!DOCTYPE html>
 <html lang="<%= typeof lang !== 'undefined' ? lang : 'en' %>" dir="<%= typeof uiDir !== 'undefined' ? uiDir : 'ltr' %>" data-theme="<%= theme %>">
 <head>
@@ -19,6 +24,17 @@ const navbarStyle = settings['panel.navbar_style'] || 'glass';
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="referrer" content="no-referrer"/>
 <title><%= panelName %> - <%= title %></title>
+<meta name="description" content="<%= panelDesc %>"/>
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="<%= panelName %>"/>
+<meta property="og:title" content="<%= shareTitle %>"/>
+<meta property="og:description" content="<%= panelDesc %>"/>
+<meta property="og:image" content="<%= ogImage %>"/>
+<% if (baseUrl) { %><meta property="og:url" content="<%= baseUrl %><%= typeof page !== 'undefined' && page ? '' : '' %>"/><% } %>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="<%= shareTitle %>"/>
+<meta name="twitter:description" content="<%= panelDesc %>"/>
+<meta name="twitter:image" content="<%= ogImage %>"/>
 <link rel="icon" href="<%= favicon %>"/>
 <link rel="stylesheet" href="/css/panel.css?v=<%= panelBootId %>"/>
 <link rel="stylesheet" href="/css/polish.css?v=<%= panelBootId %>"/>

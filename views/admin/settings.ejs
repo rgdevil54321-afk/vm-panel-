@@ -153,6 +153,54 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
+        <!-- 1c. Link sharing & announcement -->
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">1.6. Link Preview &amp; Announcement</label>
+          <div class="muted text-sm mb-2">What appears when someone shares your panel link in Discord, WhatsApp or Slack, plus the popup shown to visitors.</div>
+          <div class="grid grid-2" style="gap:16px">
+            <div class="form-group">
+              <label>Share Title</label>
+              <input name="panel.og_title" value="<%= all['panel.og_title'] || '' %>" placeholder="<%= all['panel.name'] || 'Venlix Nodes' %> - VPS Panel"/>
+              <div class="form-hint mt-1">Blank uses the panel name. This is the bold headline on the embed.</div>
+            </div>
+            <div class="form-group">
+              <label>Share Image URL</label>
+              <input name="panel.og_image" value="<%= all['panel.og_image'] || '' %>" placeholder="leave blank for the built-in card"/>
+              <div class="form-hint mt-1">A direct <b>1200&times;630</b> PNG/JPG works best. Blank generates a branded card automatically.</div>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Share Description</label>
+              <textarea name="panel.description" rows="2" placeholder="High-performance KVM VPS hosting with NVMe storage, DDoS protection and private Tailscale networking."><%= all['panel.description'] || '' %></textarea>
+              <div class="form-hint mt-1">One or two sentences shown under the title when the link is shared.</div>
+            </div>
+            <div class="form-group">
+              <label>Announcement Popup</label>
+              <select name="panel.announcement_enabled">
+                <option value="0" <%= String(all['panel.announcement_enabled'] || '0') === '0' ? 'selected' : '' %>>Disabled</option>
+                <option value="1" <%= String(all['panel.announcement_enabled'] || '0') === '1' ? 'selected' : '' %>>Enabled</option>
+              </select>
+              <div class="form-hint mt-1">Visitors see it once, then it stays dismissed until you change the version.</div>
+            </div>
+            <div class="form-group">
+              <label>Announcement Version</label>
+              <input name="panel.announcement_version" value="<%= all['panel.announcement_version'] || '1' %>" placeholder="1"/>
+              <div class="form-hint mt-1">Bump this to show the popup again to everyone.</div>
+            </div>
+            <div class="form-group">
+              <label>Popup Title</label>
+              <input name="panel.announcement_title" value="<%= all['panel.announcement_title'] || '' %>" placeholder="Announcement"/>
+            </div>
+            <div class="form-group">
+              <label>Popup Image URL <span class="muted">(optional)</span></label>
+              <input name="panel.announcement_image" value="<%= all['panel.announcement_image'] || '' %>" placeholder="https://..."/>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Popup Message</label>
+              <textarea name="panel.announcement_body" rows="3" placeholder="Tell visitors what's new."><%= all['panel.announcement_body'] || '' %></textarea>
+            </div>
+          </div>
+        </div>
+
         <!-- 1b. Host Identity (Neofetch) -->
         <div class="form-group mb-4">
           <label style="font-size:14px;font-weight:700;color:#fff">1.5. Host Identity (Neofetch)</label>
