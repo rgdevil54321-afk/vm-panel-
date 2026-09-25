@@ -30,7 +30,7 @@ const shareTitle = settings['panel.og_title'] || (panelName + ' - VPS Panel');
 <meta property="og:title" content="<%= shareTitle %>"/>
 <meta property="og:description" content="<%= panelDesc %>"/>
 <meta property="og:image" content="<%= ogImage %>"/>
-<% if (baseUrl) { %><meta property="og:url" content="<%= baseUrl %><%= typeof page !== 'undefined' && page ? '' : '' %>"/><% } %>
+<% if (baseUrl) { %><meta property="og:url" content="<%= baseUrl %>/"/><% } %>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="<%= shareTitle %>"/>
 <meta name="twitter:description" content="<%= panelDesc %>"/>

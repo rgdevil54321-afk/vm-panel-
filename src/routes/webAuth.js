@@ -9,14 +9,17 @@ const { db, settings } = require('../lib/db');
 const activity = require('../services/activityService');
 const router = express.Router();
 
-function render(res, view, vars = {}) {
+  function render(res, view, vars = {}) {
+  const req = res.req;
+  const proto = (req.secure || String(req.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https') ? 'https' : 'http';
   res.render(`auth/${view}`, {
-    page: view,
-    user: null,
-    settings: settings.all(),
-    discordLogin: discordService.oauthConfigured(),
-    googleLogin: googleService.oauthConfigured(),
-    ...vars,
+  page: view,
+  user: null,
+  settings: settings.all(),
+  siteUrl: proto + '://' + req.get('host'),
+  discordLogin: discordService.oauthConfigured(),
+  googleLogin: googleService.oauthConfigured(),
+  ...vars,
   });
 }
 
