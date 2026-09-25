@@ -867,7 +867,7 @@ router.post('/admin/bot/test', apiAdmin, json, async (req, res) => {
   let dm = null;
   const userId = String(req.body && req.body.user_id || '').trim();
   if (userId) {
-    const msg = String(req.body && req.body.message || 'Venlix panel bot test').trim();
+    const msg = String(req.body && req.body.message || (require('../lib/branding').name() + ' panel bot test')).trim();
     dm = await d.sendDm(userId, msg);
   }
   res.json({ ok: true, me: me.data, dm: dm ? { ok: dm.ok, error: dm.error } : null });

@@ -809,7 +809,7 @@ function serializeVm(row) {
     additional_disks: parseJson(row.additional_disks) || [],
     advanced: parseJson(row.advanced) || {},
     node_host: node_host || 'localhost',
-    node_name: node_name || 'Venlix Node',
+    node_name: node_name || require('../lib/branding').name() + ' Node',
     network_mode: ipMode,
     network_mode_label: modeLabels[ipMode] || ipMode,
     connect_host: staticV4 ? v4 : (sharedV4 || node_host || 'localhost'),
@@ -1792,7 +1792,7 @@ async function start(vm, { user = null } = {}) {
   ensureAgentPort(vm);
   const dir = vmDir(vm);
   const bootLogPath = path.join(dir, 'boot.log');
-  const sessionHeader = `\r\n=== [Venlix] Starting VM "${vm.name}" at ${new Date().toISOString()} ===\r\n\r\n`;
+  const sessionHeader = `\r\n=== [${require('../lib/branding').name()}] Starting VM "${vm.name}" at ${new Date().toISOString()} ===\r\n\r\n`;
   try {
     fs.appendFileSync(bootLogPath, sessionHeader, 'utf8');
   } catch (_) {}
