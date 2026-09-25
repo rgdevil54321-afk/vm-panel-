@@ -470,7 +470,7 @@ router.post('/account', express.urlencoded({ extended: true }), (req, res) => {
 });
 
 router.get('/settings', (req, res) => {
-  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet — ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.' };
+  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet — ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.', 'google_linked': 'Google account linked successfully!', 'google_unlinked': 'Google account unlinked.', 'google_not_configured': 'Google linking is not configured yet - ask an admin to add the OAuth client ID/secret.', 'google_denied': 'Google authorization was cancelled.', 'google_oauth_failed': 'Google authorization failed. Try again.', 'google_already_linked': 'That Google account is already linked to a different user.' };
   const err = msgs[req.query.err] ? msgs[req.query.err] : (req.query.err || '');
   const ok = msgs[req.query.ok] ? msgs[req.query.ok] : (req.query.ok || '');
   render(res, 'userSettings', { tfaSetup: null, error: err, success: ok });
@@ -517,6 +517,54 @@ router.post('/settings/discord/unlink', express.json(), (req, res) => {
   db.prepare('UPDATE users SET discord_id = NULL, discord_name = NULL, discord_avatar = NULL, discord_linked_at = NULL, updated_at = ? WHERE id = ?')
     .run(new Date().toISOString(), req.user.id);
   activity.logActivity({ user_id: req.user.id, event: 'account:discord_unlink' });
+  res.json({ ok: true });
+});
+
+// ---- Google account linking (mirrors the Discord flow above) ----
+function googleRedirectUri(req) {
+  const proto = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
+  return proto + '://' + req.get('host') + '/settings/google/callback';
+}
+function googleStateOk(state) {
+  const parts = String(state || '').split('.');
+  const userId = parseInt(parts[0], 10);
+  if (!parts[1] || !userId) return 0;
+  const expected = crypto.createHmac('sha256', config.jwtSecret).update(String(userId)).digest('hex');
+  const a = Buffer.from(String(parts[1]));
+  const b = Buffer.from(expected);
+  return (a.length === b.length && crypto.timingSafeEqual(a, b)) ? userId : 0;
+}
+
+router.get('/settings/google/link', (req, res) => {
+  const g = require('../services/googleService');
+  if (!g.oauthConfigured()) return res.redirect('/settings?err=google_not_configured');
+  res.redirect(g.authorizeUrl(googleRedirectUri(req), discordState(req.user.id)));
+});
+
+router.get('/settings/google/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  if (error) return res.redirect('/settings?err=google_denied');
+  const userId = googleStateOk(state);
+  if (!userId) return res.redirect('/settings?err=discord_badstate');
+  const g = require('../services/googleService');
+  const tok = await g.exchangeCode(String(code || ''), googleRedirectUri(req));
+  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/settings?err=google_oauth_failed');
+  const me = await g.getOAuthUser(tok.data.access_token);
+  if (!me.ok || !me.data || !me.data.sub) return res.redirect('/settings?err=google_oauth_failed');
+  const gid = String(me.data.sub);
+  const taken = db.prepare('SELECT id FROM users WHERE google_id = ? AND id != ?').get(gid, userId);
+  if (taken) return res.redirect('/settings?err=google_already_linked');
+  const avatar = me.data.picture ? String(me.data.picture) : null;
+  db.prepare('UPDATE users SET google_id = ?, google_name = ?, google_avatar = ?, google_linked_at = ?, updated_at = ? WHERE id = ?')
+    .run(gid, String(me.data.name || me.data.email || '').slice(0, 64), avatar, new Date().toISOString(), new Date().toISOString(), userId);
+  activity.logActivity({ user_id: userId, event: 'account:google_link', details: { google_id: gid } });
+  res.redirect('/settings?ok=google_linked');
+});
+
+router.post('/settings/google/unlink', express.json(), (req, res) => {
+  db.prepare('UPDATE users SET google_id = NULL, google_name = NULL, google_avatar = NULL, google_linked_at = NULL, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), req.user.id);
+  activity.logActivity({ user_id: req.user.id, event: 'account:google_unlink' });
   res.json({ ok: true });
 });
 

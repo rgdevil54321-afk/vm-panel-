@@ -69,11 +69,37 @@
           <a class="btn" href="/settings/discord/link">Re-authorize</a>
         </div>
       <% } else { %>
-        <% if (String(settings['bot.client_id'] || '') && String(settings['bot.client_secret'] || '')) { %>
+        <% if (String(settings['oauth.discord_client_id'] || settings['bot.client_id'] || '') && String(settings['oauth.discord_client_secret'] || settings['bot.client_secret'] || '')) { %>
           <p class="muted text-sm" style="margin-bottom:12px">Authorized through real Discord OAuth — no ID typing needed.</p>
           <a class="btn btn-primary" href="/settings/discord/link">Link Discord Account</a>
         <% } else { %>
           <p class="muted text-sm" style="margin-bottom:0">Discord linking is not configured yet by the administrator.</p>
+        <% } %>
+      <% } %>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Google Account</div>
+      <p class="muted mb-2 text-sm">Link your Google account to sign in with Google and keep your account associated with this email identity.</p>
+      <% if (user.google_id) { %>
+        <div class="flex" style="gap:12px;align-items:center;margin-bottom:12px">
+          <% if (user.google_avatar) { %><img src="<%= user.google_avatar %>" style="width:40px;height:40px;border-radius:50%" alt="Google avatar"/><% } else { %><div class="avatar" style="width:40px;height:40px;font-size:16px"><%= (user.google_name || user.google_id || 'G')[0] %></div><% } %>
+          <div>
+            <div style="font-weight:600"><%= user.google_name || 'Google user' %></div>
+            <div class="muted text-sm mono"><%= user.google_id %></div>
+            <% if (user.google_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.google_linked_at).toLocaleDateString() %></div><% } %>
+          </div>
+        </div>
+        <div class="flex" style="gap:10px">
+          <button class="btn btn-danger" onclick="unlinkGoogle()">Unlink</button>
+          <a class="btn" href="/settings/google/link">Re-authorize</a>
+        </div>
+      <% } else { %>
+        <% if (String(settings['google.client_id'] || '') && String(settings['google.client_secret'] || '')) { %>
+          <p class="muted text-sm" style="margin-bottom:12px">Authorized through real Google OAuth — no password typing needed.</p>
+          <a class="btn btn-primary" href="/settings/google/link">Link Google Account</a>
+        <% } else { %>
+          <p class="muted text-sm" style="margin-bottom:0">Google linking is not configured yet by the administrator.</p>
         <% } %>
       <% } %>
     </div>
@@ -147,6 +173,15 @@ async function unlinkDiscord() {
   try {
     await VP.api('/settings/discord/unlink', { method: 'POST' });
     VP.toast('Discord account unlinked', 'success');
+    setTimeout(() => location.reload(), 600);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function unlinkGoogle() {
+  const ok = await VP.confirmDialog('Unlink your Google account? You will no longer be able to sign in with Google.', { title: 'Unlink Google' });
+  if (!ok) return;
+  try {
+    await VP.api('/settings/google/unlink', { method: 'POST' });
+    VP.toast('Google account unlinked', 'success');
     setTimeout(() => location.reload(), 600);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
