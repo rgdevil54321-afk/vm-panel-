@@ -955,11 +955,14 @@ function neofetchOverrides(vm) {
   const spHw = String(vm && vm.spoof_hw !== undefined && vm.spoof_hw !== null
     ? vm.spoof_hw
     : (settings.get('vm.spoof_hw') ?? '1'));
+  // Fall back to the specs the VM is actually allocated (cpus / memory / disk_size)
+  // so the banner never advertises the bare host's full hardware.
+  const alloc = require('../lib/specs').real(vm || {});
   return {
     spoofOn: spHw !== '0' && spHw !== 0 && spHw !== false,
-    cpu: String((vm && vm.neofetch_cpu) || '').trim() || String(settings.get('panel.cpu_name') || '').trim(),
-    mem: String((vm && vm.neofetch_mem) || '').trim() || String(settings.get('panel.ram_name') || '').trim(),
-    disk: String((vm && vm.neofetch_disk) || '').trim() || String(settings.get('panel.disk_name') || '').trim(),
+    cpu: String((vm && vm.neofetch_cpu) || '').trim() || String(settings.get('panel.cpu_name') || '').trim() || alloc.cpu,
+    mem: String((vm && vm.neofetch_mem) || '').trim() || String(settings.get('panel.ram_name') || '').trim() || alloc.mem,
+    disk: String((vm && vm.neofetch_disk) || '').trim() || String(settings.get('panel.disk_name') || '').trim() || alloc.disk,
     gpu: String((vm && vm.neofetch_gpu) || '').trim() || String(settings.get('panel.gpu_name') || '').trim(),
   };
 }
