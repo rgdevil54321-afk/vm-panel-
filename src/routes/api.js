@@ -454,7 +454,7 @@ router.get('/admin/transfer/latest', apiAdmin, (req, res) => {
 });
 router.post('/admin/transfer/emergency', apiAdmin, async (req, res) => {
   try {
-    const file = await dbTransfer.emergencyCode('manual');
+    const file = await dbTransfer.emergencyCode('manual', { force: true });
     res.json({ ok: true, file });
   } catch (e) {
     res.status(500).json({ error: e.message });

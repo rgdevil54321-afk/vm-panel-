@@ -2321,7 +2321,17 @@ function totalDiskUsage() {
 function startOnBootAll() {
   const vms = db.prepare('SELECT * FROM vms WHERE start_on_boot = 1').all().map(serializeVm);
   for (const vm of vms) {
-    try { start(vm); } catch (e) { logger.error('[vm] autostart failed ' + vm.name + ': ' + e.message); }
+    // start() is async, so a throw inside it becomes a rejected promise and
+    // would bypass a plain try/catch and surface as an unhandledRejection.
+    // Handle both the sync throw and the async rejection.
+    try {
+      const p = start(vm);
+      if (p && typeof p.catch === 'function') {
+        p.catch((e) => logger.error('[vm] autostart failed ' + vm.name + ': ' + (e && e.message)));
+      }
+    } catch (e) {
+      logger.error('[vm] autostart failed ' + vm.name + ': ' + e.message);
+    }
   }
 }
 

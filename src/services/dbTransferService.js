@@ -148,11 +148,38 @@ async function notifyOwner(codeInfo, label) {
   }
 }
 
-// Emergency code written right before a crash / shutdown.
-async function emergencyCode(reason) {
+// Emergency code written right before a crash / shutdown. A misbehaving promise
+// can reject in a tight loop, and every rejection used to write a full DB
+// snapshot (~250 KB), so throttle repeat reasons and prune old codes.
+const EMERGENCY_MIN_GAP_MS = 5 * 60 * 1000;
+const EMERGENCY_KEEP = 5;
+const _lastEmergency = new Map();
+
+function pruneOldCodes() {
+  try {
+    const files = fs.existsSync(DIR)
+      ? fs.readdirSync(DIR).filter((f) => f.endsWith('.code')).map((f) => path.join(DIR, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
+      : [];
+    for (const f of files.slice(EMERGENCY_KEEP)) {
+      try { fs.unlinkSync(f); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+async function emergencyCode(reason, { force = false } = {}) {
+  const now = Date.now();
+  if (!force) {
+    const last = _lastEmergency.get(reason) || 0;
+    if (now - last < EMERGENCY_MIN_GAP_MS) {
+      logger.warn('[transfer] emergency code (' + reason + ') suppressed - same reason within ' + (EMERGENCY_MIN_GAP_MS / 60000) + 'min');
+      return null;
+    }
+  }
+  _lastEmergency.set(reason, now);
   try {
     const info = await exportCode();
-    logger.error(`[transfer] emergency code (${reason}) saved: ${path.basename(info.file)}`);
+    pruneOldCodes();
+    logger.error('[transfer] emergency code (' + reason + ') saved: ' + path.basename(info.file));
     notifyOwner(info, 'EMERGENCY ' + reason).catch(() => {});
     return info.file;
   } catch (e) {
