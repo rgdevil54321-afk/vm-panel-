@@ -14,7 +14,13 @@ const navbarBlur = settings['panel.navbar_blur'] === '1' || settings['panel.navb
 const navbarStyle = settings['panel.navbar_style'] || 'glass';
 const panelDesc = settings['panel.description'] || settings['panel.meta_description'] || ('High-performance KVM VPS hosting — ' + panelName + '. Fast NVMe storage, DDoS protection and private Tailscale networking.');
 const baseUrl = (typeof siteUrl !== 'undefined' && siteUrl) ? siteUrl : '';
-const ogImgRaw = settings['panel.og_image'] || settings['panel.logo_url'] || settings['panel.logo_file'] || '/og-image.svg';
+// Discord/Slack only unfurl raster formats - a .webp or .svg logo renders as a
+// blank box, so only reuse an uploaded image when it is one they can draw.
+const ogCandidate = settings['panel.og_image'] || settings['panel.logo_url'] || settings['panel.logo_file'] || '';
+const ogUsable = /^https?:\/\//i.test(ogCandidate)
+  ? /\.(png|jpe?g|gif)(\?|#|$)/i.test(ogCandidate)
+  : /\.(png|jpe?g|gif)(\?|#|$)/i.test(ogCandidate);
+const ogImgRaw = ogCandidate && ogUsable ? ogCandidate : '/og-image.png';
 const ogImage = /^https?:\/\//i.test(ogImgRaw) ? ogImgRaw : (baseUrl + ogImgRaw);
 const shareTitle = settings['panel.og_title'] || (panelName + ' - VPS Panel');
 %><!DOCTYPE html>

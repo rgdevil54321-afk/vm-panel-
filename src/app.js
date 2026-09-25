@@ -41,6 +41,22 @@ function createWebApp() {
 
   // Branded share card for link unfurls (Discord/iMessage/Slack/Twitter).
   // Public on purpose: unfurl crawlers are never authenticated.
+  app.get('/og-image.png', (req, res) => {
+    try {
+      const all = res.locals.settings || {};
+      const png = require('./services/ogImageService').render({
+        name: all['panel.name'] || 'Venlix Nodes',
+        desc: all['panel.description'] || all['panel.meta_description'] || 'Fast NVMe storage, DDoS protection and private Tailscale networking.',
+        accent: all['panel.accent'] || '#6366f1',
+      });
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.send(png);
+    } catch (e) {
+      return res.status(500).end();
+    }
+  });
+
   app.get('/og-image.svg', (req, res) => {
     const all = res.locals.settings || {};
     const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
