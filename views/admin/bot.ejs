@@ -154,15 +154,17 @@
     <div class="card">
       <div class="card-title">Test Discord</div>
       <p class="muted text-sm mb-2">Send a DM from the bot to the logged-in user (or a custom Discord ID), verify the token works, or fetch feature data.</p>
-      <div class="grid grid-2" style="gap:10px">
-        <div class="form-group" style="margin:0"><label>Discord user ID (optional)</label><input id="bt_user" class="input" placeholder="blank = you" /></div>
-        <div class="form-group" style="margin:0"><label>Message</label><input id="bt_msg" class="input" value="Venlix panel bot test ✔" /></div>
+      <div class="grid grid-3" style="gap:10px">
+        <div class="form-group" style="margin:0"><label>DM target user ID (optional)</label><input id="bt_user" class="input" placeholder="blank = you" /></div>
+        <div class="form-group" style="margin:0"><label>DM message</label><input id="bt_msg" class="input" value="Venlix panel bot test ✔" /></div>
+        <div class="form-group" style="margin:0"><label>Member to look up</label><input id="bt_member" class="input" placeholder="Discord user ID" /></div>
       </div>
-      <div class="flex" style="gap:8px;margin-top:12px">
+      <div class="flex" style="gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="testBot()">Send Test DM</button>
         <button class="btn" onclick="loadGuilds()">Fetch Guilds</button>
         <button class="btn" onclick="loadInvites()">Fetch Invites</button>
         <button class="btn" onclick="lookupMember()">Look up Member</button>
+        <span class="muted text-sm" style="margin-left:auto">guild <span id="selGuild" class="mono">not selected</span></span>
       </div>
       <div class="table-wrap" style="margin-top:14px">
         <table>
@@ -387,26 +389,40 @@ async function loadGuilds() {
     const rows = document.getElementById('guildRows');
     if (!res.guilds || !res.guilds.length) { rows.innerHTML = '<tr><td colspan="5" class="muted">Bot is not in any server.</td></tr>'; return; }
     rows.innerHTML = res.guilds.map((g) =>
-      '<tr><td style="font-weight:600">' + esc(g.name) + '</td>'
+      '<tr data-gid="' + esc(g.id) + '"><td style="font-weight:600">' + esc(g.name) + '</td>'
       + '<td class="mono text-sm">' + esc(g.id) + '</td>'
       + '<td class="text-sm">' + (g.member_count || '?') + '</td>'
       + '<td><button class="btn btn-sm" onclick="copyText(\'' + esc(g.id) + '\', this)">Copy</button></td>'
-      + '<td><button class="btn btn-sm" onclick="useGuild(\'' + esc(g.id) + '\')">Invites</button></td>'
+      + '<td><button class="btn btn-sm" onclick="useGuild(\'' + esc(g.id) + '\')">Select</button></td>'
       + '</tr>').join('');
+    // Auto-select so "Fetch Invites" works straight after listing guilds:
+    // prefer the guild already configured for the bot, else the first one.
+    const configured = String(document.getElementById('bc_guild').value || '').trim();
+    const match = res.guilds.find((g) => g.id === configured) || res.guilds[0];
+    useGuild(match.id, true);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 
-async function useGuild(gid) {
+function useGuild(gid, quiet) {
   GUILD_ID = gid;
-  VP.toast('Selected guild: ' + gid);
+  const chip = document.getElementById('selGuild');
+  if (chip) chip.textContent = gid || 'not selected';
+  document.querySelectorAll('#guildRows tr[data-gid]').forEach((tr) => {
+    tr.style.background = tr.dataset.gid === gid ? 'rgba(59,130,246,0.10)' : '';
+  });
+  const input = document.getElementById('bc_guild');
+  if (input && document.activeElement !== input) input.value = gid;
+  if (!quiet) VP.toast('Selected guild: ' + gid);
   loadInvites(gid);
 }
 
 async function loadInvites(gid) {
-  const target = gid || GUILD_ID || document.getElementById('bt_user').value.trim();
-  if (!target) { VP.toast('Run "Fetch Guilds" first and pick one', 'warning'); return; }
+  // Only a guild ID belongs here. Previously this fell back to the DM "user ID"
+  // box, which sent /guilds/<userId>/invites and failed with a confusing error.
+  const target = String(gid || GUILD_ID || '').trim();
+  if (!target) { VP.toast('No guild selected — click Fetch Guilds, or set a Guild ID in the configuration above', 'warning'); return; }
   try {
-    const res = await VP.api(API_URL + '/guilds/' + target + '/invites');
+    const res = await VP.api(API_URL + '/guilds/' + encodeURIComponent(target) + '/invites');
     if (!res.ok) throw new Error(res.error || 'Failed to load invites');
     const rows = document.getElementById('inviteRows');
     if (!res.invites || !res.invites.length) { rows.innerHTML = '<tr><td colspan="4" class="muted">No server invites — create one for invite plans to count.</td></tr>'; return; }
@@ -420,11 +436,12 @@ async function loadInvites(gid) {
 }
 
 async function lookupMember() {
-  const gid = GUILD_ID || document.getElementById('bt_user').value.trim();
-  const uid = document.getElementById('bt_msg').value.trim();
-  if (!gid || !uid) { VP.toast('Pick a guild (Invites) and put the Discord user ID in the message box', 'warning'); return; }
+  const gid = String(GUILD_ID || '').trim();
+  const uid = String(document.getElementById('bt_member').value || '').trim();
+  if (!gid) { VP.toast('No guild selected — click Fetch Guilds first', 'warning'); return; }
+  if (!uid) { VP.toast('Enter the Discord user ID to look up', 'warning'); return; }
   try {
-    const res = await VP.api(API_URL + '/guilds/' + gid + '/member/' + uid);
+    const res = await VP.api(API_URL + '/guilds/' + encodeURIComponent(gid) + '/member/' + encodeURIComponent(uid));
     const box = document.getElementById('memberBox');
     if (!res.ok) box.innerHTML = '<span class="pill pill-red">not found</span> ' + esc(res.error || 'member lookup failed');
     else box.innerHTML = '<span class="pill ' + (res.member.premium_since ? 'pill-green' : 'pill-gray') + '">' + (res.member.premium_since ? 'boosting' : 'not boosting') + '</span> '
@@ -441,6 +458,17 @@ async function runGuard() {
     VP.toast(res.skipped ? 'PlanGuard skipped: ' + res.skipped : 'Checked ' + res.checked + '/' + res.total + ' plan assignments', res.ok ? 'success' : 'error');
   } catch (e) { VP.toast(e.message, 'error'); }
 }
+
+// Seed the guild selection from the saved configuration so "Fetch Invites" and
+// "Look up Member" work immediately, without having to re-list the guilds.
+(function initGuildSelection() {
+  const saved = String(document.getElementById('bc_guild').value || '').trim();
+  if (saved) {
+    GUILD_ID = saved;
+    const chip = document.getElementById('selGuild');
+    if (chip) chip.textContent = saved;
+  }
+})();
 
 loadStatus();
 </script>
