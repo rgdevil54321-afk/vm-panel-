@@ -545,8 +545,12 @@ router.post('/settings/discord/unlink', express.json(), (req, res) => {
 
 // ---- Google account linking (mirrors the Discord flow above) ----
 function googleRedirectUri(req) {
+  const path = '/settings/google/callback';
+  // Same canonical-URL rule as the Discord builders above.
+  const configured = String(settings.get('panel.site_url') || '').trim().replace(/\/+$/, '');
+  if (configured) return configured + path;
   const proto = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
-  return proto + '://' + req.get('host') + '/settings/google/callback';
+  return proto + '://' + req.get('host') + path;
 }
 function googleStateOk(state) {
   const parts = String(state || '').split('.');
