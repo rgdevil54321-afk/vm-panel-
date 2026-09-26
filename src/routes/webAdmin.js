@@ -553,7 +553,7 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
   'panel.logo_text', 'panel.og_title', 'panel.og_image', 'panel.description',
   'panel.announcement_enabled', 'panel.announcement_version', 'panel.announcement_title',
   'panel.announcement_body', 'panel.announcement_image',
-  'panel.tagline', 'panel.bot_blurb', 'panel.twitch_url', 'panel.support_url',
+  'panel.tagline', 'panel.bot_blurb', 'panel.twitch_url', 'panel.support_url', 'panel.site_url',
   ]) save(key);
   save('panel.wallpapers_api_key');
   for (const key of ['mail.host', 'mail.port', 'mail.secure', 'mail.user', 'mail.pass', 'mail.from']) save(key);

@@ -191,6 +191,23 @@
               <input name="panel.support_url" value="<%= all['panel.support_url'] || '' %>" placeholder="https://discord.gg/yourinvite" />
               <div class="muted text-sm">Optional help link used across the panel.</div>
             </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Canonical Site URL</label>
+              <input name="panel.site_url" value="<%= all['panel.site_url'] || '' %>" placeholder="https://hvm.example.com" />
+              <div class="muted text-sm">
+                The one address OAuth providers redirect back to. Set this to your public panel URL and
+                register <b>exactly</b> these in Discord &amp; Google, or sign-in fails with
+                <code class="mono">redirect_uri_mismatch</code>:
+                <div class="mono" style="margin-top:6px;font-size:12px;opacity:0.85">
+                  <%= (all['panel.site_url'] || 'https://your-panel.example.com').replace(/\/+$/, '') %>/auth/discord/callback<br/>
+                  <%= (all['panel.site_url'] || 'https://your-panel.example.com').replace(/\/+$/, '') %>/auth/google/callback<br/>
+                  <%= (all['panel.site_url'] || 'https://your-panel.example.com').replace(/\/+$/, '') %>/settings/discord/callback<br/>
+                  <%= (all['panel.site_url'] || 'https://your-panel.example.com').replace(/\/+$/, '') %>/settings/google/callback
+                </div>
+                Leave blank to derive it from each request's host &mdash; which breaks the moment the panel
+                is opened by its IP or a second hostname.
+              </div>
+            </div>
           </div>
         </div>
 

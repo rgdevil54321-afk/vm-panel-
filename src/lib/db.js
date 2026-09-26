@@ -369,6 +369,7 @@ const defaultSettings = {
   'security.require_verify': '0',
   'security.force_tfa': '0',
   'security.require_linked_accounts': '0',
+  'panel.site_url': '',
   'vm.auto_port_min': String(config.autoPortMin),
   'vm.auto_port_max': String(config.autoPortMax),
   'vm.vnc_port_min': String(config.autoVncPortMin),

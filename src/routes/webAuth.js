@@ -54,6 +54,12 @@ router.get('/login', (req, res) => {
 
 // ---- Discord OAuth2 login / auto-register ----
 function oauthRedirectUri(req, path) {
+  // Prefer the configured canonical URL. Deriving this from the Host header
+  // breaks the OAuth handshake whenever the panel is reached by any other name
+  // (its Tailscale IP, a direct port forward) and lets a spoofed Host header
+  // aim the callback at an attacker-controlled host.
+  const configured = String(settings.get('panel.site_url') || '').trim().replace(/\/+$/, '');
+  if (configured) return configured + path;
   const proto = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
   return proto + '://' + req.get('host') + path;
 }

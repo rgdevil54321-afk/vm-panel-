@@ -481,8 +481,13 @@ router.get('/settings', (req, res) => {
 router.get('/user-settings', (req, res) => res.redirect('/settings'));
 
 function oauthRedirectUri(req) {
+  const path = '/settings/discord/callback';
+  // See webAuth.js oauthRedirectUri: prefer the configured canonical URL so the
+  // callback is stable no matter which hostname reached the panel.
+  const configured = String(settings.get('panel.site_url') || '').trim().replace(/\/+$/, '');
+  if (configured) return configured + path;
   const proto = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
-  return proto + '://' + req.get('host') + '/settings/discord/callback';
+  return proto + '://' + req.get('host') + path;
 }
 function discordState(userId) {
   const hmac = crypto.createHmac('sha256', config.jwtSecret).update(String(userId)).digest('hex');
