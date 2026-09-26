@@ -29,6 +29,7 @@ const discordErrs = {
   discord_oauth_failed: 'Discord sign-in failed. Please try again.',
   discord_not_configured: 'Discord sign-in is not configured yet.',
   discord_register_disabled: 'Registration is disabled — sign in with an existing account instead.',
+  discord_no_account: 'No panel account is linked to that Discord user. Create an account first, then link Discord from Settings.',
   discord_tfa: 'This account has 2FA enabled — sign in with your password.',
   suspended: 'This account is suspended.',
 };
@@ -40,6 +41,7 @@ const googleErrs = {
   google_not_configured: 'Google sign-in is not configured yet.',
   google_no_email: 'Google did not return an email address — use another sign-in method.',
   google_register_disabled: 'Registration is disabled — sign in with an existing account instead.',
+  google_no_account: 'No panel account is linked to that Google user. Create an account first, then link Google from Settings.',
   google_tfa: 'This account has 2FA enabled — sign in with your password.',
 };
 
@@ -97,38 +99,10 @@ router.get('/auth/discord/callback', async (req, res) => {
     res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
     return res.redirect('/dashboard');
   }
+  // Sign-in never provisions an account. Create the account first, then link
+  // Discord from Settings - that keeps one canonical user row per person.
   if (settings.get('security.allow_register') === '0') return res.redirect('/login?err=discord_register_disabled');
-  const raw = String(me.data.username || 'user');
-  let uname = raw.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24);
-  if (uname.length < 3) uname = ('u_' + uname + did.slice(-6)).replace(/[^a-zA-Z0-9_]/g, '');
-  uname = uname.slice(0, 32);
-  let candidate = uname;
-  for (let i = 1; db.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate); i++) {
-    candidate = (uname + '_' + i).slice(0, 32);
-  }
-  let email = `${did}@discord.local`;
-  for (let i = 1; db.prepare('SELECT 1 FROM users WHERE email = ?').get(email); i++) {
-    email = `${did}.${i}@discord.local`;
-  }
-  let newUser;
-  try {
-    newUser = authService.createUser({
-      username: candidate,
-      email,
-      password: crypto.randomBytes(24).toString('hex'),
-      name: String(me.data.global_name || me.data.username || candidate).slice(0, 64),
-      role: 'user',
-      verified: true,
-    });
-  } catch (e) {
-    return res.redirect('/login?err=' + encodeURIComponent(e.message));
-  }
-  db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_avatar = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
-    .run(did, String(me.data.username || '').slice(0, 64), discordService.cdnAvatar(me.data), new Date().toISOString(), new Date().toISOString(), newUser.id);
-  activity.logActivity({ user_id: newUser.id, event: 'auth:register', details: { via: 'discord', discord_id: did }, ip });
-  const { token } = authService.finishLogin(newUser, ip);
-  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
-  return res.redirect('/dashboard');
+  return res.redirect('/register?err=discord_no_account');
 });
 
 // ---- Google OAuth2 login / auto-register (mirrors the Discord flow) ----
@@ -171,41 +145,10 @@ router.get('/auth/google/callback', async (req, res) => {
     res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
     return res.redirect('/dashboard');
   }
+  // Sign-in never provisions an account. Create the account first, then link
+  // Google from Settings - that keeps one canonical user row per person.
   if (settings.get('security.allow_register') === '0') return res.redirect('/login?err=google_register_disabled');
-  const email = String(me.data.email || '').trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.redirect('/login?err=google_no_email');
-  const local = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24) || 'user';
-  let uname = local;
-  if (uname.length < 3) uname = ('u_' + uname + gid.slice(-6)).replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
-  uname = uname.slice(0, 32);
-  let candidate = uname;
-  for (let i = 1; db.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate); i++) {
-    candidate = (uname + '_' + i).slice(0, 32);
-  }
-  let finalEmail = email;
-  for (let i = 1; db.prepare('SELECT 1 FROM users WHERE email = ?').get(finalEmail); i++) {
-    const at = email.indexOf('@');
-    finalEmail = email.slice(0, at) + '.' + i + email.slice(at);
-  }
-  let newUser;
-  try {
-    newUser = authService.createUser({
-      username: candidate,
-      email: finalEmail,
-      password: crypto.randomBytes(24).toString('hex'),
-      name: String(me.data.name || me.data.email || candidate).slice(0, 64),
-      role: 'user',
-      verified: !!me.data.email_verified,
-    });
-  } catch (e) {
-    return res.redirect('/login?err=' + encodeURIComponent(e.message));
-  }
-  db.prepare('UPDATE users SET google_id = ?, google_name = ?, google_avatar = ?, google_linked_at = ?, updated_at = ? WHERE id = ?')
-    .run(gid, String(me.data.name || '').slice(0, 64), String(me.data.picture || '').slice(0, 500), new Date().toISOString(), new Date().toISOString(), newUser.id);
-  activity.logActivity({ user_id: newUser.id, event: 'auth:register', details: { via: 'google', google_id: gid }, ip });
-  const { token } = authService.finishLogin(newUser, ip);
-  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
-  return res.redirect('/dashboard');
+  return res.redirect('/register?err=google_no_account');
 });
 
 // ---- Dedicated Admin Portal entry ----
@@ -263,7 +206,7 @@ router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
 router.get('/register', (req, res) => {
   if (req.user) return res.redirect('/dashboard');
   const allowed = settings.get('security.allow_register') !== '0';
-  render(res, 'register', { allowed });
+  render(res, 'register', { allowed, error: authErrs[req.query.err] || null });
 });
 
 router.post('/register', express.urlencoded({ extended: true }), (req, res) => {

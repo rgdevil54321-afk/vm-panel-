@@ -106,6 +106,22 @@ async function getGuildMember(guildId, userId, token) {
   return request(token || currentToken(), `/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(userId)}`);
 }
 
+// Add a user to the guild using their own OAuth grant. The bot authorises the
+// request and forwards the user's access_token, which is what the
+// guilds.join scope is for. Assigns no roles - membership only.
+// Discord answers 201 when the member was added, 204 when they were already in.
+async function addGuildMember(guildId, userId, userAccessToken, token) {
+  if (!guildId || !userId || !userAccessToken) return { ok: false, status: 0, error: 'missing arguments' };
+  const r = await request(
+    token || currentToken(),
+    `/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(userId)}`,
+    'PUT',
+    { access_token: String(userAccessToken) }
+  );
+  // 204 has no body, so the shared parser hands back an empty string.
+  return { ok: r.ok || r.status === 204, status: r.status, alreadyMember: r.status === 204, error: r.error };
+}
+
 async function getGuildInvites(guildId, token) {
   const r = await request(token || currentToken(), `/guilds/${encodeURIComponent(guildId)}/invites`);
   return {
@@ -167,7 +183,7 @@ function authorizeUrl(redirectUri, state) {
   const cid = encodeURIComponent(oauthClientId());
   const redir = encodeURIComponent(redirectUri);
   const st = encodeURIComponent(state);
-  return `https://discord.com/api/oauth2/authorize?client_id=${cid}&response_type=code&redirect_uri=${redir}&scope=identify&state=${st}&prompt=consent`;
+    return `https://discord.com/api/oauth2/authorize?client_id=${cid}&response_type=code&redirect_uri=${redir}&scope=identify%20guilds.join&state=${st}&prompt=consent`;
 }
 
 function oauthPost(path, params) {
@@ -259,7 +275,7 @@ async function updateBotProfile({ username, avatar }, token) {
 
 module.exports = {
   botConfigured, currentToken, getBotUser, getGuilds, getGuild, getGuildMember,
-  getGuildInvites, countInviteUses, openDm, sendDm, fillTemplate,
+  addGuildMember, getGuildInvites, countInviteUses, openDm, sendDm, fillTemplate,
   oauthConfigured, authorizeUrl, exchangeCode, getOAuthUser, cdnAvatar,
   updateBotProfile, decodeBotId, getOAuthApp,
 };

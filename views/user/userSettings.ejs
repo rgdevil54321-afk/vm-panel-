@@ -52,56 +52,71 @@
       </div>
     </div>
 
+    <%
+      var _discordLinked = !!user.discord_id;
+      var _googleLinked = !!user.google_id;
+      var _linkedCount = (_discordLinked ? 1 : 0) + (_googleLinked ? 1 : 0);
+      var _discordReady = !!(String(settings['oauth.discord_client_id'] || settings['bot.client_id'] || '') && String(settings['oauth.discord_client_secret'] || settings['bot.client_secret'] || ''));
+      var _googleReady = !!(String(settings['google.client_id'] || '') && String(settings['google.client_secret'] || ''));
+    %>
     <div class="card">
-      <div class="card-title">Discord Account</div>
-      <p class="muted mb-2 text-sm">Link your Discord account so invite / booster plans count you, and so the bot can DM you about plan warnings.</p>
-      <% if (user.discord_id) { %>
-        <div class="flex" style="gap:12px;align-items:center;margin-bottom:12px">
-          <% if (user.discord_avatar) { %><img src="<%= user.discord_avatar %>" style="width:40px;height:40px;border-radius:50%" alt="Discord avatar"/><% } else { %><div class="avatar" style="width:40px;height:40px;font-size:16px"><%= (user.discord_name || user.discord_id || 'D')[0] %></div><% } %>
-          <div>
-            <div style="font-weight:600"><%= user.discord_name || 'Discord user' %></div>
-            <div class="muted text-sm mono"><%= user.discord_id %></div>
-            <% if (user.discord_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.discord_linked_at).toLocaleDateString() %></div><% } %>
-          </div>
-        </div>
-        <div class="flex" style="gap:10px">
-          <button class="btn btn-danger" onclick="unlinkDiscord()">Unlink</button>
-          <a class="btn" href="/settings/discord/link">Re-authorize</a>
-        </div>
-      <% } else { %>
-        <% if (String(settings['oauth.discord_client_id'] || settings['bot.client_id'] || '') && String(settings['oauth.discord_client_secret'] || settings['bot.client_secret'] || '')) { %>
-          <p class="muted text-sm" style="margin-bottom:12px">Authorized through real Discord OAuth — no ID typing needed.</p>
-          <a class="btn btn-primary" href="/settings/discord/link">Link Discord Account</a>
-        <% } else { %>
-          <p class="muted text-sm" style="margin-bottom:0">Discord linking is not configured yet by the administrator.</p>
-        <% } %>
-      <% } %>
-    </div>
+      <div class="flex-between mb-1" style="align-items:center">
+        <div class="card-title" style="margin:0">Linked Accounts</div>
+        <span class="pill <%= _linkedCount === 2 ? 'pill-green' : (_linkedCount === 1 ? 'pill-yellow' : 'pill-red') %>"><%= _linkedCount %>/2 linked</span>
+      </div>
+      <p class="muted mb-2 text-sm">Link the accounts you use so invite / booster plans count you, the bot can DM you about plan warnings, and you can sign in with either provider.</p>
 
-    <div class="card">
-      <div class="card-title">Google Account</div>
-      <p class="muted mb-2 text-sm">Link your Google account to sign in with Google and keep your account associated with this email identity.</p>
-      <% if (user.google_id) { %>
-        <div class="flex" style="gap:12px;align-items:center;margin-bottom:12px">
-          <% if (user.google_avatar) { %><img src="<%= user.google_avatar %>" style="width:40px;height:40px;border-radius:50%" alt="Google avatar"/><% } else { %><div class="avatar" style="width:40px;height:40px;font-size:16px"><%= (user.google_name || user.google_id || 'G')[0] %></div><% } %>
-          <div>
-            <div style="font-weight:600"><%= user.google_name || 'Google user' %></div>
-            <div class="muted text-sm mono"><%= user.google_id %></div>
-            <% if (user.google_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.google_linked_at).toLocaleDateString() %></div><% } %>
+      <div style="border-top:1px solid var(--border)">
+        <div class="flex-between" style="gap:12px;padding:14px 0;flex-wrap:wrap">
+          <div class="flex" style="gap:12px;align-items:center;min-width:0">
+            <% if (_discordLinked && user.discord_avatar) { %><img src="<%= user.discord_avatar %>" style="width:36px;height:36px;border-radius:50%;flex-shrink:0" alt="Discord avatar"/><% } else if (_discordLinked) { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0"><%= (user.discord_name || user.discord_id || 'D')[0] %></div><% } else { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0;background:rgba(255,255,255,0.06);color:var(--muted)">D</div><% } %>
+            <div style="min-width:0">
+              <div style="font-weight:600">Discord</div>
+              <% if (_discordLinked) { %>
+                <div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= user.discord_name || 'Discord user' %> &middot; <span class="mono"><%= user.discord_id %></span></div>
+                <% if (user.discord_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.discord_linked_at).toLocaleDateString() %></div><% } %>
+              <% } else { %>
+                <div class="muted text-sm">Not linked</div>
+              <% } %>
+            </div>
+          </div>
+          <div class="flex" style="gap:8px;flex-shrink:0">
+            <% if (_discordLinked) { %>
+              <a class="btn btn-sm" href="/settings/discord/link">Re-authorize</a>
+              <button class="btn btn-sm btn-danger" onclick="unlinkDiscord()">Unlink</button>
+            <% } else if (_discordReady) { %>
+              <a class="btn btn-sm btn-primary" href="/settings/discord/link">Link</a>
+            <% } else { %>
+              <span class="muted text-sm">Not configured</span>
+            <% } %>
           </div>
         </div>
-        <div class="flex" style="gap:10px">
-          <button class="btn btn-danger" onclick="unlinkGoogle()">Unlink</button>
-          <a class="btn" href="/settings/google/link">Re-authorize</a>
+
+        <div class="flex-between" style="gap:12px;padding:14px 0;border-top:1px solid var(--border);flex-wrap:wrap">
+          <div class="flex" style="gap:12px;align-items:center;min-width:0">
+            <% if (_googleLinked && user.google_avatar) { %><img src="<%= user.google_avatar %>" style="width:36px;height:36px;border-radius:50%;flex-shrink:0" alt="Google avatar"/><% } else if (_googleLinked) { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0"><%= (user.google_name || user.google_id || 'G')[0] %></div><% } else { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0;background:rgba(255,255,255,0.06);color:var(--muted)">G</div><% } %>
+            <div style="min-width:0">
+              <div style="font-weight:600">Google</div>
+              <% if (_googleLinked) { %>
+                <div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= user.google_name || 'Google user' %> &middot; <span class="mono"><%= user.google_id %></span></div>
+                <% if (user.google_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.google_linked_at).toLocaleDateString() %></div><% } %>
+              <% } else { %>
+                <div class="muted text-sm">Not linked</div>
+              <% } %>
+            </div>
+          </div>
+          <div class="flex" style="gap:8px;flex-shrink:0">
+            <% if (_googleLinked) { %>
+              <a class="btn btn-sm" href="/settings/google/link">Re-authorize</a>
+              <button class="btn btn-sm btn-danger" onclick="unlinkGoogle()">Unlink</button>
+            <% } else if (_googleReady) { %>
+              <a class="btn btn-sm btn-primary" href="/settings/google/link">Link</a>
+            <% } else { %>
+              <span class="muted text-sm">Not configured</span>
+            <% } %>
+          </div>
         </div>
-      <% } else { %>
-        <% if (String(settings['google.client_id'] || '') && String(settings['google.client_secret'] || '')) { %>
-          <p class="muted text-sm" style="margin-bottom:12px">Authorized through real Google OAuth — no password typing needed.</p>
-          <a class="btn btn-primary" href="/settings/google/link">Link Google Account</a>
-        <% } else { %>
-          <p class="muted text-sm" style="margin-bottom:0">Google linking is not configured yet by the administrator.</p>
-        <% } %>
-      <% } %>
+      </div>
     </div>
 
     <div class="card">

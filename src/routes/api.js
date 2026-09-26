@@ -9,6 +9,7 @@ const agentService = require('../services/agentService');
 const activity = require('../services/activityService');
 const { db, settings } = require('../lib/db');
 const { apiAuth, apiAdmin, getUserFromReq } = require('../middleware/auth');
+const { requireLinkedAccounts } = require('../middleware/requireLinkedAccounts');
 const { uploadAvatar } = require('../middleware/upload');
 const router = express.Router();
 
@@ -77,6 +78,11 @@ router.post('/customization/save-beacon', json, (req, res) => {
 router.use(apiAuth);
 
 router.get('/auth/me', (req, res) => res.json({ user: authService.publicUser(req.user), impersonation: req.impersonation ? { admin_id: req.impersonation.admin.id, admin_username: req.impersonation.admin.username } : null }));
+
+// Applied after /auth/me so the client can still learn who it is and which
+// accounts are missing. Admins are gated too; the escape hatch is the web admin
+// settings page or the documented one-line settings reset over SSH.
+router.use(requireLinkedAccounts);
 
 // End an admin impersonation session and mint a fresh token for the admin.
 router.post('/impersonation/leave', json, (req, res) => {

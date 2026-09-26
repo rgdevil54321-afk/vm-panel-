@@ -110,6 +110,18 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><circle cx="12" cy="12" r="3"/></svg>
       General
     </button>
+    <button class="tab" data-tab="branding" onclick="showTab('branding')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21.4 8 14 2 9.4h7.6z"/></svg>
+      Branding
+    </button>
+    <button class="tab" data-tab="neofetch" onclick="showTab('neofetch')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Neofetch
+    </button>
+    <button class="tab" data-tab="announcement" onclick="showTab('announcement')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><path d="M3 11v3a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
+      Announcement
+    </button>
     <button class="tab" data-tab="customization" onclick="showTab('customization')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="vertical-align:-2px;margin-right:6px"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 10 10 0 0 0 9.54-13.88A10 10 0 0 0 12 2z"/></svg>
       Customization &amp; Background
@@ -136,26 +148,23 @@
     </button>
   </div>
 
-  <!-- ============ GENERAL SETTINGS ============ -->
-  <div class="tab-pane" id="tab-general">
+  <!-- ============ BRANDING ============ -->
+  <div class="tab-pane" id="tab-branding" style="display:none">
     <div class="card mb-4" style="padding:24px">
-      <div class="card-title mb-1" style="font-size:18px">General Settings</div>
-      <p class="muted text-sm mb-4">Configure branding, panel identification, logo, and favicon.</p>
+      <div class="card-title mb-1" style="font-size:18px">Branding</div>
+      <p class="muted text-sm mb-4">The panel name and every panel-wide descriptor derived from it.</p>
 
       <form method="post" action="/admin/settings/general">
-        
-        <!-- 1. Panel Name -->
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">1. Panel Name</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">Panel Name</label>
           <div class="muted text-sm mb-2">Set the admin panel name displayed across navigation, page titles, and alerts.</div>
           <input name="panel.name" id="panelNameInput" value="<%= all['panel.name'] || 'Venlix Nodes' %>" placeholder="Venlix Nodes" oninput="updatePanelNamePreview(this.value)" style="max-width:500px"/>
         </div>
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 1b. Branding -->
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">1b. Branding (panel-wide)</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">Branding (panel-wide)</label>
           <div class="muted text-sm mb-2">
             Every user-visible mention of the panel name comes from here &mdash; the Discord bot
             status, webhook embeds, email subjects, neofetch banner, share card and
@@ -185,11 +194,77 @@
           </div>
         </div>
 
-        <hr class="hr" style="margin:24px 0"/>
+        <div class="mt-4">
+          <button class="btn btn-primary" type="submit" style="padding:10px 24px;font-size:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Branding
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-        <!-- 1c. Link sharing & announcement -->
+  <!-- ============ NEOFETCH ============ -->
+  <div class="tab-pane" id="tab-neofetch" style="display:none">
+    <div class="card mb-4" style="padding:24px">
+      <div class="card-title mb-1" style="font-size:18px">Neofetch / Host Identity</div>
+      <p class="muted text-sm mb-4">How the machine identifies itself in the neofetch banner and node telemetry.</p>
+
+      <form method="post" action="/admin/settings/general">
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">1.6. Link Preview &amp; Announcement</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">Host Identity (Neofetch)</label>
+          <div class="muted text-sm mb-2">Customise the machine's display name, CPU and GPU shown in the <a href="/admin/neofetch" style="color:var(--accent-2)">neofetch banner</a>, admin dashboard and node telemetry. Fakes welcome — it never has to match the real hardware.</div>
+          <div class="grid grid-2" style="gap:16px">
+            <div class="form-group">
+              <label>Display Host Name</label>
+              <input name="panel.hostname" value="<%= all['panel.hostname'] || 'Venlix Nodes' %>" placeholder="Venlix Nodes"/>
+              <div class="form-hint mt-1">Default: <b>Venlix Nodes</b>. Shown everywhere the machine is named.</div>
+            </div>
+            <div class="form-group">
+              <label>CPU Display Name</label>
+              <input name="panel.cpu_name" value="<%= all['panel.cpu_name'] || '' %>" placeholder="(auto-detected)"/>
+              <div class="form-hint mt-1">Leave empty to auto-detect the real CPU. e.g. <i>AMD Ryzen 9 7950X @ 16 Cores</i></div>
+            </div>
+            <div class="form-group">
+              <label>GPU Display Name</label>
+              <input name="panel.gpu_name" value="<%= all['panel.gpu_name'] || '' %>" placeholder="(auto-detected)"/>
+              <div class="form-hint mt-1">Leave empty to auto-detect via <code>lspci</code>. e.g. <i>NVIDIA GeForce RTX 4090 24GB</i></div>
+            </div>
+            <div class="form-group">
+              <label>ASCII Logo Text</label>
+              <input name="panel.logo_text" value="<%= all['panel.logo_text'] || 'VN' %>" placeholder="VN" maxlength="4"/>
+              <div class="form-hint mt-1">Letters/numbers (A-Z, 0-9), up to 4 chars, drawn as the block logo in the guest neofetch banner. Default: <b>VN</b></div>
+            </div>
+            <div class="form-group">
+              <label>Preview</label>
+              <a class="btn btn-sm" href="/admin/neofetch" style="padding:10px 14px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                View Neofetch Banner
+              </a>
+              <div class="form-hint mt-1">Live preview + copy the neofetch output as text.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <button class="btn btn-primary" type="submit" style="padding:10px 24px;font-size:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Neofetch
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ ANNOUNCEMENT ============ -->
+  <div class="tab-pane" id="tab-announcement" style="display:none">
+    <div class="card mb-4" style="padding:24px">
+      <div class="card-title mb-1" style="font-size:18px">Announcement &amp; Link Preview</div>
+      <p class="muted text-sm mb-4">What appears when someone shares your panel link, plus the popup shown to visitors.</p>
+
+      <form method="post" action="/admin/settings/general">
+        <div class="form-group mb-4">
+          <label style="font-size:14px;font-weight:700;color:#fff">Link Preview &amp; Announcement</label>
           <div class="muted text-sm mb-2">What appears when someone shares your panel link in Discord, WhatsApp or Slack, plus the popup shown to visitors.</div>
           <div class="grid grid-2" style="gap:16px">
             <div class="form-group">
@@ -235,46 +310,27 @@
           </div>
         </div>
 
-        <!-- 1b. Host Identity (Neofetch) -->
-        <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">1.5. Host Identity (Neofetch)</label>
-          <div class="muted text-sm mb-2">Customise the machine's display name, CPU and GPU shown in the <a href="/admin/neofetch" style="color:var(--accent-2)">neofetch banner</a>, admin dashboard and node telemetry. Fakes welcome — it never has to match the real hardware.</div>
-          <div class="grid grid-2" style="gap:16px">
-            <div class="form-group">
-              <label>Display Host Name</label>
-              <input name="panel.hostname" value="<%= all['panel.hostname'] || 'Venlix Nodes' %>" placeholder="Venlix Nodes"/>
-              <div class="form-hint mt-1">Default: <b>Venlix Nodes</b>. Shown everywhere the machine is named.</div>
-            </div>
-            <div class="form-group">
-              <label>CPU Display Name</label>
-              <input name="panel.cpu_name" value="<%= all['panel.cpu_name'] || '' %>" placeholder="(auto-detected)"/>
-              <div class="form-hint mt-1">Leave empty to auto-detect the real CPU. e.g. <i>AMD Ryzen 9 7950X @ 16 Cores</i></div>
-            </div>
-            <div class="form-group">
-              <label>GPU Display Name</label>
-              <input name="panel.gpu_name" value="<%= all['panel.gpu_name'] || '' %>" placeholder="(auto-detected)"/>
-              <div class="form-hint mt-1">Leave empty to auto-detect via <code>lspci</code>. e.g. <i>NVIDIA GeForce RTX 4090 24GB</i></div>
-            </div>
-            <div class="form-group">
-              <label>ASCII Logo Text</label>
-              <input name="panel.logo_text" value="<%= all['panel.logo_text'] || 'VN' %>" placeholder="VN" maxlength="4"/>
-              <div class="form-hint mt-1">Letters/numbers (A-Z, 0-9), up to 4 chars, drawn as the block logo in the guest neofetch banner. Default: <b>VN</b></div>
-            </div>
-            <div class="form-group">
-              <label>Preview</label>
-              <a class="btn btn-sm" href="/admin/neofetch" style="padding:10px 14px">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                View Neofetch Banner
-              </a>
-              <div class="form-hint mt-1">Live preview + copy the neofetch output as text.</div>
-            </div>
-          </div>
+        <div class="mt-4">
+          <button class="btn btn-primary" type="submit" style="padding:10px 24px;font-size:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Announcement
+          </button>
         </div>
+      </form>
+    </div>
+  </div>
 
-        <!-- 1.6. VM Hardware Spoof (DMI/SMBIOS + hypervisor) -->
+  <!-- ============ GENERAL SETTINGS ============ -->
+  <div class="tab-pane" id="tab-general">
+    <div class="card mb-4" style="padding:24px">
+      <div class="card-title mb-1" style="font-size:18px">General Settings</div>
+      <p class="muted text-sm mb-4">VM hardware spoofing, Discord community, Google OAuth, logo and favicon.</p>
+
+      <form method="post" action="/admin/settings/general">
+        <!-- 1. VM Hardware Spoof (DMI/SMBIOS + hypervisor) -->
         <hr class="hr" style="margin:24px 0"/>
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">1.6. VM Hardware Spoof (DMI / SMBIOS)</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">1. VM Hardware Spoof (DMI / SMBIOS)</label>
           <div class="muted text-sm mb-2">By default every VM presents Dell PowerEdge R740 DMI tables instead of QEMU / i440FX, so <code>dmidecode</code>, <code>systemd-detect-virt</code> and VPS-check scripts see a realistic bare-metal server. Optionally also mask the <code>KVM</code> hypervisor CPUID leaf so <code>Virtualization: kvm</code> disappears entirely (minor guest performance trade-off).</div>
           <div class="grid grid-2" style="gap:16px">
             <div class="form-group">
@@ -363,9 +419,9 @@
           </div>
         </div>
 
-        <!-- 2.5. Google OAuth (Login with Google) -->
+        <!-- 3. Google OAuth (Login with Google) -->
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">2.5. Google OAuth (Login with Google)</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">3. Google OAuth (Login with Google)</label>
           <div class="muted text-sm mb-2">Add a <b>Login with Google</b> button on the login &amp; register pages. Create an OAuth 2.0 Client ID at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style="color:var(--accent-2)">Google Cloud Console → Credentials → Create Credentials → OAuth client ID</a> (application type <b>Web application</b>). Add the callback below as an <b>Authorized redirect URI</b> — Google requires HTTPS.</div>
           <div class="grid grid-2" style="gap:16px">
             <div class="form-group">
@@ -383,9 +439,9 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 3. Panel Logo -->
+        <!-- 4. Panel Logo -->
         <div class="mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">3. Panel Logo</label>
+          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">4. Panel Logo</label>
           <div class="muted text-sm mb-3">Upload custom logo image or specify a direct image URL with live preview.</div>
           
           <div class="grid grid-2" style="gap:24px;align-items:start">
@@ -438,18 +494,18 @@
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 4. Panel Favicon Name -->
+        <!-- 5. Panel Favicon Name -->
         <div class="form-group mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff">4. Panel Favicon Name</label>
+          <label style="font-size:14px;font-weight:700;color:#fff">5. Panel Favicon Name</label>
           <div class="muted text-sm mb-2">Set the favicon title/name. Used as fallback letter badge (first letter) when no icon is uploaded.</div>
           <input name="panel.favicon_name" id="panelFaviconName" value="<%= all['panel.favicon_name'] || '' %>" placeholder="V" oninput="updateFaviconNamePreview(this.value)" style="max-width:500px"/>
         </div>
 
         <hr class="hr" style="margin:24px 0"/>
 
-        <!-- 5. Panel Favicon -->
+        <!-- 6. Panel Favicon -->
         <div class="mb-4">
-          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">5. Panel Favicon</label>
+          <label style="font-size:14px;font-weight:700;color:#fff;display:block;margin-bottom:4px">6. Panel Favicon</label>
           <div class="muted text-sm mb-3">Upload custom favicon icon (.ico, .png, .svg, .gif animated) or specify a direct Favicon URL with live preview.</div>
           
           <div class="grid grid-2" style="gap:24px;align-items:start">
@@ -851,6 +907,13 @@
             <option value="1" <%= all['security.force_tfa'] === '1' ? 'selected' : '' %>>Yes</option>
             <option value="0" <%= all['security.force_tfa'] === '0' ? 'selected' : '' %>>No</option>
           </select>
+        </div>
+        <div class="form-group"><label>Require linked Discord + Google</label>
+          <select name="security.require_linked_accounts">
+            <option value="1" <%= all['security.require_linked_accounts'] === '1' ? 'selected' : '' %>>Enabled</option>
+            <option value="0" <%= all['security.require_linked_accounts'] !== '1' ? 'selected' : '' %>>Disabled</option>
+          </select>
+          <div class="form-hint">Blocks the panel until an account has <b>both</b> a Discord and a Google identity linked. <b>Admins are not exempt</b> &mdash; if you lock yourself out, reset it over SSH:<br/><code class="mono">cd /root/vm-panel- &amp;&amp; node -e "require('./src/lib/db').settings.set('security.require_linked_accounts','0')"</code></div>
         </div>
         <div class="form-group"><label>Secret Blur default (new/signed-out users)</label>
           <select name="panel.secret_blur">

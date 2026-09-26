@@ -10,7 +10,9 @@ const backupService = require('../services/backupService');
 const authService = require('../services/authService');
 const activity = require('../services/activityService');
 const { requireAuth } = require('../middleware/auth');
+const { requireLinkedAccounts } = require('../middleware/requireLinkedAccounts');
 const { uploadAvatar } = require('../middleware/upload');
+const logger = require('../lib/logger');
 const crypto = require('crypto');
 const router = express.Router();
 
@@ -32,6 +34,7 @@ router.get('/privacy', (req, res) => render(res, 'privacy', {}));
 router.get('/terms', (req, res) => render(res, 'terms', {}));
 
 router.use(requireAuth);
+router.use(requireLinkedAccounts);
 
 
 function myVms(user) {
@@ -470,7 +473,7 @@ router.post('/account', express.urlencoded({ extended: true }), (req, res) => {
 });
 
 router.get('/settings', (req, res) => {
-  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet — ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.', 'google_linked': 'Google account linked successfully!', 'google_unlinked': 'Google account unlinked.', 'google_not_configured': 'Google linking is not configured yet - ask an admin to add the OAuth client ID/secret.', 'google_denied': 'Google authorization was cancelled.', 'google_oauth_failed': 'Google authorization failed. Try again.', 'google_already_linked': 'That Google account is already linked to a different user.' };
+  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet — ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.', 'google_linked': 'Google account linked successfully!', 'google_unlinked': 'Google account unlinked.', 'google_not_configured': 'Google linking is not configured yet - ask an admin to add the OAuth client ID/secret.', 'google_denied': 'Google authorization was cancelled.', 'google_oauth_failed': 'Google authorization failed. Try again.', 'google_already_linked': 'That Google account is already linked to a different user.', 'link_required': 'Link both a Discord and a Google account below to continue using the panel.' };
   const err = msgs[req.query.err] ? msgs[req.query.err] : (req.query.err || '');
   const ok = msgs[req.query.ok] ? msgs[req.query.ok] : (req.query.ok || '');
   render(res, 'userSettings', { tfaSetup: null, error: err, success: ok });
@@ -510,7 +513,22 @@ router.get('/settings/discord/callback', async (req, res) => {
   db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_avatar = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
     .run(String(me.data.id), String(me.data.username || '').slice(0, 64), d.cdnAvatar(me.data), new Date().toISOString(), new Date().toISOString(), userId);
   activity.logActivity({ user_id: userId, event: 'account:discord_link', details: { discord_id: me.data.id, discord_name: me.data.username || '' } });
-  res.redirect('/settings?ok=discord_linked');
+
+  // Best-effort: pull them into the community server via their own OAuth grant
+  // (needs the guilds.join scope, which authorizeUrl now requests). Membership
+  // only - no role is assigned. Never block linking on this.
+  let joined = '';
+  try {
+    const gid = String(settings.get('bot.guild_id') || '').trim();
+    if (gid) {
+      const r = await d.addGuildMember(gid, String(me.data.id), tok.data.access_token);
+      if (r.ok) joined = r.alreadyMember ? 'already_member' : 'joined';
+      else logger.warn('[discord] guild auto-join failed: status=' + r.status + ' ' + String(r.error || '').slice(0, 200));
+    }
+  } catch (e) {
+    logger.warn('[discord] guild auto-join error: ' + e.message);
+  }
+  res.redirect('/settings?ok=discord_linked' + (joined ? '&joined=' + joined : ''));
 });
 
 router.post('/settings/discord/unlink', express.json(), (req, res) => {
