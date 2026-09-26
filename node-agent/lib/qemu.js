@@ -42,13 +42,27 @@ function hasKvm() {
   }
 }
 
-function inUsePort(port) {
+function portIsListening(port) {
   try {
-    execSync(`ss -tln | grep -q ':${port} '`, { stdio: 'ignore' });
-    return true;
+    const out = execSync(`ss -H -tln 'sport = :${port}'`, { encoding: 'utf8' });
+    return out.trim().length > 0;
   } catch (e) {
     return false;
   }
+}
+
+function inUsePort(port) {
+  return portIsListening(port);
+}
+
+function waitPortFree(port, timeoutMs) {
+  if (!port) return true;
+  const end = Date.now() + (timeoutMs || 5000);
+  while (Date.now() < end) {
+    if (!portIsListening(port)) return true;
+    try { execSync('sleep 0.2', { stdio: 'ignore' }); } catch (e) {}
+  }
+  return !portIsListening(port);
 }
 
 function genAgentToken() {
@@ -399,13 +413,53 @@ function buildQemuArgs(vm) {
   return args;
 }
 
+// A VM's qemu holds its hostfwd sockets for as long as it lives. If we lose
+// track of the pid we can never stop it, and those ports leak until the node
+// reboots. The pidfile is not trustworthy on its own: it can be deleted with
+// the VM directory, or hold a pid the OS has since recycled onto an unrelated
+// process. Matching qemu's cmdline against this VM's own disk path is the only
+// reliable identity check.
+function pidFromProc(vm) {
+  const disk = path.join(vmDir(vm), 'disk.qcow2');
+  let entries;
+  try {
+    entries = fs.readdirSync('/proc');
+  } catch (e) {
+    return null;
+  }
+  for (const name of entries) {
+    if (!/^\d+$/.test(name)) continue;
+    let cmd;
+    try {
+      cmd = fs.readFileSync(path.join('/proc', name, 'cmdline'), 'utf8');
+    } catch (e) {
+      continue;
+    }
+    if (cmd.indexOf('qemu-system-x86_64') === -1) continue;
+    if (cmd.indexOf(disk) === -1) continue;
+    return parseInt(name, 10);
+  }
+  return null;
+}
+
+function isQemuPid(pid) {
+  try {
+    const cmd = fs.readFileSync(path.join('/proc', String(pid), 'cmdline'), 'utf8');
+    return cmd.indexOf('qemu-system-x86_64') !== -1;
+  } catch (e) {
+    return false;
+  }
+}
+
 function pidOf(vm) {
   const file = path.join(vmDir(vm), 'qemu.pid');
   try {
     const pid = parseInt(fs.readFileSync(file, 'utf8').trim(), 10);
-    if (pid > 0) return pid;
+    // Never hand back a pid we have not confirmed is a qemu, or stopVm would
+    // SIGKILL an innocent process that inherited the recycled pid.
+    if (pid > 0 && isQemuPid(pid)) return pid;
   } catch (e) {}
-  return null;
+  return pidFromProc(vm);
 }
 
 function isRunning(vm) {
@@ -847,6 +901,13 @@ async function createVm({ data, osList }) {
     created_at: now(),
     updated_at: now(),
   };
+  const singleVmCeiling = os.totalmem() - 2048 * 1024 * 1024;
+  if (memory * 1024 * 1024 > singleVmCeiling) {
+    throw new Error(
+      `This VM was set to ${memory} MB but the node only has ${Math.round(os.totalmem() / 1024 / 1024)} MB of RAM. ` +
+      `The maximum for a single VM is ${Math.round(singleVmCeiling / 1024 / 1024)} MB (total minus 2 GB kept for the host).`
+    );
+  }
   state.upsertVm(vm);
   saveVmFiles(vm, osList, data);
   return vm;
@@ -954,6 +1015,26 @@ function memoryBudget() {
   return { bytes: avail, limitedBy };
 }
 
+// os.freemem() cannot be trusted to gate VM starts on a KVM host: guest RAM is
+// mapped lazily, so a VM that has been idle for hours contributes almost nothing
+// to MemAvailable. Every start then looks affordable, and the OOM killer takes
+// the node the moment all the guests fault their pages in together. Sum what the
+// already-running VMs have actually committed instead.
+function committedVmBytes() {
+  let total = 0;
+  let list;
+  try {
+    list = state.get().vms || [];
+  } catch (e) {
+    return 0;
+  }
+  for (const v of list) {
+    if (!isRunning(v)) continue;
+    total += (parseInt(v.memory, 10) || 512) * 1024 * 1024;
+  }
+  return total;
+}
+
 function startVm(vm) {
   if (isRunning(vm)) return { ok: true, message: 'already running' };
   // Pre-flight: can the host/container actually provide the guest RAM?
@@ -964,6 +1045,15 @@ function startVm(vm) {
     return {
       ok: false,
       error: `Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${haveMb} MB is available — limited by the ${budget.limitedBy}. The physical host may have much more RAM, but this process runs inside a container/cgroup cap. Fix: raise the container memory limit (Proxmox LXC: Options > Memory; Docker: --memory), or set the VM's RAM lower.`,
+    };
+  }
+  const committed = committedVmBytes();
+  const totalRam = os.totalmem();
+  const hostReserve = 2048 * 1024 * 1024; // node agent, panel, qemu overhead, guest kernel
+  if (committed > 0 && committed + wantBytes + hostReserve > totalRam) {
+    return {
+      ok: false,
+      error: `Refusing to start: running VMs have committed ${Math.round(committed / 1024 / 1024)} MB, this VM wants ${Math.round(wantBytes / 1024 / 1024)} MB, and the host only has ${Math.round(totalRam / 1024 / 1024)} MB total (keeping ${Math.round(hostReserve / 1024 / 1024)} MB in reserve for the host). Starting it would push the node into an OOM kill. Stop another VM first, or lower this VM's RAM.`,
     };
   }
   if (!vm.img_file || !fs.existsSync(vm.img_file)) {
@@ -1055,20 +1145,39 @@ function startVm(vm) {
 
 function stopVm(vm, force = false) {
   const pid = pidOf(vm);
-  if (!pid) return { ok: true, message: 'not running' };
-  try {
-    process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
-    if (!force) {
-      const end = Date.now() + 5000;
-      while (Date.now() < end && isRunning(vm)) {
-        execSync('sleep 0.2', { stdio: 'ignore' });
-      }
+  if (!pid) {
+    try { fs.unlinkSync(path.join(vmDir(vm), 'qemu.pid')); } catch (e) {}
+    return { ok: true, message: 'not running' };
+  }
+  try { process.kill(pid, force ? 'SIGKILL' : 'SIGTERM'); } catch (e) {}
+  if (!force) {
+    const end = Date.now() + 5000;
+    while (Date.now() < end && isRunning(vm)) {
+      try { execSync('sleep 0.2', { stdio: 'ignore' }); } catch (e) {}
     }
-    if (isRunning(vm)) process.kill(pid, 'SIGKILL');
-  } catch (e) {}
+  }
+  if (isRunning(vm)) {
+    try { process.kill(pid, 'SIGKILL'); } catch (e) {}
+  }
+  // The kernel only drops the hostfwd sockets once the process is really gone.
+  // Returning before that hands the ports to nobody and they leak for the life
+  // of the node, which is how a deleted VM ended up squatting 25501.
+  const ports = [vm.ssh_port, vm.agent_port].filter(Boolean);
+  for (const p of ports) waitPortFree(p, 5000);
+  // Last resort: the process may have been re-forked under a different pid.
+  const survivor = pidFromProc(vm);
+  if (survivor) {
+    try { process.kill(survivor, 'SIGKILL'); } catch (e) {}
+    try { execSync('sleep 0.5', { stdio: 'ignore' }); } catch (e) {}
+    for (const p of ports) waitPortFree(p, 3000);
+  }
   try { fs.unlinkSync(path.join(vmDir(vm), 'qemu.pid')); } catch (e) {}
   vm.updated_at = now();
   state.upsertVm(vm);
+  const stuck = ports.filter((p) => portIsListening(p));
+  if (stuck.length) {
+    return { ok: false, message: `qemu stopped but port(s) ${stuck.join(', ')} are still held by another process` };
+  }
   return { ok: true };
 }
 
@@ -1078,7 +1187,15 @@ function restartVm(vm) {
 }
 
 function removeVm(vm, force = false) {
-  if (isRunning(vm)) stopVm(vm, force || true);
+  // Always attempt the teardown, never gate it on isRunning(): a VM whose
+  // pidfile went missing still has a live qemu holding its ports.
+  stopVm(vm, force || true);
+  const survivor = pidFromProc(vm);
+  if (survivor) {
+    try { process.kill(survivor, 'SIGKILL'); } catch (e) {}
+    try { execSync('sleep 0.5', { stdio: 'ignore' }); } catch (e) {}
+  }
+  for (const p of [vm.ssh_port, vm.agent_port].filter(Boolean)) waitPortFree(p, 5000);
   try {
     fs.rmSync(vmDir(vm), { recursive: true, force: true });
   } catch (e) {}
