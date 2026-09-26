@@ -391,7 +391,7 @@ async function loadGuilds() {
     rows.innerHTML = res.guilds.map((g) =>
       '<tr data-gid="' + esc(g.id) + '"><td style="font-weight:600">' + esc(g.name) + '</td>'
       + '<td class="mono text-sm">' + esc(g.id) + '</td>'
-      + '<td class="text-sm">' + (g.member_count || '?') + '</td>'
+      + '<td class="text-sm">' + (g.member_count == null ? 'unknown' : g.member_count.toLocaleString()) + '</td>'
       + '<td><button class="btn btn-sm" onclick="copyText(\'' + esc(g.id) + '\', this)">Copy</button></td>'
       + '<td><button class="btn btn-sm" onclick="useGuild(\'' + esc(g.id) + '\')">Select</button></td>'
       + '</tr>').join('');

@@ -93,8 +93,15 @@ async function getBotUser(token) {
 }
 
 async function getGuilds(token) {
-  const r = await request(token || currentToken(), '/users/@me/guilds');
-  const guilds = (Array.isArray(r.data) ? r.data : []).map((g) => ({ id: g.id, name: g.name, icon: g.icon, member_count: g.approximate_member_count }));
+  // with_counts is required or Discord omits approximate_member_count entirely,
+  // which left the Members column showing "?" on the admin bot page.
+  const r = await request(token || currentToken(), '/users/@me/guilds?with_counts=true');
+  const guilds = (Array.isArray(r.data) ? r.data : []).map((g) => ({
+    id: g.id,
+    name: g.name,
+    icon: g.icon,
+    member_count: g.approximate_member_count != null ? g.approximate_member_count : null,
+  }));
   return { ok: r.ok, status: r.status, guilds, error: r.error };
 }
 
