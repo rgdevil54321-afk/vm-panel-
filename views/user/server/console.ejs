@@ -220,42 +220,62 @@
   background: rgba(56, 189, 248, 0.3);
 }
 
+/* True fullscreen: edge-to-edge, no padding/border/min-height so the terminal
+   actually fills the viewport instead of stopping at ~80%. */
 .fullscreen-pane {
   position: fixed !important;
-  left: 0 !important;
-  top: 0 !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  height: 100% !important;
-  max-height: 100% !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
   margin: 0 !important;
-  z-index: 99999 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  z-index: 2147483000 !important;
+  border: 0 !important;
   border-radius: 0 !important;
   background: #060913 !important;
   box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 10px !important;
-  padding: 14px 18px 18px !important;
   overflow: hidden !important;
 }
-.fullscreen-pane .terminal-wrapper {
-  flex: 1 1 auto !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  width: 100% !important;
-  height: auto !important;
+.fullscreen-pane .console-toolbar {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 10px 14px !important;
+  border-bottom: 1px solid var(--border) !important;
+  background: #060913 !important;
 }
 .fullscreen-pane #termPanes {
   flex: 1 1 auto !important;
   min-height: 0 !important;
   display: flex !important;
   flex-direction: column !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
+.fullscreen-pane .term-pane,
 .fullscreen-pane .term-pane.show {
+  display: flex !important;
   flex: 1 1 auto !important;
   min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
 }
+.fullscreen-pane .terminal-wrapper {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.fullscreen-pane .terminal { padding: 10px 12px !important; }
+.fullscreen-pane .resize-handle { display: none !important; }
 body.term-fullscreen { overflow: hidden !important; }
 body.term-fullscreen .sidebar,
 body.term-fullscreen .topbar,
@@ -339,9 +359,13 @@ body.term-fullscreen #bgOverlay {
           Auto Size
         </button>
         <button class="btn btn-sm" onclick="fitActiveTerm()">Fit</button>
-        <button class="btn btn-sm" onclick="toggleFullscreen('paneTerminal')" title="Toggle Full Screen">
+        <button class="btn btn-sm" id="btnTermScroll" onclick="toggleTermAutoScroll()" title="Follow new output automatically">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+          <span id="termScrollLabel">Auto-Scroll: ON</span>
+        </button>
+        <button class="btn btn-sm" id="btnTermFull" onclick="toggleFullscreen('paneTerminal')" title="Toggle Full Screen (Esc to exit)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-          Full
+          <span id="termFullLabel">Full</span>
         </button>
       </div>
     </div>
@@ -783,7 +807,7 @@ body.term-fullscreen #bgOverlay {
 
     socket.on('console:buffer', ({ sessionId, text }) => {
       const entry = createTerminalPane(sessionId);
-      const stick = termAtBottom(entry.term);
+      const stick = termAutoScroll && termAtBottom(entry.term);
       try { entry.term.clear(); entry.term.write(text || ''); } catch (_) {}
       if (stick) { try { entry.term.scrollToBottom(); } catch (_) {} }
     });
@@ -802,7 +826,7 @@ body.term-fullscreen #bgOverlay {
     socket.on('console:data', ({ sessionId, text }) => {
       const entry = terms.get(sessionId);
       if (!entry) return;
-      const stick = termAtBottom(entry.term);
+      const stick = termAutoScroll && termAtBottom(entry.term);
       entry.term.write(text);
       if (stick) { try { entry.term.scrollToBottom(); } catch (_) {} }
     });
@@ -973,16 +997,64 @@ body.term-fullscreen #bgOverlay {
   window.toggleFullscreen = function (paneId) {
     const pane = document.getElementById(paneId);
     if (!pane) return;
-    pane.classList.toggle('fullscreen-pane');
+    const entering = !pane.classList.contains('fullscreen-pane');
+    pane.classList.toggle('fullscreen-pane', entering);
     document.body.classList.toggle('term-fullscreen', !!document.querySelector('.fullscreen-pane'));
-    setTimeout(() => {
+    if (paneId === 'paneTerminal') {
+      const lbl = document.getElementById('termFullLabel');
+      if (lbl) lbl.textContent = entering ? 'Exit Full' : 'Full';
+    }
+    // Refit across several frames: the pane animates from its in-flow size to
+    // 100vw/100vh, so a single fit() lands on stale dimensions.
+    const refit = () => {
       if (paneId === 'paneTerminal') {
         const entry = terms.get(activeSid);
-        if (entry) { try { entry.fit.fit(); sendResize(activeSid); entry.term.focus(); updateSizeBadge(entry.term, false); } catch (_) {} }
+        if (entry) { try { entry.fit.fit(); sendResize(activeSid); updateSizeBadge(entry.term, false); } catch (_) {} }
       } else if (paneId === 'paneBootLog' && bootFit) {
-        bootFit.fit();
+        try { bootFit.fit(); } catch (_) {}
       }
-    }, 150);
+    };
+    requestAnimationFrame(() => { refit(); requestAnimationFrame(() => { refit(); setTimeout(refit, 120); }); });
+    if (entering && paneId === 'paneTerminal') {
+      const entry = terms.get(activeSid);
+      if (entry) {
+        try { entry.term.focus(); } catch (_) {}
+        // Keep the grid correct if the window is resized while fullscreen.
+        if (!entry.ro && window.ResizeObserver) {
+          entry.ro = new ResizeObserver(() => { try { entry.fit.fit(); sendResize(activeSid); } catch (_) {} });
+          entry.ro.observe(entry.wrapper);
+        }
+      }
+    }
+  };
+
+  // Escape leaves fullscreen.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const pane = document.querySelector('.fullscreen-pane');
+    if (!pane) return;
+    e.preventDefault();
+    const id = pane.id;
+    if (document.fullscreenElement && document.exitFullscreen) { try { document.exitFullscreen(); } catch (_) {} }
+    window.toggleFullscreen(id);
+  });
+
+  // ---- Terminal auto-scroll (follow new output) ----
+  let termAutoScroll = true;
+  (function () {
+    const btn = document.getElementById('btnTermScroll');
+    if (btn) btn.classList.add('btn-primary');
+  })();
+  window.toggleTermAutoScroll = function () {
+    termAutoScroll = !termAutoScroll;
+    const lbl = document.getElementById('termScrollLabel');
+    if (lbl) lbl.textContent = 'Auto-Scroll: ' + (termAutoScroll ? 'ON' : 'OFF');
+    const btn = document.getElementById('btnTermScroll');
+    if (btn) btn.classList.toggle('btn-primary', termAutoScroll);
+    if (termAutoScroll) {
+      const entry = terms.get(activeSid);
+      if (entry) { try { entry.term.scrollToBottom(); } catch (_) {} }
+    }
   };
 
   window.resetToAutoSize = function (wrapperId) {
