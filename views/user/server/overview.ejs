@@ -245,11 +245,16 @@
               <tr>
                 <td class="muted">IP Address</td>
                 <td class="mono">
-                  <% if (['ipv4_shared','ipv4_dedicated','dual'].includes(vm.network_mode) && vm.ip_address) { %>
-                    <span style="color:var(--accent-2);font-weight:700"><%= vm.ip_address %></span>
+                  <%# connect_host is always the node's reachable address plus a
+                      forwarded port: a static address baked into a SLIRP guest is
+                      not routable from outside, so it is never shown as the
+                      address you connect to. %>
+                  <% if (vm.guest_ip_is_internal) { %>
+                    <span style="color:var(--accent-2);font-weight:700"><%= vm.connect_host %></span> <span class="muted" style="font-size:11px">(shared — port <%= vm.connect_port %>)</span>
+                    <div class="muted" style="font-size:11px">guest-internal: <%= vm.guest_ipv4 %></div>
                   <% } else if (vm.network_mode === 'ipv6' && vm.ipv6_address) { %>
                     <span style="color:var(--accent-2);font-weight:700"><%= vm.ipv6_address %></span>
-                  <% } else if (['nat','ipv4_shared'].includes(vm.network_mode) && vm.connect_host) { %>
+                  <% } else if (vm.connect_host) { %>
                     <span style="color:var(--accent-2);font-weight:700"><%= vm.connect_host %></span> <span class="muted" style="font-size:11px">(shared — no dedicated IP)</span>
                   <% } else if (vm.ipv6_address) { %>
                     <span style="color:var(--accent-2);font-weight:700"><%= vm.ipv6_address %></span>

@@ -556,9 +556,11 @@ for (const [col, type] of Object.entries(vmAdvColumns)) {
   }
 }
 
-// ---- VM networking (shared/dedicated IPv4, IPv6, NAT) + per-VM neofetch spoof ----
+// ---- VM networking (shared/dedicated IPv4, IPv6, none) + per-VM neofetch spoof ----
 const vmNetColumns = {
-  ip_mode: "TEXT NOT NULL DEFAULT 'nat'",        // nat | ipv4_shared | ipv4_dedicated | ipv6 | dual
+  // Default left as 'nat' so the column keeps matching existing rows; new VMs
+  // are written as 'none', which behaves identically.
+  ip_mode: "TEXT NOT NULL DEFAULT 'nat'",        // none (legacy: nat) | ipv4_shared | ipv4_dedicated | ipv6 | dual
   ip_address: 'TEXT',
   ip_gateway: 'TEXT',
   ip_prefix: 'TEXT',

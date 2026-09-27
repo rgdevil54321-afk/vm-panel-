@@ -706,7 +706,11 @@ ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + user
   );
   // ---- Static IP network-config (same shape the panel writes) ----
   let networkConfig = null;
-  const mode = String(vm.ip_mode || 'nat');
+  // 'none' (and its legacy spelling 'nat') means: leave the guest on the SLIRP
+  // lease, reachable only through the forwarded port. Every other mode bakes the
+  // address into the guest as a secondary on the same NIC.
+  const mode = String(vm.ip_mode || 'none');
+  const wantsStaticIp = ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual'].includes(mode);
   const v4 = stripCidr(vm.ip_address);
   const v6 = stripCidr(vm.ipv6_address);
   const v4prefix = sanitizePrefix(vm.ip_prefix, 24, 32);
@@ -714,7 +718,7 @@ ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + user
   const v4gw = mode === 'ipv6' ? null : (stripCidr(vm.ip_gateway) || (v4 ? deriveGateway(v4, v4prefix) : ''));
   const v6gw = (mode === 'ipv4_shared' || mode === 'ipv4_dedicated')
     ? null : (stripCidr(vm.ipv6_gateway) || (v6 ? deriveGateway(v6, v6prefix) : ''));
-  if (mode !== 'nat' && (v4 || v6)) {
+  if (wantsStaticIp && (v4 || v6)) {
     const addresses = [];
     const routes = [];
     const dns = ['1.1.1.1', '8.8.8.8'];

@@ -328,13 +328,13 @@
           <div class="form-group" style="margin:0">
             <label>Network Mode</label>
             <select id="fIpMode" class="input" onchange="updateSummary(); maybeDetectNet()">
-              <option value="nat" selected>NAT (default)</option>
+              <option value="none" selected>None (port forward only)</option>
               <option value="ipv4_shared">IPv4 shared</option>
               <option value="ipv4_dedicated">IPv4 dedicated</option>
               <option value="ipv6">IPv6 only</option>
               <option value="dual">Dual stack</option>
             </select>
-            <div class="form-hint">Non-NAT adds the static IP to the guest on first boot. SSH forwarding via the node port stays intact.</div>
+            <div class="form-hint">None leaves the guest on its internal SLIRP address and reaches it only through the node's forwarded port. The other modes add the static IP to the guest on first boot, but SSH forwarding via the node port stays intact either way.</div>
           </div>
           <div class="form-group" style="margin:0"><label>IPv4 Address</label><input id="fIpAddr" class="input" placeholder="10.10.0.5" list="cHostIps" oninput="netPick('4')" onchange="netPick('4')"/><datalist id="cHostIps"></datalist><datalist id="cHostIps6"></datalist></div>
           <div class="form-group" style="margin:0"><label>IPv4 Gateway</label><input id="fIpGw" class="input" placeholder="10.10.0.1"/></div>
@@ -814,7 +814,7 @@ function netPick(side) {
 }
 async function maybeDetectNet() {
   const mode = document.getElementById('fIpMode').value;
-  if (mode === 'nat' || _netDetected) return;
+  if (mode === 'none' || mode === 'nat' || _netDetected) return;
   try {
     const d = await VP.api('/admin/host/network');
     window._gw = d.gateway || '';

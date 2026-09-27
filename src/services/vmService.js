@@ -11,7 +11,17 @@ const { db, settings } = require('../lib/db');
 const logger = require('../lib/logger');
 const nodeRegistry = require('./nodeRegistry');
 const { logActivity } = require('./activityService');
-const webhooks = require('./webhookService');
+  const webhooks = require('./webhookService');
+
+  // Accepted values for vms.ip_mode.
+  // 'none'  - no address configured in the guest; reachable only through the
+  //           node's forwarded port. This is what 'nat' always meant.
+  // 'nat'   - legacy spelling, still present in existing rows and still
+  //           accepted so editing an old VM does not fail validation.
+  const IP_MODES = ['none', 'ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'];
+  // Modes that write a static address into the guest via cloud-init.
+  const STATIC_IP_MODES = ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual'];
+  const wantsStaticIp = (mode) => STATIC_IP_MODES.includes(String(mode || 'none'));
 const neofetchService = require('./neofetchService');
 
 const VM_DIR = config.vmDir;
@@ -769,7 +779,7 @@ function serializeVm(row) {
     const n = db.prepare('SELECT host, port, name FROM nodes WHERE id = ?').get(row.node_id || 1);
     if (n) { node_host = n.host; node_name = n.name; }
   } catch (_) {}
-  const ipMode = String(row.ip_mode || 'nat');
+  const ipMode = String(row.ip_mode || 'none');
   const v4 = String(row.ip_address || '').trim();
   const v6 = String(row.ipv6_address || '').trim();
   const staticV4 = ['ipv4_shared', 'ipv4_dedicated', 'dual'].includes(ipMode) && !!v4;
@@ -797,12 +807,20 @@ function serializeVm(row) {
     }
   }
   const modeLabels = {
-    nat: 'NAT (shared port forward)',
+    none: 'None (port forward only)',
+    nat: 'NAT (legacy, same as None)',
     ipv4_shared: 'IPv4 shared',
     ipv4_dedicated: 'IPv4 dedicated',
     ipv6: 'IPv6 only',
     dual: 'Dual stack (IPv4 + IPv6)',
   };
+  // Every VM runs on QEMU user-mode (SLIRP) networking, so a static address
+  // baked into the guest is NOT routable from outside the host - inbound only
+  // ever arrives through a hostfwd port. Presenting the guest's own address as
+  // the connect target hands the user something that can never answer, so the
+  // connect hint is always node address + forwarded port, and the static
+  // address is reported separately and labelled as guest-internal.
+  const reachableHost = sharedV4 || node_host || 'localhost';
   const out = {
     ...row,
     port_forwards: forwards,
@@ -812,9 +830,15 @@ function serializeVm(row) {
     node_name: node_name || require('../lib/branding').name() + ' Node',
     network_mode: ipMode,
     network_mode_label: modeLabels[ipMode] || ipMode,
-    connect_host: staticV4 ? v4 : (sharedV4 || node_host || 'localhost'),
-    connect_port: staticV4 ? 22 : row.ssh_port,
-    connect_ip: staticV4 ? v4 : (v6 || sharedV4 || node_host || 'localhost'),
+    connect_host: reachableHost,
+    connect_port: row.ssh_port,
+    connect_ip: reachableHost,
+    guest_ipv4: staticV4 ? v4 : (wantsStaticIp(ipMode) ? v4 : ''),
+    guest_ipv6: wantsStaticIp(ipMode) ? v6 : '',
+    guest_ip_is_internal: staticV4,
+    ip_reachability_note: staticV4
+      ? `Guest address ${v4} is internal to the VM only. Reach it on ${reachableHost} port ${row.ssh_port}.`
+      : '',
     gui_mode: !!row.gui_mode,
     start_on_boot: !!row.start_on_boot,
     ballooning: row.ballooning === 1 || row.ballooning === '1',
@@ -1028,7 +1052,7 @@ function writeSeed(vm) {
   // never breaks the web console / terminal connection. Gateways and routes
   // are derived automatically so a bare "pick an IP" always ends up reachable.
   let networkConfig = null;
-  const mode = String(vm.ip_mode || 'nat');
+  const mode = String(vm.ip_mode || 'none');
   const v4raw = stripCidr(vm.ip_address);
   const v6raw = stripCidr(vm.ipv6_address);
   const v4 = v4raw; const v6 = v6raw;
@@ -1048,7 +1072,7 @@ function writeSeed(vm) {
     if (v6) return deriveGateway(v6, v6prefix);
     return null;
   })();
-  if (mode !== 'nat' && (v4 || v6)) {
+  if (wantsStaticIp(mode) && (v4 || v6)) {
     const addresses = [];
     const routes = [];
     const dns = ['1.1.1.1', '8.8.8.8'];
@@ -1254,8 +1278,10 @@ function normalizeAdvanced(data) {
     backup_schedule: String(data.backup_schedule || ''),
     timezone: String(data.timezone || 'UTC').slice(0, 64),
     locale: String(data.locale || 'en_US.UTF-8').slice(0, 64),
-    // ---- Networking (shared/dedicated IPv4, IPv6, NAT) ----
-    ip_mode: ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'].includes(data.ip_mode) ? data.ip_mode : 'nat',
+    // ---- Networking (shared/dedicated IPv4, IPv6, none) ----
+    // 'nat' stays accepted: it is the legacy spelling of 'none' and existing
+    // rows still carry it, so rejecting it would break edits of old VMs.
+    ip_mode: IP_MODES.includes(data.ip_mode) ? data.ip_mode : 'none',
     ip_address: stripCidr(data.ip_address).slice(0, 64),
     ip_gateway: (() => {
       const g = stripCidr(data.ip_gateway);
@@ -2041,7 +2067,7 @@ function update(vm, data, user) {
       if (f === 'port_forwards' && Array.isArray(data[f])) vals[f] = JSON.stringify(data[f]);
       else if (f === 'gui_mode' || f === 'start_on_boot') vals[f] = data[f] ? 1 : 0;
       else if (f === 'owner_id') vals[f] = parseInt(data[f], 10);
-      else if (f === 'ip_mode') vals[f] = ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual', 'nat'].includes(String(data[f] || '').trim()) ? String(data[f]).trim() : 'nat';
+      else if (f === 'ip_mode') { const m = String(data[f] || '').trim(); vals[f] = IP_MODES.includes(m) ? m : 'none'; }
       else if (f === 'expires_at') vals[f] = data[f] ? data[f] : null;
       else if (f === 'vps_type') vals[f] = String(data[f] || 'kvm');
       else if (f === 'backup_slots') vals[f] = toBackupSlots(data[f]);

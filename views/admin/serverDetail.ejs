@@ -161,7 +161,11 @@
               <td class="muted" style="width:130px">Network Mode</td>
               <td>
                 <select id="net_ip_mode" style="width:100%;padding:9px 10px;border-radius:8px">
-                  <option value="nat" <%= vm.ip_mode === 'nat' ? 'selected' : '' %>>NAT (default)</option>
+                  <%# VMs created before "None" existed store 'nat'. Keep a hidden
+                      option for them so saving this form does not silently rewrite
+                      the stored mode. %>
+                  <% if (vm.ip_mode === 'nat') { %><option value="nat" selected>NAT (legacy &mdash; same as None)</option><% } %>
+                  <option value="none" <%= vm.ip_mode === 'none' ? 'selected' : '' %>>None (port forward only)</option>
                   <option value="ipv4_shared" <%= vm.ip_mode === 'ipv4_shared' ? 'selected' : '' %>>IPv4 shared</option>
                   <option value="ipv4_dedicated" <%= vm.ip_mode === 'ipv4_dedicated' ? 'selected' : '' %>>IPv4 dedicated</option>
                   <option value="ipv6" <%= vm.ip_mode === 'ipv6' ? 'selected' : '' %>>IPv6 only</option>
