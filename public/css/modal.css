@@ -58,7 +58,11 @@
     box-shadow: var(--shadow-3);
     color: var(--text);
     animation: vp-modal-lift var(--vp-modal-dur) var(--ease);
-  }
+  /* The panel owns all inner spacing. Templates hand their content straight to
+     the panel (they do not use the optional __head/__body/__foot blocks), so
+     without this every converted modal would render flush against the border. */
+  padding: 22px;
+}
 
 
 @keyframes vp-modal-lift {
@@ -73,12 +77,14 @@
 .vp-modal--xl .vp-modal__panel { max-width: min(960px, 94vw); }
 
 /* ---- head ------------------------------------------------------------- */
+/* Optional block. The panel already supplies padding, so these only add the
+   internal rhythm between head / body / foot — never horizontal padding. */
 .vp-modal__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 20px 0;
+  margin-bottom: 14px;
 }
 
 .vp-modal__title {
@@ -119,7 +125,6 @@
 
 /* ---- body / foot ------------------------------------------------------ */
 .vp-modal__body {
-  padding: 14px 20px 4px;
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1.65;
@@ -133,7 +138,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 16px 20px 18px;
+  margin-top: 18px;
 }
 
 .vp-modal__foot--split { justify-content: space-between; }
@@ -156,7 +161,8 @@
     max-height: 92vh;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     border-bottom: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    /* Keep the panel's own padding; only add the home-indicator inset. */
+    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
     animation-name: vp-modal-sheet;
   }
 
