@@ -1,0 +1,22 @@
+# Dependencies
+node_modules
+
+# Build
+.next
+out
+
+# Testing
+coverage
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+
+# OS
+.DS_Store
+Thumbs.db
