@@ -39,9 +39,8 @@
   </div>
 </div>
 
-<div id="schedModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:grid;place-items:center;padding:20px">
-    <div class="card" style="width:min(480px,94vw)">
+<div class="vp-modal" id="schedModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(480px, 94vw)">
       <h3 class="mb-2">New Schedule</h3>
       <div class="form-group"><label>Name</label><input id="sName" placeholder="e.g. Nightly backup"/></div>
       <div class="form-group">
@@ -64,16 +63,15 @@
         <div class="form-hint">Older scheduled backups are pruned automatically.</div>
       </div>
       <div class="flex right">
-        <button class="btn" onclick="document.getElementById('schedModal').style.display='none'">Cancel</button>
+        <button class="btn" data-vp-dismiss>Cancel</button>
         <button class="btn btn-primary" onclick="saveSched()">Save</button>
       </div>
     </div>
-  </div>
 </div>
 <%- include('../../partials/music') %>
 <%- include('../../partials/foot') %>
 <script>
-function openAdd() { document.getElementById('schedModal').style.display = 'block'; toggleRetention(); }
+function openAdd() { VP.modal.open(document.getElementById('schedModal')); toggleRetention(); }
 function toggleRetention() {
   const isBackup = document.getElementById('sAction').value === 'backup';
   document.getElementById('retentionGroup').style.display = isBackup ? '' : 'none';

@@ -407,11 +407,11 @@
 
         <hr class="hr" style="margin:16px 0"/>
 
-        <button class="btn btn-primary btn-block" style="padding:14px;font-size:15px;font-weight:700;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:8px" id="btnCreate" onclick="createVm()">
+        <button class="btn btn-primary btn-block" style="padding:14px;font-size:15px;font-weight:700;letter-spacing:0.3px;display:flex;align-items:center;justify-content:center;gap:8px" id="btnCreate" onclick="createVm()" aria-busy="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           Deploy Virtual Machine
         </button>
-        <div id="createProgress" class="muted text-sm text-center mt-2" style="display:none">
+        <div id="createProgress" class="muted text-sm text-center mt-2" style="display:none" role="status" aria-live="polite">
           Deploying VM and preparing storage...
         </div>
       </div>
@@ -686,8 +686,11 @@ async function createVm() {
 
   const btn = document.getElementById('btnCreate');
   const prog = document.getElementById('createProgress');
+  // Re-entrancy guard: btn.disabled covers clicks, this covers a second
+  // programmatic call (form submit, console) against a VM already deploying.
+  if (btn.getAttribute('aria-busy') === 'true') return;
+  btn.setAttribute('aria-busy', 'true');
   btn.disabled = true;
-  btn.innerHTML = '<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10"/></svg> Creating Server...';
   prog.style.display = 'block';
 
   const fd = new FormData();
@@ -745,8 +748,8 @@ async function createVm() {
     setTimeout(() => { location.href = '/admin/servers/' + d.vm.id; }, 900);
   } catch (e) {
     VP.toast(e.message, 'error');
+    btn.removeAttribute('aria-busy');
     btn.disabled = false;
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg> Deploy Virtual Machine';
     prog.style.display = 'none';
   }
 }

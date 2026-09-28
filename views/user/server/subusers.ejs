@@ -38,9 +38,8 @@
   </div>
 </div>
 
-<div id="subModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:200;display:grid;place-items:center;padding:20px">
-    <div class="card" style="width:min(440px,94vw)">
+<div class="vp-modal" id="subModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(440px, 94vw)">
       <h3 class="mb-2">Add Subuser</h3>
       <div class="form-group"><label>User</label>
         <select id="subUser">
@@ -55,16 +54,15 @@
         <div class="check mt-1"><input type="checkbox" id="permBackups"/> Backups</div>
       </div>
       <div class="flex right">
-        <button class="btn" onclick="document.getElementById('subModal').style.display='none'">Cancel</button>
+        <button class="btn" data-vp-dismiss>Cancel</button>
         <button class="btn btn-primary" onclick="saveSub()">Add</button>
       </div>
     </div>
-  </div>
 </div>
 <%- include('../../partials/music') %>
 <%- include('../../partials/foot') %>
 <script>
-function openAdd() { document.getElementById('subModal').style.display = 'block'; }
+function openAdd() { VP.modal.open(document.getElementById('subModal')); }
 async function saveSub() {
   const perms = document.getElementById('permAll').checked
     ? ['*']

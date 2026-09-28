@@ -1,0 +1,194 @@
+/* ==========================================================================
+   vp-modal.css — shared modal component layer
+   --------------------------------------------------------------------------
+   Replaces the ~20 lines of duplicated inline overlay CSS that every modal in
+   the panel carried. Built entirely on the existing --* tokens from panel.css
+   so it stays visually consistent with the rest of the UI.
+
+   Behaviour lives in public/js/vp-modal.js (Escape, backdrop, scroll lock,
+   focus management, z-index ladder). This file is presentation only.
+
+   Markup contract:
+     <div class="vp-modal" id="...">            <- overlay, controller-managed
+       <div class="vp-modal__panel" data-vp-panel>
+         <div class="vp-modal__head">
+           <h3 class="vp-modal__title">...</h3>
+           <button class="vp-modal__x" data-vp-dismiss aria-label="Close">×</button>
+         </div>
+         <div class="vp-modal__body">...</div>
+         <div class="vp-modal__foot">...</div>
+       </div>
+     </div>
+   ========================================================================== */
+
+.vp-modal {
+  --vp-modal-dur: var(--dur);
+  position: fixed;
+  inset: 0;
+  display: none;                 /* controller sets display:flex on open */
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4, 6, 14, 0.66);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overscroll-behavior: contain;
+}
+
+/* Entry: fade the backdrop, lift the panel slightly. Fast and subtle. */
+.vp-modal.is-open {
+  animation: vp-modal-fade var(--vp-modal-dur) var(--ease);
+}
+
+@keyframes vp-modal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.vp-modal__panel {
+  position: relative;
+  width: 100%;
+  max-width: min(520px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+    background: var(--glass-strong);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-3);
+    color: var(--text);
+    animation: vp-modal-lift var(--vp-modal-dur) var(--ease);
+  }
+
+
+@keyframes vp-modal-lift {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Size modifiers — applied to the overlay, not the panel. */
+.vp-modal--sm .vp-modal__panel { max-width: min(400px, 94vw); }
+.vp-modal--md .vp-modal__panel { max-width: min(560px, 94vw); }
+.vp-modal--lg .vp-modal__panel { max-width: min(720px, 94vw); }
+.vp-modal--xl .vp-modal__panel { max-width: min(960px, 94vw); }
+
+/* ---- head ------------------------------------------------------------- */
+.vp-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 0;
+}
+
+.vp-modal__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.vp-modal__x {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.vp-modal__x:hover {
+  color: var(--text);
+  background: var(--glass);
+  border-color: var(--border);
+}
+
+.vp-modal__x:active { transform: translateY(1px); }
+
+/* ---- body / foot ------------------------------------------------------ */
+.vp-modal__body {
+  padding: 14px 20px 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.vp-modal__body > :first-child { margin-top: 0; }
+.vp-modal__body > :last-child { margin-bottom: 0; }
+
+.vp-modal__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px 18px;
+}
+
+.vp-modal__foot--split { justify-content: space-between; }
+
+/* Form controls inside modals should span the panel by default. */
+.vp-modal__body .form-group > input,
+.vp-modal__body .form-group > select,
+.vp-modal__body .form-group > textarea { width: 100%; }
+
+/* ---- mobile: bottom sheet --------------------------------------------- */
+@media (max-width: 560px) {
+  .vp-modal {
+  --vp-modal-dur: var(--dur);
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .vp-modal__panel {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    animation-name: vp-modal-sheet;
+  }
+
+  @keyframes vp-modal-sheet {
+    from { transform: translateY(16px); opacity: 0; }
+    to   { transform: none; opacity: 1; }
+  }
+
+  .vp-modal__foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .vp-modal__foot .btn { width: 100%; justify-content: center; }
+}
+
+/* ---- accessibility ---------------------------------------------------- */
+.vp-modal__panel :focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.vp-modal__x:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Respect reduced-motion across every animation in this component. */
+@media (prefers-reduced-motion: reduce) {
+  .vp-modal,
+  .vp-modal__panel { animation: none !important; }
+
+  .vp-modal__x { transition: none; }
+}

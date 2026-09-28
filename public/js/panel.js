@@ -1,4 +1,6 @@
-window.VP = (() => {
+// Merge rather than replace: vp-modal.js may have already attached
+// window.VP.modal. Reassigning here would silently drop it.
+window.VP = Object.assign(window.VP || {}, (() => {
   const state = { socket: null };
 
   function toast(msg, type = 'info') {
@@ -66,27 +68,66 @@ window.VP = (() => {
     return new Date(s).toLocaleString();
   }
 
-  function confirmDialog(message, { danger = true, title = 'Are you sure?', html = false, okText = 'Confirm', width = null } = {}) {
+  /**
+   * Confirmation dialog. Resolves true when confirmed, false when cancelled or
+   * dismissed (Cancel button, Escape, or backdrop click).
+   *
+   * Contract note: resolves exactly once and never rejects. Callers use
+   * `if (await VP.confirmDialog(...))`, so a rejection here would silently
+   * abort destructive actions across a 44-call-site surface.
+   */
+  function confirmDialog(message, { danger = true, title = 'Are you sure?', html = false, okText = 'Confirm', cancelText = 'Cancel', width = null } = {}) {
     return new Promise((resolve) => {
-      const overlay = el('div', { class: 'modal-overlay', style: 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);display:grid;place-items:center;' });
-      const box = el('div', { class: 'modal', style: 'width:' + (width || 'min(420px,92vw)') + ';background:var(--glass-strong);border:1px solid var(--border);border-radius:16px;padding:22px;backdrop-filter:blur(16px);' });
-      box.appendChild(el('h3', { style: 'margin-bottom:10px' }, title));
+      let settled = false;
+      const done = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      const overlay = el('div', { class: 'vp-modal' });
+
+      const panel = el('div', { class: 'vp-modal__panel', 'data-vp-panel': '' });
+      if (width) panel.style.maxWidth = width;
+
+      panel.appendChild(el('div', { class: 'vp-modal__head' },
+        el('h3', { class: 'vp-modal__title' }, title),
+        el('button', {
+          class: 'vp-modal__x',
+          type: 'button',
+          'data-vp-dismiss': '',
+          'aria-label': 'Close dialog',
+          html: '&times;'
+        })
+      ));
+
+      const body = el('div', { class: 'vp-modal__body' });
       if (html) {
         const wrap = document.createElement('div');
         wrap.innerHTML = message;
-        box.appendChild(wrap);
+        body.appendChild(wrap);
       } else {
-        box.appendChild(el('p', { class: 'muted', style: 'margin-bottom:20px' }, message));
+        body.appendChild(el('p', { style: 'margin:0' }, message));
       }
-      const row = el('div', { class: 'flex right', style: 'margin-top:16px' });
-      const cancel = el('button', { class: 'btn' }, 'Cancel');
-      const ok = el('button', { class: `btn ${danger ? 'btn-danger' : 'btn-primary'}` }, okText);
-      cancel.onclick = () => { overlay.remove(); resolve(false); };
-      ok.onclick = () => { overlay.remove(); resolve(true); };
-      row.append(cancel, ok);
-      box.appendChild(row);
-      overlay.appendChild(box);
+      panel.appendChild(body);
+
+      const cancel = el('button', { class: 'btn', type: 'button', 'data-vp-dismiss': '' }, cancelText);
+      const ok = el('button', { class: `btn ${danger ? 'btn-danger' : 'btn-primary'}`, type: 'button', 'data-vp-dismiss': 'confirm', 'data-vp-autofocus': '' }, okText);
+
+      panel.appendChild(el('div', { class: 'vp-modal__foot' }, cancel, ok));
+
+      // The controller dispatches vp:close with a reason, so a single handler
+      // covers the buttons, Escape and backdrop dismissal.
+      overlay.addEventListener('vp:close', (e) => {
+        // The overlay is created per call, so it must be torn out of the DOM.
+        // Without this, every confirmation leaks a detached-looking node.
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        done(e && e.detail && e.detail.reason === 'confirm');
+      });
+
+      overlay.appendChild(panel);
       document.body.appendChild(overlay);
+      VP.modal.open(overlay);
     });
   }
 
@@ -144,7 +185,7 @@ window.VP = (() => {
   });
 
   return { toast, api, qs, qsa, el, fmtBytes, fmtDate, confirmDialog, hide, show, state };
-})();
+})());
 
 (function () {
   const html = document.documentElement;

@@ -157,9 +157,8 @@
 
 <!-- Assign Existing VM Modal -->
 <% if (typeof otherVms !== 'undefined' && otherVms.length > 0) { %>
-<div id="assignModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
-    <div class="card" style="width:min(480px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+<div class="vp-modal" id="assignModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(480px,94vw)">
       <div class="flex-between mb-3">
         <h3 style="font-size:18px;font-weight:700;margin:0">Assign Existing VM to <%= target.username %></h3>
         <button type="button" class="btn btn-sm" onclick="closeAssignModal()">✕</button>
@@ -183,7 +182,6 @@
         </button>
       </div>
     </div>
-  </div>
 </div>
 <% } %>
 
@@ -193,15 +191,9 @@
 <script>
 function val(id) { return document.getElementById(id).value; }
 
-function openAssignModal() {
-  const m = document.getElementById('assignModal');
-  if (m) m.style.display = 'block';
-}
+function openAssignModal() { VP.modal.open(document.getElementById('assignModal')); }
 
-function closeAssignModal() {
-  const m = document.getElementById('assignModal');
-  if (m) m.style.display = 'none';
-}
+function closeAssignModal() { VP.modal.close(document.getElementById('assignModal')); }
 
 async function submitAssignVm() {
   const vmSelect = document.getElementById('assignVmSelect');

@@ -30,8 +30,8 @@
   </div>
 
   <!-- Rule editor modal -->
-  <div id="ruleModal" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);place-items:center">
-    <div class="modal" style="width:min(560px,92vw);background:var(--glass-strong);border:1px solid var(--border);border-radius:16px;padding:22px">
+  <div id="ruleModal" class="vp-modal vp-modal--md" aria-hidden="true" style="display:none">
+    <div class="vp-modal__panel" data-vp-panel style="padding:22px">
       <h3 style="margin-bottom:12px">Firewall Rule — <span id="ruleNetName"></span></h3>
       <div class="grid grid-3" style="gap:10px">
         <div class="form-group" style="margin:0"><label>Direction</label><select id="rl_dir" class="input"><option value="in">in (ingress)</option><option value="out">out (egress)</option></select></div>
@@ -125,12 +125,14 @@ async function deleteRule(id) {
 function addRule(netId, name) {
   EDIT_NET = netId;
   document.getElementById('ruleNetName').textContent = name;
-  document.getElementById('ruleModal').style.display = 'grid';
+  VP.modal.open(document.getElementById('ruleModal'));
   ['rl_dir','rl_proto','rl_action'].forEach((id) => { document.getElementById(id).selectedIndex = 0; });
   ['rl_port','rl_source','rl_desc'].forEach((id) => { document.getElementById(id).value = ''; });
   document.getElementById('rl_prio').value = 100;
 }
-function closeRuleModal() { document.getElementById('ruleModal').style.display = 'none'; EDIT_NET = null; }
+function closeRuleModal() { VP.modal.close(document.getElementById('ruleModal')); EDIT_NET = null; }
+// Escape / backdrop also dismiss the modal, so clear the edit target there too.
+document.getElementById('ruleModal').addEventListener('vp:close', () => { EDIT_NET = null; });
 async function saveRule() {
   if (EDIT_NET == null) return;
   const body = {

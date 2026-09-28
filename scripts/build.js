@@ -17,6 +17,21 @@ const check = process.argv.includes('--check');
 const errors = [];
 const warnings = [];
 
+// 0. frontend static validation (scripts, templates, stylesheets, assets).
+// Only errors are propagated: `--check` exits non-zero on ANY warning, so
+// folding advisory warnings in here would fail builds for cosmetic notes.
+try {
+  const fe = require('./frontend-check');
+  for (const e of fe.errors) errors.push(e);
+  // Advisory notes are printed but never folded into `warnings`: `--check`
+  // exits non-zero on ANY warning, so folding these in would fail the build
+  // for cosmetic notes such as the mutually-exclusive ambient.ejs branches.
+  for (const w of fe.warnings) console.log(`[note] ${w}`);
+  if (!fe.errors.length) console.log('[ok] frontend static check passed');
+} catch (e) {
+  warnings.push(`frontend check could not run: ${e.message}`);
+}
+
 function ensureDir(d) {
   fs.mkdirSync(d, { recursive: true });
 }

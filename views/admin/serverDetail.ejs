@@ -244,9 +244,8 @@
 
 <!-- Transfer Ownership Modal -->
 <% if (typeof allUsers !== 'undefined' && allUsers.length > 1) { %>
-<div id="transferModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
-    <div class="card" style="width:min(460px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+<div class="vp-modal" id="transferModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(460px,94vw)">
       <div class="flex-between mb-3">
         <h3 style="font-size:18px;font-weight:700;margin:0">Transfer Server Ownership</h3>
         <button type="button" class="btn btn-sm" onclick="closeTransferModal()">✕</button>
@@ -269,14 +268,12 @@
         <button type="button" class="btn btn-primary" onclick="submitTransfer()">Confirm Transfer</button>
       </div>
     </div>
-  </div>
 </div>
 <% } %>
 
 <!-- Edit Server Modal -->
-<div id="editModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:210;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
-    <div class="card" style="width:min(660px,94vw);max-height:88vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+<div class="vp-modal" id="editModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(660px,94vw)">
       <div class="flex-between mb-3">
         <h3 style="font-size:18px;font-weight:700;margin:0">Edit <%= vm.name %></h3>
         <button type="button" class="btn btn-sm" onclick="closeEdit()">✕</button>
@@ -347,16 +344,14 @@
         <button type="button" class="btn btn-primary" onclick="saveEdit(this)">Save Changes</button>
       </div>
     </div>
-  </div>
 </div>
 
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
 
 <!-- Renew Expiry Modal -->
-<div id="renewModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:220;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
-    <div class="card" style="width:min(460px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+<div class="vp-modal" id="renewModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(460px,94vw)">
       <div class="flex-between mb-3">
         <h3 style="font-size:18px;font-weight:700;margin:0">Renew <%= vm.name %></h3>
         <button type="button" class="btn btn-sm" onclick="closeRenew()">✕</button>
@@ -391,24 +386,14 @@
         <button type="button" class="btn btn-primary" onclick="submitRenew(this)">Apply Renewal</button>
       </div>
     </div>
-  </div>
 </div>
 
 <script>
-function openEdit() {
-  const m = document.getElementById('editModal');
-  if (m) m.style.display = 'block';
-}
+function openEdit() { VP.modal.open(document.getElementById('editModal')); }
 
-function openRenew() {
-  const m = document.getElementById('renewModal');
-  if (m) m.style.display = 'block';
-}
+function openRenew() { VP.modal.open(document.getElementById('renewModal')); }
 
-function closeRenew() {
-  const m = document.getElementById('renewModal');
-  if (m) m.style.display = 'none';
-}
+function closeRenew() { VP.modal.close(document.getElementById('renewModal')); }
 
 async function submitRenew(btn) {
   const days = parseInt(document.getElementById('renewDays').value || '0', 10) || 0;
@@ -426,10 +411,7 @@ async function submitRenew(btn) {
   }
 }
 
-function closeEdit() {
-  const m = document.getElementById('editModal');
-  if (m) m.style.display = 'none';
-}
+function closeEdit() { VP.modal.close(document.getElementById('editModal')); }
 
 async function saveEdit(btn) {
   const val = (id) => (document.getElementById(id) || {}).value || '';
@@ -563,15 +545,9 @@ function netGwFrom(ip, prefix) {
   return base.slice(0, 3).join('.') + '.' + (base[3] === 255 ? 254 : base[3] + 1);
 }
 
-function openTransferModal() {
-  const m = document.getElementById('transferModal');
-  if (m) m.style.display = 'block';
-}
+function openTransferModal() { VP.modal.open(document.getElementById('transferModal')); }
 
-function closeTransferModal() {
-  const m = document.getElementById('transferModal');
-  if (m) m.style.display = 'none';
-}
+function closeTransferModal() { VP.modal.close(document.getElementById('transferModal')); }
 
 async function submitTransfer() {
   const sel = document.getElementById('transferOwnerSelect');

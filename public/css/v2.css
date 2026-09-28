@@ -5,16 +5,9 @@
    ============================================================================ */
 
 /* ---------- tokens (runtime-immune: ambient overrides only touch bg/blur) ---------- */
-:root {
-  --v2-surface:  rgba(255, 255, 255, 0.035);
-  --v2-surface-2: rgba(255, 255, 255, 0.06);
-  --v2-border:   color-mix(in srgb, var(--border, rgba(255,255,255,0.08)) 90%, transparent);
-  --v2-text-faint: color-mix(in srgb, var(--text-muted, #94a3b8) 75%, transparent);
-  --v2-shadow-1: 0 1px 2px rgba(0,0,0,0.25), 0 1px 1px rgba(0,0,0,0.2);
-  --v2-shadow-2: 0 2px 6px rgba(0,0,0,0.28), 0 12px 28px -12px rgba(0,0,0,0.45);
-  --v2-shadow-3: 0 4px 12px rgba(0,0,0,0.32), 0 24px 56px -16px rgba(0,0,0,0.6);
-  --v2-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
-}
+/* All design tokens now live in panel.css :root under the single --* namespace.
+   This layer previously re-declared them as --v2-*, which meant two naming
+   conventions for the same concepts. It now only consumes them. */
 
 /* ---------- typography baseline ---------- */
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -61,13 +54,13 @@ b, strong { font-weight: 650; }
 .topbar-search:focus-within svg { color: var(--accent-2); }
 .topbar-search input {
   width: 190px; height: 36px; padding: 0 12px 0 36px; border-radius: 999px;
-  background: var(--v2-surface); border: 1px solid var(--v2-border); color: var(--text); font-size: 13px;
-  transition: width 0.25s var(--v2-ease), border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  background: var(--surface); border: 1px solid var(--border-soft); color: var(--text); font-size: 13px;
+  transition: width 0.25s var(--ease), border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 .topbar-search input::placeholder { color: var(--text-dim); }
 .topbar-search input:focus {
   width: 260px; border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: var(--v2-surface-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--surface-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 
@@ -76,29 +69,29 @@ b, strong { font-weight: 650; }
 .user-menu-btn {
   display: flex; align-items: center; gap: 10px; cursor: pointer;
   padding: 4px 10px 4px 4px; border-radius: 999px;
-  background: var(--v2-surface); border: 1px solid var(--v2-border);
+  background: var(--surface); border: 1px solid var(--border-soft);
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   font-family: inherit; color: var(--text);
 }
 .user-menu-btn:hover, .user-menu.open .user-menu-btn {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--v2-surface-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  background: var(--surface-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .user-menu-btn .ug-text { text-align: left; line-height: 1.2; }
 .user-menu-btn .ug-name { font-weight: 650; font-size: 13px; letter-spacing: -0.01em; }
 .user-menu-btn .ug-role { font-size: 10.5px; color: var(--text-dim); text-transform: capitalize; }
-.user-menu-btn .ug-caret { color: var(--text-dim); transition: transform 0.22s var(--v2-ease); }
+.user-menu-btn .ug-caret { color: var(--text-dim); transition: transform 0.22s var(--ease); }
 .user-menu.open .user-menu-btn .ug-caret { transform: rotate(180deg); }
 .user-menu .avatar { width: 32px; height: 32px; font-size: 13px; flex: 0 0 32px; }
 
 .user-menu-dd {
   position: absolute; top: calc(100% + 8px); right: 0; min-width: 210px; z-index: 120;
   padding: 6px; border-radius: 14px;
-  background: rgba(11, 16, 28, 0.92); border: 1px solid var(--v2-border);
-  box-shadow: var(--v2-shadow-3);
+  background: rgba(11, 16, 28, 0.92); border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-3);
   backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   opacity: 0; transform: translateY(-6px) scale(0.97); transform-origin: top right;
-  pointer-events: none; transition: opacity 0.18s ease, transform 0.18s var(--v2-ease);
+  pointer-events: none; transition: opacity 0.18s ease, transform 0.18s var(--ease);
 }
 .user-menu.open .user-menu-dd { opacity: 1; transform: none; pointer-events: auto; }
 .user-menu-dd a, .user-menu-dd button {
@@ -112,9 +105,9 @@ b, strong { font-weight: 650; }
 .user-menu-dd a svg, .user-menu-dd button svg { width: 15px; height: 15px; }
 .user-menu-dd .um-head {
   padding: 6px 10px 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px;
-  text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--v2-border); margin-bottom: 4px;
+  text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border-soft); margin-bottom: 4px;
 }
-.user-menu-dd .um-sep { height: 1px; background: var(--v2-border); margin: 5px 4px; }
+.user-menu-dd .um-sep { height: 1px; background: var(--border-soft); margin: 5px 4px; }
 .user-menu-dd .um-danger:hover, .user-menu-dd a:hover.um-danger { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
 
 /* ============================================================================
@@ -180,30 +173,30 @@ b, strong { font-weight: 650; }
    CARDS + STATS
    ============================================================================ */
 .card {
-  border: 1px solid var(--v2-border);
+  border: 1px solid var(--border-soft);
   border-radius: 16px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, transparent), color-mix(in srgb, var(--bg-card) 88%, transparent));
-  box-shadow: var(--v2-shadow-1);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s var(--v2-ease);
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s var(--ease);
 }
 .card:hover {
   border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
-  box-shadow: var(--v2-shadow-2);
+  box-shadow: var(--shadow-2);
   transform: translateY(-2px);
 }
 .card-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
 
 .stat {
-  border: 1px solid var(--v2-border); border-radius: 16px;
+  border: 1px solid var(--border-soft); border-radius: 16px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, transparent), color-mix(in srgb, var(--bg-card) 86%, transparent));
-  box-shadow: var(--v2-shadow-1);
+  box-shadow: var(--shadow-1);
 }
-.stat:hover { box-shadow: var(--v2-shadow-2); }
+.stat:hover { box-shadow: var(--shadow-2); }
 .stat-icon {
   border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 8px rgba(0,0,0,0.25);
 }
 .stat-value { font-size: 25px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.stat-label { font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--v2-text-faint); }
+.stat-label { font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-faint); }
 .count { font-variant-numeric: tabular-nums; }
 
 /* quick action card (admin dashboard) */
@@ -211,7 +204,7 @@ b, strong { font-weight: 650; }
 .vx-quick a {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   padding: 14px 10px; border-radius: 12px; text-decoration: none;
-  background: var(--v2-surface); border: 1px solid var(--v2-border); color: var(--text-muted);
+  background: var(--surface); border: 1px solid var(--border-soft); color: var(--text-muted);
   font-size: 12px; font-weight: 600; transition: all 0.18s ease;
 }
 .vx-quick a svg { width: 18px; height: 18px; color: var(--text-dim); transition: color 0.18s ease, transform 0.18s ease; }
@@ -223,12 +216,12 @@ b, strong { font-weight: 650; }
    ============================================================================ */
 .btn {
   padding: 9px 16px; border-radius: 10px;
-  background: var(--v2-surface-2); border: 1px solid var(--v2-border);
+  background: var(--surface-2); border: 1px solid var(--border-soft);
   font-size: 13.5px; font-weight: 600; color: var(--text);
-  box-shadow: var(--v2-shadow-1); box-sizing: border-box;
+  box-shadow: var(--shadow-1); box-sizing: border-box;
   transition: transform 0.14s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
-.btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--v2-surface-2); }
+.btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--surface-2); }
 .btn:active { transform: translateY(0) scale(0.98); }
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 82%, var(--accent-2)));
@@ -252,10 +245,10 @@ b, strong { font-weight: 650; }
 .btn-lg { padding: 12px 24px; font-size: 15px; border-radius: 12px; }
 .icon-btn {
   width: 38px; height: 38px; border-radius: 10px; color: var(--text-muted);
-  border: 1px solid var(--v2-border); background: var(--v2-surface);
+  border: 1px solid var(--border-soft); background: var(--surface);
   transition: all 0.16s ease;
 }
-.icon-btn:hover { color: #fff; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--v2-surface-2); transform: translateY(-1px); }
+.icon-btn:hover { color: #fff; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--surface-2); transform: translateY(-1px); }
 
 /* ============================================================================
    FORMS
@@ -265,7 +258,7 @@ label { font-size: 12px; font-weight: 650; color: var(--text-muted); letter-spac
 input[type="text"], input[type="number"], input[type="email"], input[type="password"],
 input[type="url"], input[type="search"], input[type="date"], select, textarea {
   height: 38px; border-radius: 10px; padding: 0 12px; font-size: 13.5px;
-  background: var(--bg-input, rgba(10,15,29,0.65)); border: 1px solid var(--v2-border);
+  background: var(--bg-input, rgba(10,15,29,0.65)); border: 1px solid var(--border-soft);
   color: var(--text); box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
@@ -290,13 +283,13 @@ select option { background: #0b1020; color: var(--text); }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .switch-slider, .switch-slider {
   position: absolute; inset: 0; border-radius: 999px;
-  background: var(--v2-surface-2); border: 1px solid var(--v2-border);
+  background: var(--surface-2); border: 1px solid var(--border-soft);
   transition: background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
 .switch .switch-slider::before, .switch-slider::before {
   content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%;
   background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-  transition: transform 0.22s var(--v2-ease);
+  transition: transform 0.22s var(--ease);
 }
 .switch input:checked + .switch-slider, .switch-slider.switch-on, input:checked ~ .switch-slider {
   background: var(--green); border-color: transparent; box-shadow: 0 0 0 3px var(--green-glow);
@@ -306,12 +299,12 @@ select option { background: #0b1020; color: var(--text); }
 /* ============================================================================
    TABLES
    ============================================================================ */
-.table-wrap { border-radius: 14px; border: 1px solid var(--v2-border); overflow-x: auto; }
+.table-wrap { border-radius: 14px; border: 1px solid var(--border-soft); overflow-x: auto; }
 .table-wrap table { border-collapse: collapse; width: 100%; }
 .table-wrap th {
   font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--v2-text-faint); text-align: left; padding: 12px 14px;
-  border-bottom: 1px solid var(--v2-border);
+  color: var(--text-faint); text-align: left; padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--bg-card) 70%, transparent);
   white-space: nowrap;
 }
@@ -334,7 +327,7 @@ select option { background: #0b1020; color: var(--text); }
 .pill-red { background: color-mix(in srgb, var(--red) 15%, transparent); color: color-mix(in srgb, var(--red) 60%, #fff); border-color: color-mix(in srgb, var(--red) 35%, transparent); }
 .pill-yellow { background: color-mix(in srgb, var(--yellow) 15%, transparent); color: color-mix(in srgb, var(--yellow) 60%, #fff); border-color: color-mix(in srgb, var(--yellow) 35%, transparent); }
 .pill-blue { background: color-mix(in srgb, var(--accent) 18%, transparent); color: color-mix(in srgb, var(--accent) 70%, #fff); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-.pill-gray { background: var(--v2-surface-2); color: var(--text-muted); border-color: var(--v2-border); }
+.pill-gray { background: var(--surface-2); color: var(--text-muted); border-color: var(--border-soft); }
 .pill-sm { height: 19px; padding: 0 8px; font-size: 10px; }
 
 /* live status dot (used on overview + admin pages) */
@@ -351,21 +344,21 @@ select option { background: #0b1020; color: var(--text); }
 .alert {
   border-radius: 12px; padding: 12px 14px; font-size: 13px;
   border-left: 3px solid var(--accent);
-  background: var(--v2-surface); border-top: 1px solid var(--v2-border);
-  border-right: 1px solid var(--v2-border); border-bottom: 1px solid var(--v2-border);
+  background: var(--surface); border-top: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft);
 }
-.alert-error { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--v2-surface)); }
-.alert-success { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 8%, var(--v2-surface)); }
-.alert-warning { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 8%, var(--v2-surface)); }
-.alert-info { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--v2-surface)); }
+.alert-error { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--surface)); }
+.alert-success { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 8%, var(--surface)); }
+.alert-warning { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 8%, var(--surface)); }
+.alert-info { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 
 #toasts { z-index: 400; }
 .toast {
   border-radius: 12px; padding: 11px 14px; font-size: 13px; font-weight: 500;
-  background: rgba(11, 16, 28, 0.94); border: 1px solid var(--v2-border);
+  background: rgba(11, 16, 28, 0.94); border: 1px solid var(--border-soft);
   border-left: 3px solid var(--accent); color: var(--text);
-  box-shadow: var(--v2-shadow-3); backdrop-filter: blur(16px);
-  animation: vpDrop 0.28s var(--v2-ease) both;
+  box-shadow: var(--shadow-3); backdrop-filter: blur(16px);
+  animation: vpDrop 0.28s var(--ease) both;
 }
 .toast.success { border-left-color: var(--green); }
 .toast.error { border-left-color: var(--red); }
@@ -376,9 +369,9 @@ select option { background: #0b1020; color: var(--text); }
    MODALS
    ============================================================================ */
 .modal-card {
-  border-radius: 18px; border: 1px solid var(--v2-border);
-  background: rgba(11, 16, 28, 0.9); box-shadow: var(--v2-shadow-3);
-  animation: vpPop 0.24s var(--v2-ease) both;
+  border-radius: 18px; border: 1px solid var(--border-soft);
+  background: rgba(11, 16, 28, 0.9); box-shadow: var(--shadow-3);
+  animation: vpPop 0.24s var(--ease) both;
 }
 @keyframes vpPop { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: none; } }
 .modal { border-radius: 16px; }
@@ -386,7 +379,7 @@ select option { background: #0b1020; color: var(--text); }
 /* ============================================================================
    TABS
    ============================================================================ */
-.tabs { gap: 4px; border-bottom: 1px solid var(--v2-border); }
+.tabs { gap: 4px; border-bottom: 1px solid var(--border-soft); }
 .tab {
   position: relative; padding: 9px 14px; font-size: 13px; font-weight: 600;
   color: var(--text-muted); cursor: pointer; background: none; border: 0;
@@ -399,10 +392,10 @@ select option { background: #0b1020; color: var(--text); }
   border-radius: 2px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2, #38bdf8));
   box-shadow: 0 1px 6px var(--accent-glow);
-  animation: vpTabIn 0.22s var(--v2-ease) both;
+  animation: vpTabIn 0.22s var(--ease) both;
 }
 @keyframes vpTabIn { from { opacity: 0; transform: scaleX(0.4); } to { opacity: 1; transform: none; } }
-.tab-pane { padding-top: 8px; animation: vpFade 0.28s var(--v2-ease) both; }
+.tab-pane { padding-top: 8px; animation: vpFade 0.28s var(--ease) both; }
 @keyframes vpFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================================
@@ -412,14 +405,14 @@ select option { background: #0b1020; color: var(--text); }
 .empty { padding: 34px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .empty .empty-ico {
   width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
-  background: var(--v2-surface-2); color: var(--text-dim); border: 1px solid var(--v2-border);
+  background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border-soft);
 }
 .empty .empty-ico svg { width: 24px; height: 24px; }
 
 /* skeleton loader */
 .skeleton {
   display: inline-block; border-radius: 8px; height: 13px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--border) 130%, transparent) 25%, var(--v2-surface-2) 40%, color-mix(in srgb, var(--border) 130%, transparent) 55%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--border) 130%, transparent) 25%, var(--surface-2) 40%, color-mix(in srgb, var(--border) 130%, transparent) 55%);
   background-size: 300% 100%;
   animation: vpShimmer 1.4s ease infinite;
 }
@@ -427,11 +420,11 @@ select option { background: #0b1020; color: var(--text); }
 @keyframes vpShimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
 /* meter bars */
-.meter { height: 6px; border-radius: 999px; background: var(--v2-surface-2); overflow: hidden; }
-.meter-fill { border-radius: 999px; transition: width 0.5s var(--v2-ease); }
+.meter { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter-fill { border-radius: 999px; transition: width 0.5s var(--ease); }
 
 /* spinner */
-.spin { border-color: var(--v2-border); border-top-color: var(--accent); }
+.spin { border-color: var(--border-soft); border-top-color: var(--accent); }
 
 /* mono numbers */
 .mono { font-variant-numeric: tabular-nums; }
@@ -471,4 +464,136 @@ select option { background: #0b1020; color: var(--text); }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  /* A busy button hides its label, so its indicator is the only feedback
+     there is. The blanket guard above would otherwise leave an empty box, and
+     panel.css additionally hides .btn::after for reduced motion. Keep the ring
+     and drop the rotation rather than removing the indicator. */
+  .btn[aria-busy="true"]::before,
+  .btn.is-loading::before,
+  .spinner,
+  .skeleton {
+    animation: none !important;
+    opacity: 1 !important;
+  }
 }
+
+/* ============================================================================
+   Shared state primitives
+   ---------------------------------------------------------------------------
+   Strictly additive. Every selector here is new: this block deliberately does
+   NOT redefine .card, .stat, .grid-* or .flex*, which panel.css and the layers
+   above already own. Its job is the states the panel was missing entirely
+   (busy, disabled, skeleton, empty) plus responsive visibility helpers.
+   ========================================================================= */
+
+:root { --vp-spinner-dur: 0.9s; }
+
+/* ---- busy buttons -------------------------------------------------------- */
+/* Works with the existing .btn vocabulary and needs no template changes:
+   set aria-busy="true" while an action is in flight. The label is hidden and a
+   spinner is drawn in its place.
+
+   The indicator goes on ::before on purpose. panel.css already uses .btn::after
+   for the hover shine sweep, so reusing ::after would inherit that gradient and
+   skew transform, and .btn:hover::after would slide the spinner off-centre. */
+.btn { --vp-busy-ring: var(--text); }
+.btn-primary, .btn-green, .btn-danger { --vp-busy-ring: #fff; }
+
+.btn[aria-busy="true"],
+.btn.is-loading {
+  pointer-events: none;
+  position: relative;
+  color: transparent !important;
+}
+.btn[aria-busy="true"]::before,
+.btn.is-loading::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  margin: -7.5px 0 0 -7.5px;
+  border-radius: 50%;
+  /* Not currentColor: the label above sets color: transparent, which would
+     make a currentColor ring invisible. */
+  border: 2px solid var(--vp-busy-ring);
+  border-right-color: transparent;
+  animation: vp-spin var(--vp-spinner-dur) linear infinite;
+}
+
+
+@keyframes vp-spin { to { transform: rotate(360deg); } }
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: vp-spin var(--vp-spinner-dur) linear infinite;
+  vertical-align: -2px;
+}
+
+/* ---- disabled ----------------------------------------------------------- */
+/* The panel had a single :disabled rule, against 400+ inputs and selects. */
+.btn:disabled,
+.btn[disabled],
+.btn.is-disabled,
+.icon-btn:disabled,
+.icon-btn[disabled],
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: saturate(0.5);
+}
+.btn:disabled:hover,
+.btn[disabled]:hover { transform: none; }
+
+/* ---- loading placeholder ------------------------------------------------ */
+.skeleton {
+  display: block;
+  background: linear-gradient(110deg,
+    var(--surface) 8%,
+    var(--surface-2) 18%,
+    var(--surface) 33%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: vp-shimmer 1.8s linear infinite;
+}
+
+/* ---- empty state -------------------------------------------------------- */
+/* .empty predates this block and is used by ~14 templates, for both empty
+   results and in-flight loads. It is aliased here rather than rewritten, so
+   every empty state in the panel reads identically. */
+.empty-state,
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: clamp(24px, 5vw, 52px) 20px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.empty-state__icon { color: var(--text-dim); margin-bottom: 2px; }
+.empty-state__title { margin: 0; color: var(--text); font-size: 16px; font-weight: 650; }
+.empty-state__text  { margin: 0; max-width: 42ch; line-height: 1.6; }
+
+/* An empty container that is showing a load indicator should not advertise
+   itself as an empty result, so the dashed affordance is dropped. */
+.empty:has(.spin) { border-style: solid; background: transparent; }
+
+
+/* ---- responsive visibility helpers -------------------------------------- */
+@media (max-width: 880px) { .hide-sm { display: none !important; } }
+@media (max-width: 640px) { .hide-xs { display: none !important; } }
+
+.text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

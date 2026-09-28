@@ -361,9 +361,8 @@
 
 <% if (typeof allUsers !== 'undefined' && allUsers.length > 1 && (user.role === 'admin' || user.root_admin)) { %>
 <!-- Transfer Ownership Modal -->
-<div id="transferModal" style="display:none">
-  <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:grid;place-items:center;padding:20px;backdrop-filter:blur(8px)">
-    <div class="card" style="width:min(460px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.6)">
+<div class="vp-modal" id="transferModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(460px,94vw)">
       <div class="flex-between mb-3">
         <h3 style="font-size:18px;font-weight:700;margin:0">Transfer Server Ownership</h3>
         <button type="button" class="btn btn-sm" onclick="closeTransferModal()">✕</button>
@@ -386,7 +385,6 @@
         <button type="button" class="btn btn-primary" onclick="submitTransfer()">Confirm Transfer</button>
       </div>
     </div>
-  </div>
 </div>
 <% } %>
 
@@ -394,15 +392,9 @@
 <%- include('../../partials/foot') %>
 
 <script>
-function openTransferModal() {
-  const m = document.getElementById('transferModal');
-  if (m) m.style.display = 'block';
-}
+function openTransferModal() { VP.modal.open(document.getElementById('transferModal')); }
 
-function closeTransferModal() {
-  const m = document.getElementById('transferModal');
-  if (m) m.style.display = 'none';
-}
+function closeTransferModal() { VP.modal.close(document.getElementById('transferModal')); }
 
 async function submitTransfer() {
   const sel = document.getElementById('transferOwnerSelect');

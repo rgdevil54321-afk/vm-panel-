@@ -45,8 +45,10 @@ const shareTitle = settings['panel.og_title'] || (panelName + ' - VPS Panel');
 <link rel="stylesheet" href="/css/panel.css?v=<%= panelBootId %>"/>
 <link rel="stylesheet" href="/css/polish.css?v=<%= panelBootId %>"/>
 <link rel="stylesheet" href="/css/v2.css?v=<%= panelBootId %>"/>
+<link rel="stylesheet" href="/css/modal.css?v=<%= panelBootId %>"/>
 <script src="/js/audio.js?v=<%= panelBootId %>" defer></script>
 <script src="/js/secretblur.js?v=<%= panelBootId %>" defer></script>
+<script src="/js/vp-modal.js?v=<%= panelBootId %>"></script>
 <% if (typeof styles !== 'undefined') { for (const s of styles) { %><link rel="stylesheet" href="<%= s %>"/><% } } %>
 <% if (typeof scripts !== 'undefined') { for (const s of scripts) { %><script src="<%= s %>"></script><% } } %>
 <style>:root { --accent: <%= accent %>; }</style>
