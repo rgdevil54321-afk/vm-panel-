@@ -588,7 +588,7 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: 22px;
   color: var(--text);
-  padding: 7px 14px 7px 34px;
+  padding: 7px 14px 7px 38px;
   width: 220px;
   outline: none;
   font-size: 13px;
@@ -601,7 +601,7 @@ a:hover {
 }
 .topbar-search svg {
   position: absolute;
-  left: 11px;
+  left: 9px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-dim);
