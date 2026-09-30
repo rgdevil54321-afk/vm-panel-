@@ -88,8 +88,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/nobita329/vpanel-pro.git
-cd vpanel-pro
+git clone https://github.com/rgdevil54321-afk/vm-panel-.git
+cd vm-panel-
 
 # Run the automated installer
 sudo bash install.sh --admin-pass 'your_secure_password'
@@ -99,8 +99,8 @@ sudo bash install.sh --admin-pass 'your_secure_password'
 
 ```bash
 # 1. Clone repository and install dependencies
-git clone https://github.com/nobita329/vpanel-pro.git
-cd vpanel-pro
+git clone https://github.com/rgdevil54321-afk/vm-panel-.git
+cd vm-panel-
 npm install
 
 # 2. Build assets
