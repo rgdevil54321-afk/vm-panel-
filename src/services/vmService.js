@@ -755,6 +755,9 @@ function resolveVpsType(data, user) {
   const allowed = ['kvm', 'nat', 'storage', 'highcpu', 'gaming', 'backup'];
   const given = String(data && data.vps_type || '').trim().toLowerCase();
   if (allowed.includes(given)) return given;
+  // planOfUser used to be missing from billingService's exports, so this threw a
+  // TypeError that the blanket catch swallowed and every plan silently fell back
+  // to vm.default_vps_type. Log it now that the call is real.
   try {
     if (user && user.id) {
       const plan = require('./billingService').planOfUser(user.id);
@@ -762,7 +765,9 @@ function resolveVpsType(data, user) {
         return String(plan.vps_type).toLowerCase();
       }
     }
-  } catch (_) {}
+  } catch (e) {
+    require('../lib/logger').warn('[vm] plan vps_type lookup failed: ' + e.message);
+  }
   return String(settings.get('vm.default_vps_type') || 'kvm').toLowerCase();
 }
 
@@ -873,7 +878,16 @@ function serializeVm(row) {
       } catch (_) {}
     }
   }
+  // Keep the agent token reachable for internal callers (agentSeedPayload
+  // interpolates it when baking the guest systemd unit) but hide it from
+  // JSON.stringify so it never reaches an API response or a view. Deleting it
+  // outright made the seed write the literal string 'undefined' to
+  // /etc/vpanel-agent.token, breaking the guest agent for web-panel users.
+  const token = row.agent_token;
   delete out.agent_token;
+  if (token) {
+    Object.defineProperty(out, 'agent_token', { value: token, enumerable: false, configurable: true, writable: true });
+  }
   return out;
 }
 
@@ -1889,9 +1903,12 @@ async function stop(vm, { user = null, force = false } = {}) {
   try {
     process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
     if (!force) {
+      // Was execSync('sleep 0.2') in a loop: a synchronous child process froze
+      // the whole event loop for up to 5s, stalling every socket.io session,
+      // HTTP request and the node heartbeat. stop() is already async.
       const end = Date.now() + 5000;
       while (Date.now() < end && isRunning(vm)) {
-        execSync('sleep 0.2', { stdio: 'ignore' });
+        await new Promise((r) => setTimeout(r, 200));
       }
     }
     if (isRunning(vm)) process.kill(pid, 'SIGKILL');
@@ -1960,7 +1977,13 @@ async function reinstall(vm, data, user) {
   if (!node) throw new Error('Node not found for this VM');
   const r = await nodeRegistry.reinstallVmOnNode(node, vm, data || {});
   await nodeRegistry.syncOsToNode(node).catch(() => {});
-  setDbStatus(vm.id, data ? 'running' : 'running');
+  // Was a dead ternary with 'running' in both arms. Ask the node what it
+  // actually is rather than assuming the VM came back up.
+  setDbStatus(vm.id, 'running');
+  try {
+    const live = await nodeRegistry.vmStatusOnNode(node, vm);
+    if (live && live.status) setDbStatus(vm.id, live.status);
+  } catch (_) {}
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:reinstall', details: { os: (data && data.os) || vm.os_type } });
   return r;
 }
@@ -2054,7 +2077,11 @@ async function getTmateSsh(vm, regen) {
 }
 
 function update(vm, data, user) {
-  const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes', 'owner_id',
+  // 'owner_id' is deliberately NOT here. update() is reachable by subusers via
+  // canAccess(user, vm) with no permission argument, so allowing it here let any
+  // subuser steal a VM with PATCH {"owner_id": N}. Ownership changes go through
+  // transferOwner(), which is admin-gated and logs the event.
+  const fields = ['name', 'hostname', 'username', 'password', 'memory', 'cpus', 'disk_size', 'gui_mode', 'port_forwards', 'start_on_boot', 'startup_command', 'notes',
     'ip_mode', 'ip_address', 'ip_gateway', 'ip_prefix', 'ipv6_address', 'ipv6_gateway', 'ipv6_prefix',
     'os_type', 'region', 'tag', 'vmid', 'timezone', 'locale',
     'vps_type', 'expires_at', 'backup_slots',
@@ -2066,7 +2093,6 @@ function update(vm, data, user) {
       set.push(`${f} = @${f}`);
       if (f === 'port_forwards' && Array.isArray(data[f])) vals[f] = JSON.stringify(data[f]);
       else if (f === 'gui_mode' || f === 'start_on_boot') vals[f] = data[f] ? 1 : 0;
-      else if (f === 'owner_id') vals[f] = parseInt(data[f], 10);
       else if (f === 'ip_mode') { const m = String(data[f] || '').trim(); vals[f] = IP_MODES.includes(m) ? m : 'none'; }
       else if (f === 'expires_at') vals[f] = data[f] ? data[f] : null;
       else if (f === 'vps_type') vals[f] = String(data[f] || 'kvm');
