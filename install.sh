@@ -656,6 +656,15 @@ do_uninstall() {
     log_info "Preserving database and VM disks."
   fi
 
+  # Remove the VN banner shims. Without this the host keeps hijacking
+  # neofetch/fastfetch/screenfetch through a venlix-fetch binary that is gone,
+  # so every login shell breaks on those three commands.
+  log_info "Removing VN neofetch banner..."
+  rm -f /etc/profile.d/venlix-fetch.sh 2>/dev/null || true
+  rm -f /usr/local/bin/venlix-fetch 2>/dev/null || true
+  rm -rf /etc/venlix 2>/dev/null || true
+  rm -rf "${HOME}/.config/venlix" 2>/dev/null || true
+
   log_ok "Venlix Nodes has been uninstalled successfully."
   echo ""
 }
