@@ -113,9 +113,15 @@ function render(opts = {}) {
     }
   }
 
+  // Origins are floored: callers centre text with /2 arithmetic, which yields
+  // half-pixel origins for odd glyph widths. A fractional origin made
+  // (y * W + x) * 3 fractional, so every write landed on a non-index property of
+  // the Uint8Array and was silently dropped.
   const rect = (x0, y0, w, h, r, g, b, alpha) => {
-    for (let y = Math.max(0, y0); y < Math.min(H, y0 + h); y++) {
-      for (let x = Math.max(0, x0); x < Math.min(W, x0 + w); x++) {
+    const fx = Math.floor(x0);
+    const fy = Math.floor(y0);
+    for (let y = Math.max(0, fy); y < Math.min(H, fy + h); y++) {
+      for (let x = Math.max(0, fx); x < Math.min(W, fx + w); x++) {
         const i = (y * W + x) * 3;
         if (alpha >= 1) {
           rgb[i] = r; rgb[i + 1] = g; rgb[i + 2] = b;
