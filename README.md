@@ -175,7 +175,21 @@ AUTO_AGENT_PORT_MAX=26200
 | `GET` | `/api/vms/:id/files/download` | Download file from guest |
 | `POST` | `/api/vms/:id/files/upload` | Upload binary/text file to guest |
 | `GET` | `/api/wallpapers?category=all` | Browse 4K wallpaper library with search & pagination |
-| `POST` | `/api/wallpapers/apply` | 1-click apply wallpaper and glassmorphism styles |
+| `POST` | `/api/wallpapers/apply` | 1-click apply wallpaper and glassmorphism styles *(admin only)* |
+
+### API key scopes
+
+`vp_live_` API keys carry a `scopes` list, and it is enforced:
+
+| Scope | Grants |
+|---|---|
+| `*` or `all` | Everything, including `/admin/*` routes |
+| `r_*` | Read-only — `GET` and `HEAD` only |
+| `w_*` | Required (any one of them) to call `POST`, `PUT`, `PATCH` or `DELETE` |
+
+A key without a `w_` scope cannot reach `/admin/*` at all, regardless of the
+owning account's role — use the panel key for admin automation. The new-key
+form defaults to `r_servers`, which is read-only.
 
 ---
 
