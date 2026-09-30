@@ -82,7 +82,21 @@ function dcbState() {
   const mac = crypto.createHmac('sha256', config.jwtSecret).update(nonce).digest('hex');
   return nonce + '.' + mac;
 }
+// The MAC appended to the nonce was computed, sent, and then never verified -
+// dcbStateOk/gaStateOk only double-submit-compared the whole string. Verifying
+// it here is what proves the state was minted by this server, so a cookie
+// planted by a sibling subdomain cannot be paired with an attacker's state.
+function stateMacOk(state) {
+  const s = String(state || '');
+  const dot = s.lastIndexOf('.');
+  if (dot <= 0) return false;
+  const nonce = s.slice(0, dot);
+  const want = Buffer.from(crypto.createHmac('sha256', config.jwtSecret).update(nonce).digest('hex'));
+  const got = Buffer.from(s.slice(dot + 1));
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
 function dcbStateOk(state, cookieVal) {
+  if (!stateMacOk(state)) return false;
   const a = Buffer.from(String(state || ''));
   const b = Buffer.from(String(cookieVal || ''));
   return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -129,6 +143,7 @@ function gaClientState() {
   return nonce + '.' + mac;
 }
 function gaStateOk(state, cookieVal) {
+  if (!stateMacOk(state)) return false;
   const a = Buffer.from(String(state || ''));
   const b = Buffer.from(String(cookieVal || ''));
   return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);

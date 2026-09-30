@@ -62,6 +62,48 @@ function getUserFromReq(req) {
   return null;
 }
 
+// An API key's `scopes` column was stored and displayed but never read, so a key
+// created with a narrow scope was indistinguishable from an admin token. There
+// was no vocabulary to key off, so this derives one from the column's own
+// existing default ("r_servers"):
+//
+//   * , all      full access, including /admin routes
+//   r_*          read-only (any safe method)
+//   w_*          required for POST / PUT / PATCH / DELETE
+//   <anything else is inert; it neither grants nor denies
+//
+// Session tokens and the vp_panel_ key are unaffected - this only narrows what
+// a vp_live_ key can do, and never widens it.
+function apiKeyScopes(key) {
+  return String((key && key.scopes) || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function enforceApiKeyScopes(req, res) {
+  if (!req.apiKey) return true;
+  const scopes = apiKeyScopes(req.apiKey);
+  if (scopes.includes('*') || scopes.includes('all')) return true;
+  const method = String(req.method || 'GET').toUpperCase();
+  // The api router is mounted at both '/' and '/api', and originalUrl carries
+  // whichever prefix matched, so normalise before testing.
+  const full = String(req.originalUrl || req.url || '').split('?')[0];
+  const path = full.replace(/^\/api(?=\/)/, '');
+  const isAdminPath = path.startsWith('/admin');
+  if (isAdminPath) {
+    res.status(403).json({ error: 'This API key is not allowed on admin endpoints. Use the panel key or a key scoped "*".' });
+    return false;
+  }
+  if (method !== 'GET' && method !== 'HEAD' && !scopes.some((s) => s.startsWith('w_'))) {
+    res.status(403).json({
+      error: `API key scope "${req.apiKey.scopes}" is read-only. Add a w_ scope (or "*") to call ${method}.`,
+    });
+    return false;
+  }
+  return true;
+}
+
 function requireAuth(req, res, next) {
   const user = getUserFromReq(req);
   if (!user) {
@@ -71,6 +113,7 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
   }
   req.user = user;
+  if (!enforceApiKeyScopes(req, res)) return;
   next();
 }
 
@@ -94,6 +137,7 @@ function requireAdmin(req, res, next) {
     return res.status(403).render('error/403', { code: 403, title: 'Forbidden', message: 'You do not have permission to access this page.', settings: settings.all(), user });
   }
   req.user = user;
+  if (!enforceApiKeyScopes(req, res)) return;
   next();
 }
 
@@ -101,6 +145,7 @@ function apiAuth(req, res, next) {
   const user = getUserFromReq(req);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   req.user = user;
+  if (!enforceApiKeyScopes(req, res)) return;
   next();
 }
 
@@ -109,6 +154,7 @@ function apiAdmin(req, res, next) {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   if (user.role !== 'admin' && !user.root_admin) return res.status(403).json({ error: 'Forbidden' });
   req.user = user;
+  if (!enforceApiKeyScopes(req, res)) return;
   next();
 }
 

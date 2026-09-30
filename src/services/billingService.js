@@ -278,8 +278,13 @@ function cancelUserPlan(userPlanId) {
 function setUserPlanStatus(userPlanId, status, detail = '') {
   const up = getUserPlanRow(userPlanId);
   if (!up) return false;
-  db.prepare('UPDATE user_plans SET status = ?, last_check_at = ?, last_check_detail = ? WHERE id = ?')
-    .run(status, new Date().toISOString(), String(detail).slice(0, 200), userPlanId);
+  // last_check_ok was only ever written as 1 (renewUserPlan, planGuard's
+  // success branch), so a failed check left the previous value in place and
+  // planGuardService's `up.last_check_ok !== 1` test could never mean "the last
+  // check failed". Drive it from the status so the column is meaningful.
+  const okFlag = String(status) === 'active' ? 1 : 0;
+  db.prepare('UPDATE user_plans SET status = ?, last_check_at = ?, last_check_detail = ?, last_check_ok = ? WHERE id = ?')
+    .run(status, new Date().toISOString(), String(detail).slice(0, 200), okFlag, userPlanId);
   // Was missing: returned undefined on success while returning false when the
   // row was absent, so the "false or truthy" contract was a trap for callers.
   return true;
