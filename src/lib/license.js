@@ -159,7 +159,11 @@ function activate(key) {
   const st = loadState();
   st.grantedAt = new Date().toISOString();
   st.expiresAt = Date.now() + WEEK_MS;
-  if (st.lastAction === 'locked') st.lastAction = 'unlocked';
+  // Deliberately NOT flipping lastAction to 'unlocked' here. tick() owns that
+  // transition because it is also what drains shutdownForLicense and restarts
+  // the VMs the lock powered off. Clearing it here made both tick() branches
+  // false on the next pass, so the VMs stayed down until every user started
+  // their own by hand.
   saveState(st);
   return { ok: true, message: 'License activated. The panel is unlocked for another 7 days.' };
 }
@@ -209,49 +213,61 @@ function log(msg) {
   try { require('./logger').info(msg); } catch (_) { console.error(msg); }
 }
 
-function tick() {
-  const st = ensureGrace(Date.now());
-  const locked = Date.now() > st.expiresAt;
-  if (locked && st.lastAction !== 'locked') {
-    let vmService;
-    try { vmService = require('../services/vmService'); } catch (_) {}
-    if (vmService) {
-      for (const vm of (vmService.dbVms ? vmService.dbVms() : [])) {
-        try {
-          if (vmService.isRunning(vm)) {
-            vmService.stop(vm);
-            if (st.shutdownForLicense.indexOf(vm.id) === -1) st.shutdownForLicense.push(vm.id);
-          }
-        } catch (_) {}
+// async so the stop/start calls are actually awaited: they used to fire and
+// forget from a 60s timer, so a failed stop was still recorded as "was running"
+// and any rejection escaped as an unhandled rejection.
+let _ticking = false;
+async function tick() {
+  if (_ticking) return;
+  _ticking = true;
+  try {
+    const st = ensureGrace(Date.now());
+    const locked = Date.now() > st.expiresAt;
+    if (locked && st.lastAction !== 'locked') {
+      let vmService;
+      try { vmService = require('../services/vmService'); } catch (_) {}
+      if (vmService) {
+        for (const vm of (vmService.dbVms ? vmService.dbVms() : [])) {
+          try {
+            if (vmService.isRunning(vm)) {
+              await vmService.stop(vm);
+              if (st.shutdownForLicense.indexOf(vm.id) === -1) st.shutdownForLicense.push(vm.id);
+            }
+          } catch (_) {}
+        }
       }
-    }
-    st.lastAction = 'locked';
-    saveState(st);
-    log('[license] EXPIRED - panel locked, all VMs powered off.');
-  } else if (!locked && st.lastAction === 'locked') {
-    let vmService;
-    try { vmService = require('../services/vmService'); } catch (_) {}
-    const ids = st.shutdownForLicense || [];
-    st.shutdownForLicense = [];
-    st.lastAction = 'unlocked';
-    saveState(st);
-    if (vmService) {
-      for (const id of ids) {
-        try {
-          const vm = vmService.getVm(id);
-          if (vm && !vmService.isRunning(vm)) vmService.start(vm);
-        } catch (_) {}
+      st.lastAction = 'locked';
+      saveState(st);
+      log('[license] EXPIRED - panel locked, all VMs powered off.');
+    } else if (!locked && st.lastAction === 'locked') {
+      let vmService;
+      try { vmService = require('../services/vmService'); } catch (_) {}
+      const ids = st.shutdownForLicense || [];
+      st.shutdownForLicense = [];
+      st.lastAction = 'unlocked';
+      saveState(st);
+      if (vmService) {
+        for (const id of ids) {
+          try {
+            const vm = vmService.getVm(id);
+            if (vm && !vmService.isRunning(vm)) await vmService.start(vm);
+          } catch (_) {}
+        }
       }
+      log('[license] valid key entered - unlocked, previously running VMs restarted.');
     }
-    log('[license] valid key entered - unlocked, previously running VMs restarted.');
+  } catch (e) {
+    log('[license] tick error: ' + e.message);
+  } finally {
+    _ticking = false;
   }
 }
 
 let _tickTimer = null;
 function startTick(intervalMs = 60 * 1000) {
   if (_tickTimer) return;
-  tick();
-  _tickTimer = setInterval(tick, intervalMs);
+  tick().catch(() => {});
+  _tickTimer = setInterval(() => { tick().catch(() => {}); }, intervalMs);
   if (_tickTimer.unref) _tickTimer.unref();
 }
 
