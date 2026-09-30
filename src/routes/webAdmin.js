@@ -10,7 +10,6 @@ const activity = require('../services/activityService');
 const { requireAdmin } = require('../middleware/auth');
 const { uploadLogo, uploadFavicon, uploadBackground, uploadMusic } = require('../middleware/upload');
 const multer = require('multer');
-const fs2 = require('fs');
 const createUpload = multer({ dest: config.root + '/data/tmp' });
 const router = express.Router();
 
@@ -101,12 +100,12 @@ router.post('/admin/servers/create', createUpload.fields([{ name: 'image', maxCo
     }
     if (files.image && files.image[0]) data.upload_image = files.image[0];
     if (files.image && files.image[0]) {
-      try { fs2.mkdirSync(config.root + '/data/tmp', { recursive: true }); } catch (_) {}
+      try { fs.mkdirSync(config.root + '/data/tmp', { recursive: true }); } catch (_) {}
     }
     const vm = await vmService.create({ user: owner, data });
     // keep the image file if it was a download; clean temp upload if used
     if (data.upload_image) {
-      try { fs2.unlinkSync(data.upload_image.path); } catch (_) {}
+      try { fs.unlinkSync(data.upload_image.path); } catch (_) {}
     }
     return res.json({ ok: true, vm, redirect: `/admin/servers/${vm.id}` });
   } catch (e) {

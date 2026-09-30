@@ -298,8 +298,6 @@ router.post('/servers/:id/power', loadVm('power'), express.json(), async (req, r
   const action = req.body.action;
   try {
     if (action === 'start') {
-      const vmDir = vmService.VM_DIR;
-      void vmDir;
       await vmService.start(req.vm, { user: req.user });
       return res.json({ ok: true, status: 'running' });
     }

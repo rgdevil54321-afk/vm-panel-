@@ -268,7 +268,11 @@ async function impersonateUser() {
   const reason = window.prompt('Reason for impersonating ' + '<%= target.username %>' + ' (logged to audit):', '');
   try {
     const d = await VP.api('/admin/users/<%= target.id %>/impersonate', { method: 'POST', body: { reason: reason || '' } });
-    document.cookie = 'token=' + d.token + ';path=/;max-age=600;SameSite=Lax';
+    // The cookie used to hardcode max-age=600 while the server mints a 30
+    // minute token, so the session silently died 20 minutes early and
+    // "stop impersonating" became unreachable. Drive it off the server TTL.
+    const ttl = d.expires_at ? Math.max(60, Math.floor((new Date(d.expires_at).getTime() - Date.now()) / 1000)) : 1800;
+    document.cookie = 'token=' + d.token + ';path=/;max-age=' + ttl + ';SameSite=Lax';
     VP.toast('Impersonating ' + '<%= target.username %>', 'success');
     setTimeout(() => location.href = '/dashboard', 400);
   } catch (e) { VP.toast(e.message, 'error'); }

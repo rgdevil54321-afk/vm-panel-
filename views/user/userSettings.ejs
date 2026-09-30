@@ -172,6 +172,7 @@
       <div class="form-group" style="margin:0">
         <label>Scopes (comma-separated)</label>
         <input id="ak_scopes" class="input" placeholder="r_servers" value="r_servers" />
+        <div class="muted mt-1">Enforced. <code>r_</code> scopes are read-only; any <code>w_</code> scope unlocks POST/PUT/PATCH/DELETE. <code>*</code> grants everything including <code>/admin</code>. Keys with only <code>r_</code> scopes cannot reach <code>/admin</code> at all.</div>
       </div>
       <div class="flex" style="align-items:flex-end">
         <button class="btn btn-primary" onclick="createApiKey()">Create Key</button>
