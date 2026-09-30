@@ -465,5 +465,7 @@ module.exports = {
   resizeVmOnNode, vmStatsOnNode, vmStatusOnNode, vmBootLogOnNode, listVmsOnNode,
   reinstallVmOnNode, tmateVmOnNode,
   syncOsToNode, pushUpdateToNode, pushUpdateToAll, onboardNodeByKey,
+  addDiskOnNode, growDiskOnNode,
+  listSnapshotsOnNode, createSnapshotOnNode, revertSnapshotOnNode, deleteSnapshotOnNode,
   getClusterSummary, cachedStats, nodeError, nodeForVm,
 };
