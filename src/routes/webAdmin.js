@@ -120,8 +120,11 @@ router.post('/admin/servers/:id/action', async (req, res) => {
   const { action } = req.body;
   try {
     if (action === 'start') await vmService.start(vm, { user: req.user }), res.json({ ok: true, status: 'running' });
-    else if (action === 'stop') res.json({ ok: true, status: (await vmService.stop(vm, { user: req.user })).status });
-    else if (action === 'kill') res.json({ ok: true, status: (await vmService.stop(vm, { user: req.user, force: true })).status });
+    // vmService.stop returns {ok,status} on the remote path but a bare {ok} for
+    // a local VM, so reading .status off it produced {"ok":true} with no status
+    // key for local machines while start/restart hardcoded one. Match the rest.
+    else if (action === 'stop') { await vmService.stop(vm, { user: req.user }); res.json({ ok: true, status: 'stopped' }); }
+    else if (action === 'kill') { await vmService.stop(vm, { user: req.user, force: true }); res.json({ ok: true, status: 'stopped' }); }
     else if (action === 'restart') await vmService.restart(vm, req.user), res.json({ ok: true, status: 'running' });
     else if (action === 'delete') res.json(await vmService.remove(vm, req.user));
     else if (action === 'regenpass') {
@@ -194,8 +197,13 @@ router.post('/admin/servers/:id/update', (req, res) => {
     memory: b.memory,
     cpus: b.cpus,
     disk_size: b.disk_size,
-    gui_mode: b.gui_mode ? 1 : 0,
-    start_on_boot: b.start_on_boot ? 1 : 0,
+    // Every other key here is passed through undefined and skipped by
+    // vmService.update's `if (data[f] !== undefined)` check. These two were
+    // force-coerced, so a partial update - which is exactly what the neofetch
+    // spoof form posts - wrote 0 and permanently turned off GUI mode and
+    // start-on-boot.
+    gui_mode: b.gui_mode === undefined ? undefined : (b.gui_mode ? 1 : 0),
+    start_on_boot: b.start_on_boot === undefined ? undefined : (b.start_on_boot ? 1 : 0),
     startup_command: b.startup_command,
     notes: b.notes,
     timezone: b.timezone,
@@ -393,7 +401,14 @@ router.post('/admin/users/:id/update', express.json(), (req, res) => {
   try {
     const target = authService.findById(req.params.id);
     if (!target) return res.status(404).json({ error: 'User not found' });
-    if ((req.body.suspended === false || req.body.role === 'user' || req.body.root_admin === false) && target.root_admin && authService.countAdmins() <= 1) {
+    // The old guard compared against the JSON literal `false`, but
+    // authService.updateUser coerces with truthiness - so {"root_admin": 0},
+    // {"suspended": 0} or {"root_admin": null} all wrote 0 past the check and
+    // could leave the panel with zero admins. Test the effective values.
+    const demoting = (req.body.suspended !== undefined && !req.body.suspended)
+      || req.body.role === 'user'
+      || (req.body.root_admin !== undefined && !req.body.root_admin);
+    if (demoting && target.root_admin && authService.countAdmins() <= 1) {
       return res.status(400).json({ error: 'Cannot demote the last admin' });
     }
     const updated = authService.updateUser(target.id, req.body);

@@ -140,6 +140,13 @@ function attemptLogin(username, password, ip) {
     logLogin({ user_id: user.id, ip, username, status: 'suspended' });
     return { ok: false, error: 'This account is suspended' };
   }
+  // security.require_verify was honoured at registration (new accounts are
+  // created unverified when it is on) but never checked here, so an unverified
+  // account logged straight in through every one of the login routes.
+  if (settings.get('security.require_verify') === '1' && !user.verified) {
+    logLogin({ user_id: user.id, ip, username, status: 'unverified' });
+    return { ok: false, error: 'Please verify your email address before signing in' };
+  }
   return { ok: true, user, tfaRequired: !!user.tfa_enabled };
 }
 

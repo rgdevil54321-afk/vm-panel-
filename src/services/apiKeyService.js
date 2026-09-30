@@ -36,7 +36,14 @@ function findUserByKey(key) {
   if (!row) return null;
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
   if (!user || user.suspended) return null;
-  db.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
+  // This runs inside getUserFromReq, i.e. on every authenticated request, and
+  // better-sqlite3 is fully synchronous - so each request used to block the
+  // event loop on a disk write, including for read-only endpoints. The
+  // timestamp is cosmetic, so throttle it.
+  const last = row.last_used_at ? Date.parse(row.last_used_at) : 0;
+  if (!Number.isFinite(last) || Date.now() - last > 60000) {
+    db.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
+  }
   return { user, key: row };
 }
 

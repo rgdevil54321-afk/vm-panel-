@@ -9,6 +9,17 @@ const { db, settings } = require('../lib/db');
 const activity = require('../services/activityService');
 const router = express.Router();
 
+// Express 4 does not attach a rejection handler to a promise returned by a
+// route, and Node >=15 terminates the process on an unhandled rejection. The
+// OAuth callbacks below await the provider SDK with no try/catch, so a network
+// failure took the whole panel down. Wrap them.
+const ah = (fn) => (req, res, next) => {
+  try {
+    const out = fn(req, res, next);
+    if (out && typeof out.catch === 'function') out.catch(next);
+  } catch (e) { next(e); }
+};
+
   function render(res, view, vars = {}) {
   const req = res.req;
   const proto = (req.secure || String(req.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https') ? 'https' : 'http';
@@ -85,7 +96,7 @@ router.get('/auth/discord', (req, res) => {
   res.redirect(discordService.authorizeUrl(dcbRedirectUri(req), st));
 });
 
-router.get('/auth/discord/callback', async (req, res) => {
+router.get('/auth/discord/callback', ah(async (req, res) => {
   const clearState = () => res.clearCookie('dcstate', { path: '/auth/discord' });
   const { code, state, error } = req.query;
   if (error) { clearState(); return res.redirect('/login?err=discord_denied'); }
@@ -109,7 +120,7 @@ router.get('/auth/discord/callback', async (req, res) => {
   // Discord from Settings - that keeps one canonical user row per person.
   if (settings.get('security.allow_register') === '0') return res.redirect('/login?err=discord_register_disabled');
   return res.redirect('/register?err=discord_no_account');
-});
+}));
 
 // ---- Google OAuth2 login / auto-register (mirrors the Discord flow) ----
 function gaClientState() {
@@ -131,7 +142,7 @@ router.get('/auth/google', (req, res) => {
   res.redirect(googleService.authorizeUrl(oauthRedirectUri(req, '/auth/google/callback'), st));
 });
 
-router.get('/auth/google/callback', async (req, res) => {
+router.get('/auth/google/callback', ah(async (req, res) => {
   const clearState = () => res.clearCookie('gcstate', { path: '/auth/google' });
   const { code, state, error } = req.query;
   if (error) { clearState(); return res.redirect('/login?err=google_denied'); }
@@ -155,7 +166,7 @@ router.get('/auth/google/callback', async (req, res) => {
   // Google from Settings - that keeps one canonical user row per person.
   if (settings.get('security.allow_register') === '0') return res.redirect('/login?err=google_register_disabled');
   return res.redirect('/register?err=google_no_account');
-});
+}));
 
 // ---- Dedicated Admin Portal entry ----
 router.get('/admin/login', (req, res) => {
