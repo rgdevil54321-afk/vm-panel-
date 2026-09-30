@@ -1,4 +1,4 @@
-const { db } = require('../lib/db');
+const { db, settings } = require('../lib/db');
 
 // ---------- Plans ----------
 function listPlans(activeOnly = false) {
@@ -229,7 +229,7 @@ function assignPlanToUser(user, plan, { assignedBy = null, days = null, inviteCo
   if (!plan || !user) throw new Error('User and plan are required');
   applyPlanToUser(plan, user);
   const kind = plan.kind || 'paid';
-  const dur = days && days > 0 ? days : (plan.duration_days > 0 ? plan.duration_days : parseInt(require('./db').settings.get('plans.default_renew_days') || '30', 10));
+  const dur = days && days > 0 ? days : (plan.duration_days > 0 ? plan.duration_days : parseInt(settings.get('plans.default_renew_days') || '30', 10));
   // Only a time-boxed subscription gets an expiry. invite / booster / paid_once
   // / free stay open until manually suspended.
   const expires = EXPIRING_KINDS.includes(kind)
@@ -250,7 +250,7 @@ function renewUserPlan(userPlanId, days = null, operatorId = null) {
   const up = getUserPlanRow(userPlanId);
   if (!up) return null;
   const plan = getPlan(up.plan_id);
-  const addDays = days && days > 0 ? days : (plan && plan.duration_days > 0 ? plan.duration_days : parseInt(require('./db').settings.get('plans.default_renew_days') || '30', 10));
+  const addDays = days && days > 0 ? days : (plan && plan.duration_days > 0 ? plan.duration_days : parseInt(settings.get('plans.default_renew_days') || '30', 10));
   let base = up.expires_at ? new Date(up.expires_at) : new Date();
   if (base.getTime() < Date.now()) base = new Date();
   base.setDate(base.getDate() + addDays);
@@ -291,7 +291,7 @@ function notifyUser(userId, title, body) {
 }
 
 module.exports = {
-  listPlans, getPlan, createPlan, updatePlan, deletePlan, applyPlanToUser,
+  listPlans, getPlan, createPlan, updatePlan, deletePlan, applyPlanToUser, planOfUser,
   listInvoices, createInvoice, markInvoicePaid, deleteInvoice,
   listCoupons, getCoupon, createCoupon, deleteCoupon, redeemCoupon,
   listUserPlans, getActiveUserPlan, getUserPlanRow, assignPlanToUser, renewUserPlan,

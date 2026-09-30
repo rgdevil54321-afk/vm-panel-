@@ -190,7 +190,7 @@ function authorizeUrl(redirectUri, state) {
   const cid = encodeURIComponent(oauthClientId());
   const redir = encodeURIComponent(redirectUri);
   const st = encodeURIComponent(state);
-    return `https://discord.com/api/oauth2/authorize?client_id=${cid}&response_type=code&redirect_uri=${redir}&scope=identify%20guilds.join&state=${st}&prompt=consent`;
+  return `https://discord.com/api/oauth2/authorize?client_id=${cid}&response_type=code&redirect_uri=${redir}&scope=identify%20guilds.join&state=${st}&prompt=consent`;
 }
 
 function oauthPost(path, params) {

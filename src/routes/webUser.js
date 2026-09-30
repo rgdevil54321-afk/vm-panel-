@@ -347,11 +347,11 @@ router.post('/servers/:id/backups', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.post('/servers/:id/backups/:bid/restore', loadVm, (req, res) => {
+router.post('/servers/:id/backups/:bid/restore', loadVm, async (req, res) => {
   try {
     const backup = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
     if (!backup) return res.status(404).json({ error: 'Backup not found' });
-    backupService.restoreBackup(backup, { user: req.user });
+    await backupService.restoreBackup(backup, { user: req.user });
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -478,7 +478,6 @@ router.get('/settings', (req, res) => {
   const ok = msgs[req.query.ok] ? msgs[req.query.ok] : (req.query.ok || '');
   render(res, 'userSettings', { tfaSetup: null, error: err, success: ok });
 });
-router.get('/user-settings', (req, res) => res.redirect('/settings'));
 
 function oauthRedirectUri(req) {
   const path = '/settings/discord/callback';

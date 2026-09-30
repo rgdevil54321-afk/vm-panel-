@@ -347,10 +347,10 @@ router.post('/vms/:id/backups', loadVm, json, (req, res) => {
     res.json({ ok: true, backup: backupService.createBackup(req.vm, { user: req.user, name: req.body.name }) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/backups/:bid/restore', loadVm, (req, res) => {
+router.post('/vms/:id/backups/:bid/restore', loadVm, async (req, res) => {
   const b = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
   if (!b) return res.status(404).json({ error: 'Backup not found' });
-  try { backupService.restoreBackup(b, { user: req.user }); res.json({ ok: true }); }
+  try { await backupService.restoreBackup(b, { user: req.user }); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.delete('/vms/:id/backups/:bid', loadVm, (req, res) => {
@@ -870,13 +870,19 @@ router.post('/admin/bot/test', apiAdmin, json, async (req, res) => {
   if (!d.botConfigured()) return res.status(400).json({ ok: false, error: 'Bot token not configured' });
   const me = await d.getBotUser();
   if (!me.ok) return res.status(502).json({ ok: false, error: me.error || 'Discord API unreachable' });
+  // Blank target means "the logged-in admin", matching the placeholder on the
+  // bot page. Fall back to a plain verification response when that account has
+  // no Discord linked, so the button never silently does nothing.
   let dm = null;
-  const userId = String(req.body && req.body.user_id || '').trim();
-  if (userId) {
-    const msg = String(req.body && req.body.message || (require('../lib/branding').name() + ' panel bot test')).trim();
-    dm = await d.sendDm(userId, msg);
+  let dmTarget = String((req.body && req.body.user_id) || '').trim();
+  if (!dmTarget) dmTarget = String(req.user.discord_id || '').trim();
+  const msg = String(req.body && req.body.message || (require('../lib/branding').name() + ' panel bot test')).trim();
+  if (dmTarget) {
+    dm = await d.sendDm(dmTarget, msg);
+  } else {
+    dm = { ok: false, error: 'No Discord target: enter a Discord user ID, or link your own Discord account in Settings.' };
   }
-  res.json({ ok: true, me: me.data, dm: dm ? { ok: dm.ok, error: dm.error } : null });
+  res.json({ ok: true, me: me.data, dm: dm ? { ok: dm.ok, error: dm.error, target: dmTarget || null } : null });
 });
 
 router.post('/admin/bot/run-guard', apiAdmin, async (req, res) => {
@@ -938,6 +944,19 @@ router.post('/admin/billing/user-plans/:id/status', apiAdmin, json, async (req, 
   bs.setUserPlanStatus(up.id, st, String(req.body.detail || 'manual override').slice(0, 200));
   if (st === 'active') await vmService.setUserVmsUnsuspended(up.user_id).catch(() => {});
   res.json({ ok: true, plan: bs.getUserPlanRow(up.id) });
+});
+
+// Plan check history. plan_checks is append-only and never read anywhere else,
+// so this is the only way an admin can audit why a plan got suspended.
+router.get('/admin/billing/user-plans/:id/checks', apiAdmin, (req, res) => {
+  const bs = require('../services/billingService');
+  const id = Number(req.params.id);
+  if (!bs.getUserPlanRow(id)) return res.status(404).json({ error: 'Plan assignment not found' });
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 50));
+  const checks = db.prepare(
+    'SELECT * FROM plan_checks WHERE user_plan_id = ? ORDER BY id DESC LIMIT ?'
+  ).all(id, limit);
+  res.json({ ok: true, checks });
 });
 
 // ---------- Self-renewal (user) ----------

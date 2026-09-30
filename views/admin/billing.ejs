@@ -116,6 +116,15 @@
     </div>
   </div>
 </div>
+<div class="vp-modal vp-modal--md" id="checkModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="padding:22px">
+    <div class="flex" style="align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="card-title" style="margin:0">Plan check history</div>
+      <button class="btn btn-sm" data-vp-dismiss>Close</button>
+    </div>
+    <div id="checkLog"></div>
+  </div>
+</div>
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
 <script>
@@ -318,6 +327,7 @@ async function loadSectors() {
         + '<td class="text-sm">' + p.renewals + '</td>'
         + '<td class="text-sm muted">' + (p.last_check_at ? new Date(p.last_check_at).toLocaleString() : 'never') + '<br/><span class="muted text-sm">' + esc(p.last_check_detail || '') + '</span></td>'
         + '<td class="right">'
+        + '<button class="btn btn-sm" onclick="viewChecks(' + p.id + ')">Log</button> '
         + (sector === 'paid' && p.expires_at ? '<button class="btn btn-sm" onclick="renewPlan(' + p.id + ')">Renew</button> ' : '')
         + (st === 'suspended' ? '<button class="btn btn-sm" onclick="setPlanStatus(' + p.id + ',\'active\')">Reactivate</button> ' : (st === 'active' ? '<button class="btn btn-sm btn-warning" onclick="setPlanStatus(' + p.id + ',\'suspended\')">Suspend</button> ' : ''))
         + (st !== 'cancelled' ? '<button class="btn btn-sm btn-danger" onclick="cancelPlan(' + p.id + ')">Cancel</button>' : '')
@@ -339,6 +349,26 @@ async function assignPlan() {
     VP.toast('Plan assigned', 'success');
     loadSectors();
   } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function viewChecks(id) {
+  const body = document.getElementById('checkLog');
+  body.innerHTML = '<div class="muted text-sm">Loading…</div>';
+  const md = document.getElementById('checkModal');
+  if (md && window.VP && VP.modal) VP.modal.open(md);
+  try {
+    const res = await VP.api('/admin/billing/user-plans/' + id + '/checks?limit=50');
+    const list = res.checks || [];
+    if (!list.length) { body.innerHTML = '<div class="muted text-sm">No checks recorded yet. PlanGuard logs a row on every sweep.</div>'; return; }
+    body.innerHTML = '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Detail</th></tr></thead><tbody>'
+      + list.map((c) => '<tr>'
+        + '<td class="text-sm muted" style="white-space:nowrap">' + new Date(c.created_at).toLocaleString() + '</td>'
+        + '<td><span class="pill ' + (c.ok ? 'pill-green' : 'pill-red') + '">' + (c.ok ? 'ok' : 'fail') + '</span></td>'
+        + '<td class="text-sm">' + esc(c.detail || '') + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>';
+  } catch (e) {
+    body.innerHTML = '<div class="muted text-sm">Failed: ' + esc(e.message) + '</div>';
+  }
 }
 async function renewPlan(id) {
   const ok = await VP.confirmDialog('Renew this assignment now (extends from today) and clear any suspension?', { title: 'Renew Plan', okText: 'Renew', danger: false });
