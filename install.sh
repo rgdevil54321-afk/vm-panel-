@@ -318,6 +318,29 @@ EOF
     echo ""
     log_info "Skipping Node Agent install. You can install it later via the main menu option [6]."
   fi
+
+  # --- Tailscale mesh ------------------------------------------------------
+  # VMs reach the network through port forwards on this host's own address, so
+  # joining a tailnet is what lets them be reached without a public IP. Offer
+  # it here so a fresh install ends up mesh-ready, but never make it mandatory:
+  # `tailscale up` needs a browser or an auth key, and a headless box that has
+  # neither would otherwise be stuck mid-install.
+  echo ""
+  printf "${CYAN}${BOLD}  Set up a Tailscale mesh for this host now?${NC}\n"
+  echo "  Gives shared-IPv4 VMs a private 100.64/10 address reachable from your"
+  echo "  devices, instead of a public IP. Needs an auth key or a browser login."
+  echo "  You can also do this later via the main menu option [15]."
+  echo ""
+  read -r -p "  Install Tailscale? [y/N]: " INSTALL_TS
+  if [[ "$INSTALL_TS" =~ ^[Yy]$ ]]; then
+    # do_install has its own pause on the way back out to the menu, and a
+    # `VAR=1 func` prefix would leak the flag into the menu's later call.
+    TS_NO_PAUSE=1
+    do_tailscale
+    TS_NO_PAUSE=0
+  else
+    log_info "Skipping Tailscale. Re-run option [15] whenever you want the mesh."
+  fi
   echo ""
 }
 
@@ -662,8 +685,27 @@ do_uninstall() {
   log_info "Removing VN neofetch banner..."
   rm -f /etc/profile.d/venlix-fetch.sh 2>/dev/null || true
   rm -f /usr/local/bin/venlix-fetch 2>/dev/null || true
-  rm -rf /etc/venlix 2>/dev/null || true
   rm -rf "${HOME}/.config/venlix" 2>/dev/null || true
+
+  # Tailscale is only removed when this installer added it. A pre-existing
+  # Tailscale install is the operator's own machine-level networking and is
+  # none of our business to tear down. This has to run BEFORE /etc/venlix is
+  # deleted, because the marker that records "we installed it" lives there.
+  if [ -f "$TS_MARKER_FILE" ]; then
+    log_info "Removing Tailscale (installed by this installer)..."
+    if command -v tailscale >/dev/null 2>&1; then
+      tailscale logout >/dev/null 2>&1 || true
+    fi
+    systemctl disable --now tailscaled >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y tailscale >/dev/null 2>&1 \
+      || DEBIAN_FRONTEND=noninteractive apt-get purge -y tailscale >/dev/null 2>&1 || true
+    log_ok "Tailscale removed."
+  elif command -v tailscale >/dev/null 2>&1; then
+    log_info "Leaving Tailscale installed (it was already here, not added by us)."
+  fi
+
+  # /etc/venlix holds the neofetch banner and the Tailscale marker; last to go.
+  rm -rf /etc/venlix 2>/dev/null || true
 
   log_ok "Venlix Nodes has been uninstalled successfully."
   echo ""
@@ -1107,6 +1149,182 @@ do_identity() {
 }
 
 # =============================================================================
+# 13. TAILSCALE MESH (shared private IPv4 for shared-IP VMs)
+# =============================================================================
+# Every VM runs on QEMU user-mode (slirp) networking with `hostfwd` port
+# forwards, so a guest's own address is never routable — vmService.serializeVm
+# says so explicitly and always hands out "node address + forwarded port".
+# Tailscale does not change that, and it does not give guests their own IP.
+# What it DOES do is put the *node's* 100.64/10 address on a tailnet, and
+# hostfwd binds every host address, so the forwarded VM ports become reachable
+# from any device on the tailnet with no public IP and no open firewall.
+#
+# That is exactly the `ipv4_shared` story: many VMs share the node's one
+# reachable address. The panel already prefers a 100.x address when it builds
+# the guest connect hint (src/services/vmService.js, isTailscaleV4 in
+# src/services/hostDetect.js), so nothing in the panel needed changing — only
+# something had to actually give the host a 100.x address.
+TS_MARKER_FILE="/etc/venlix/tailscale-installed-by-venlix"
+
+# Pause at the end of do_tailscale, unless it was called from do_install (which
+# has its own pause) or from the arg dispatch, where nothing is waiting.
+TS_NO_PAUSE=0
+ts_pause() {
+  [ "$TS_NO_PAUSE" = "1" ] && return 0
+  read -r -p "  Press Enter to continue..." _
+}
+
+# Print the node's tailnet IPv4, or empty if it has not joined a tailnet.
+ts_mesh_ip() {
+  command -v tailscale >/dev/null 2>&1 || return 0
+  tailscale ip -4 2>/dev/null | head -n1 | tr -d '[:space:]'
+}
+
+ts_status() {
+  local ip state
+  ip="$(ts_mesh_ip)"
+  state="$(tailscale status --json 2>/dev/null | grep -o '"BackendState":"[^"]*"' | head -n1 | cut -d'"' -f4)"
+  [ -z "$state" ] && state="unknown"
+  echo "    Backend state : ${state}"
+  echo "    Mesh IPv4     : ${ip:-none (not joined to a tailnet)}"
+}
+
+do_tailscale() {
+  safe_clear
+  printf "${MAGENTA}${BOLD}"
+  echo "================================================================="
+  echo "              🕸️   Tailscale Mesh (shared IPv4)                  "
+  echo "================================================================="
+  printf "${NC}\n"
+  cat <<'EOF'
+  Gives this node a private 100.64/10 address on your tailnet, so VMs
+  sharing this host's IP (network mode "shared IPv4") stay reachable from
+  any of your devices — no public IP, no open inbound ports.
+
+  Your VMs keep their port-forward ports; only the address you reach them
+  on changes, from a public IP to this mesh IP.
+EOF
+  echo ""
+
+  # --- 1. install ---------------------------------------------------------
+  if command -v tailscale >/dev/null 2>&1; then
+    log_ok "Tailscale already installed: $(tailscale version 2>/dev/null | head -n1)"
+  else
+    read -r -p "  Install Tailscale now? [Y/n]: " TS_GO
+    TS_GO="${TS_GO:-Y}"
+    if [[ "$TS_GO" =~ ^[Nn]$ ]]; then
+      log_info "Cancelled."
+      return 0
+    fi
+    log_info "Installing Tailscale from tailscale.com..."
+    if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+      log_err "Tailscale install script failed."
+      log_info "Manual alternative for Debian/Ubuntu:"
+      log_info "  curl -fsSL https://pkgs.tailscale.com/stable/tailscale.repo | tee /etc/apt/sources.list.d/tailscale.list"
+      log_info "  curl -fsSL https://pkgs.tailscale.com/stable/tailscale.key.asc | tee /usr/share/keyrings/tailscale-archive-keyring.gpg"
+      log_info "  apt-get update && apt-get install -y tailscale"
+      ts_pause
+      return 1
+    fi
+    # Only ever remove Tailscale on uninstall if *we* were the ones to add it.
+    mkdir -p /etc/venlix 2>/dev/null || true
+    echo "installed by Venlix Nodes installer" > "$TS_MARKER_FILE"
+    log_ok "Tailscale installed."
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    log_warn "systemd not found — start tailscaled manually, cannot enable on boot."
+  else
+    systemctl enable tailscaled >/dev/null 2>&1 || true
+    systemctl restart tailscaled >/dev/null 2>&1 || systemctl start tailscaled >/dev/null 2>&1 || true
+  fi
+  sleep 1
+
+  # --- 2. join a tailnet --------------------------------------------------
+  local ts_ip
+  ts_ip="$(ts_mesh_ip)"
+  if [ -n "$ts_ip" ]; then
+    log_ok "This node is already on a tailnet."
+    ts_status
+  else
+    echo ""
+    echo "  How do you want to join?"
+    echo "    [1] Auth key    — non-interactive, best for scripted installs"
+    echo "    [2] Interactive — prints a login URL you open in a browser"
+    echo ""
+    read -r -p "  Choose [1/2, default 1]: " TS_MODE
+    TS_MODE="${TS_MODE:-1}"
+    local TS_HOSTNAME_ARG=""
+    read -r -p "  Node name in the tailnet [default: $(hostname -s 2>/dev/null || echo venlix)]: " TS_NAME
+    TS_NAME="${TS_NAME:-$(hostname -s 2>/dev/null || echo venlix)}"
+    TS_HOSTNAME_ARG="--hostname=${TS_NAME}"
+
+    if [ "$TS_MODE" = "2" ]; then
+      # accept-dns=false so the tailnet resolver can never take the panel's
+      # DNS offline; accept-routes=false so this host never starts routing
+      # someone else's subnet through itself.
+      log_info "Opening a login URL — finish in your browser, then re-run this option."
+      tailscale up --accept-dns=false --accept-routes=false "$TS_HOSTNAME_ARG" || true
+    else
+      read -r -s -p "  Tailscale auth key (tskey-auth-...): " TS_KEY
+      echo ""
+      if [ -z "$TS_KEY" ]; then
+        log_warn "No auth key given. Run 'sudo tailscale up' later to finish joining."
+        ts_pause
+        return 0
+      fi
+      log_info "Joining tailnet with auth key..."
+      if tailscale up --authkey="$TS_KEY" --accept-dns=false --accept-routes=false "$TS_HOSTNAME_ARG"; then
+        log_ok "Joined the tailnet."
+      else
+        log_err "tailscale up failed. Check the auth key is reusable/valid for this tag."
+        ts_pause
+        return 1
+      fi
+    fi
+  fi
+
+  # --- 3. make sure the firewall lets tailnet traffic in -------------------
+  # UFW's default deny would otherwise drop everything arriving on tailscale0,
+  # which silently makes the whole mesh look like it is down.
+  if command -v ufw >/dev/null 2>&1 && [ "$(ufw status 2>/dev/null | grep -c 'Status: active')" -gt 0 ]; then
+    if ufw status 2>/dev/null | grep -q "tailscale0"; then
+      log_ok "UFW already allows the tailscale0 interface."
+    else
+      ufw allow in on tailscale0 >/dev/null 2>&1 \
+        && log_ok "Added UFW rule: allow inbound on tailscale0." \
+        || log_warn "Could not add the UFW tailscale0 rule. Add it manually: ufw allow in on tailscale0"
+    fi
+  else
+    log_info "UFW not active — no firewall rule needed for the mesh."
+  fi
+
+  # --- 4. report ----------------------------------------------------------
+  echo ""
+  ts_status
+  local final_ip
+  final_ip="$(ts_mesh_ip)"
+  if [ -n "$final_ip" ]; then
+    echo ""
+    printf "${GREEN}${BOLD}"
+    echo "  ✅  Shared IPv4 for VMs on this node: ${final_ip}"
+    echo ""
+    echo "      Create VMs with network mode \"shared IPv4\" and reach them at:"
+    echo "        ssh -p <forwarded-port> root@${final_ip}"
+    echo ""
+    echo "      The panel picks this address up on its own (it already prefers a"
+    echo "      100.64/10 address when it builds the guest connect hint), so no"
+    echo "      panel configuration is needed."
+    printf "${NC}\n"
+    log_warn "Keep this host on the tailnet. If Tailscale stops, VMs stop answering on the mesh IP."
+  else
+    log_warn "No mesh address yet. Finish with: sudo tailscale up"
+  fi
+  echo ""
+  ts_pause
+}
+
+# =============================================================================
 # MAIN INTERACTIVE MENU
 # =============================================================================
 show_menu() {
@@ -1138,11 +1356,12 @@ show_menu() {
     echo "   ${CYAN}[12]${NC} 🔧 Change Ports       Panel / API / agent"
     echo "   ${CYAN}[13]${NC} 🎭 Host Identity      Hostname / CPU / GPU (neofetch)"
     echo "   ${CYAN}[14]${NC} 🔓 Unlock Install      Clear install blacklist (unlock password)"
+    echo "   ${CYAN}[15]${NC} 🕸️  Tailscale Mesh       Private shared IPv4 for VMs"
     echo ""
     echo "   ${RED}[0]${NC} 🚪 Exit"
     echo ""
     printf "${CYAN}─────────────────────────────────────────────────────────────${NC}\n"
-    read -r -p "  Select option ${BOLD}[0-14]${NC} › " CHOICE
+    read -r -p "  Select option ${BOLD}[0-15]${NC} › " CHOICE
 
     case "$CHOICE" in
       1)
@@ -1194,12 +1413,16 @@ show_menu() {
         do_unlock_license
         read -r -p "Press Enter to return to menu..." _
         ;;
+      15)
+        do_tailscale
+        read -r -p "Press Enter to return to menu..." _
+        ;;
       0)
         log_info "Exiting Venlix Nodes Installer. Goodbye!"
         exit 0
         ;;
       *)
-        log_warn "Invalid option '$CHOICE'. Please choose 0-14."
+        log_warn "Invalid option '$CHOICE'. Please choose 0-15."
         sleep 1.2
         ;;
     esac
@@ -1227,6 +1450,7 @@ if [ $# -gt 0 ]; then
     12|--ports|change-ports) do_change_ports ;;
     13|--identity|identity) do_identity ;;
     14|--unlock|unlock) do_unlock_license ;;
+    15|--tailscale|--ts|mesh) do_tailscale ;;
     *) show_menu ;;
   esac
 else

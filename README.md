@@ -91,9 +91,52 @@
 git clone https://github.com/rgdevil54321-afk/vm-panel-.git
 cd vm-panel-
 
-# Run the automated installer
-sudo bash install.sh --admin-pass 'your_secure_password'
+# Run the automated installer (interactive menu)
+sudo bash install.sh
 ```
+
+The installer is menu-driven. Pick **1** (Install Panel), then **2** (Create Admin),
+then **4** (PM2 Manager) so it survives a reboot.
+
+Non-interactive, if you prefer driving each step yourself:
+
+```bash
+sudo bash install.sh --install       # dependencies (option 1)
+sudo bash install.sh --create-admin  # admin account  (option 2)
+sudo bash install.sh --pm2            # pm2 + boot     (option 4)
+```
+
+> There is no `--admin-pass` flag. Admin credentials are always prompted for
+> interactively; `install.sh` takes no credential arguments.
+
+### Shared IPv4 via Tailscale (option 15)
+
+Every VM runs on QEMU user-mode (slirp) networking with port forwards, so a
+guest's own address is never routable from outside the node — panel and
+tmate aside, you reach a VM at `node address + forwarded port`. Tailscale does
+not change that, and it does not give each VM its own IP.
+
+What it does is put the **node's** private `100.64/10` address on your tailnet.
+Because port forwards bind every host address, your `shared IPv4` VMs then become
+reachable from any device on the tailnet — no public IP, no inbound firewall
+holes. The panel already prefers a `100.64/10` address when it builds a guest's
+connect hint, so nothing needs configuring on the panel side.
+
+```bash
+sudo bash install.sh --tailscale   # or menu option 15
+```
+
+It installs Tailscale, joins a tailnet (auth key for scripted installs, or a
+browser login URL), adds a `ufw allow in on tailscale0` rule if UFW is active,
+and prints the resulting mesh address. DNS and subnet routes are left alone
+(`--accept-dns=false --accept-routes=false`) so the mesh can never take the
+panel's DNS offline or start routing someone else's subnet through the host.
+
+Install option 1 also offers this at the end of a fresh install. It is never
+mandatory, because joining a tailnet needs an auth key or a browser.
+
+Uninstall removes Tailscale only if the installer was what installed it; a
+pre-existing Tailscale is left alone.
 
 ### Option 2: Manual Installation
 
