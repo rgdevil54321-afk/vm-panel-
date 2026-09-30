@@ -745,20 +745,28 @@ body.term-fullscreen #bgOverlay {
   // with jitter, so on a slow or flaky link the socket was often still down
   // when that one check ran: the join was dropped silently, nothing was
   // retried, and the button looked completely dead. Poll until it is up.
-  let joinPoll = null;
+  // One waiter per tab, keyed by session id. A single shared waiter meant a
+  // second tab's join cancelled the first tab's, so that tab silently never
+  // connected when two tabs were opened while offline.
+  const joinPolls = new Map();
+  function cancelJoinPolls() {
+    for (const t of joinPolls.values()) clearTimeout(t);
+    joinPolls.clear();
+  }
   function waitForSocketThenJoin(sid, reattach) {
-    if (joinPoll) { clearTimeout(joinPoll.timer); }
+    const prev = joinPolls.get(sid);
+    if (prev) clearTimeout(prev);
     const budgetMs = 180000; // matches the server-side console:join deadline
     const started = Date.now();
     const tick = () => {
-      if (!terms.has(sid)) { joinPoll = null; return; } // tab closed while waiting
+      if (!terms.has(sid)) { joinPolls.delete(sid); return; } // tab closed while waiting
       if (socket && connected) {
-        joinPoll = null;
+        joinPolls.delete(sid);
         doJoin(sid, reattach);
         return;
       }
       if (Date.now() - started > budgetMs) {
-        joinPoll = null;
+        joinPolls.delete(sid);
         if (isVmRunning) {
           setState('connection failed', 'pill-red', true);
           const entry = terms.get(sid);
@@ -766,7 +774,7 @@ body.term-fullscreen #bgOverlay {
         }
         return;
       }
-      joinPoll = { timer: setTimeout(tick, 500) };
+      joinPolls.set(sid, setTimeout(tick, 500));
     };
     tick();
   }
@@ -822,14 +830,19 @@ body.term-fullscreen #bgOverlay {
 
   // ---------- Socket setup ----------
   function setupSocket() {
-    // A live or reconnecting socket is reused as-is. A socket that has
-    // permanently given up is torn down first: the old unconditional
-    // `if (socket) return` meant Reconnect stayed a no-op forever after the
-    // first time the manager gave up, which is exactly when a user is most
-    // likely to be clicking it.
-    if (socket && !socketDead && (socket.connected || socket.active)) return;
+    // Reuse any socket that has not definitively given up -- including one that
+    // is mid-reconnect. The earlier version also tested `socket.active`, which
+    // does not exist in socket.io-client 4.x (it was removed with the v3
+    // Manager), so that term was permanently undefined: every join while the
+    // link was down tore down the healthy reconnecting socket, called
+    // disconnect() on it (which disables its own reconnection), reset the
+    // backoff and rebuilt from scratch. The terminal then never came up.
+    //
+    // `socketDead` is the only trustworthy "this is finished" signal: it is set
+    // from the manager's own reconnect_failed, and cleared on every connect.
+    if (socket && !socketDead) return;
     if (socket) {
-      try { socket.removeAllListeners(); socket.io.removeAllListeners(); } catch (_) {}
+      try { socket.removeAllListeners(); if (socket.io) socket.io.removeAllListeners(); } catch (_) {}
       try { socket.disconnect(); } catch (_) {}
       socket = null;
     }
@@ -848,6 +861,9 @@ body.term-fullscreen #bgOverlay {
     socket.on('connect', () => {
       connected = true;
       socketDead = false;
+      // Every tab is re-joined below, so drop the tabs still polling for the
+      // socket -- otherwise the poller wakes up and joins the same tab twice.
+      cancelJoinPolls();
       if (activeTab === 'terminal') {
         if (isVmRunning) {
           if (terms.size === 0) window.newTerminal();
