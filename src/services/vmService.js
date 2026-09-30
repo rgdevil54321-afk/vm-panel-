@@ -896,18 +896,55 @@ function getVm(id) {
   return serializeVm(row);
 }
 
-function canAccess(user, vm, perm = null) {
-  if (!vm) return false;
+// The vocabulary a subuser row can actually carry. The subusers UI emits these
+// four names plus '*'; anything else is not grantable, so a gate asking for a
+// name outside this set would be unsatisfiable.
+const SUBUSER_PERMS = ['console', 'files', 'backups', 'power'];
+
+// OWNER is not a grantable permission - it is a gate meaning "owner or admin
+// only", used for anything a subuser must never reach (settings, resize,
+// delete, subuser management, schedules, snapshots, volumes, webhooks).
+const OWNER = 'owner';
+
+function isOwnerOrAdmin(user, vm) {
+  if (!vm || !user) return false;
   if (user.role === 'admin' || user.root_admin) return true;
-  if (vm.owner_id === user.id) return true;
+  return Number(vm.owner_id) === Number(user.id);
+}
+
+// Normalise a permissions payload for INSERT. Fails closed: an absent or empty
+// list grants nothing, and unknown names are dropped rather than stored, so a
+// typo cannot silently widen access. '*' is the only wildcard.
+function sanitizeSubuserPerms(perms) {
+  if (perms === '*') return ['*'];
+  const list = Array.isArray(perms) ? perms : [];
+  if (list.includes('*')) return ['*'];
+  const out = [];
+  for (const p of list) {
+    const name = String(p).trim().toLowerCase();
+    if (SUBUSER_PERMS.includes(name) && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+function canAccess(user, vm, perm = null) {
+  if (!vm || !user) return false;
+  if (user.role === 'admin' || user.root_admin) return true;
+  if (Number(vm.owner_id) === Number(user.id)) return true;
   const sub = db.prepare(
     'SELECT * FROM subusers WHERE vm_id = ? AND user_id = ?'
   ).get(vm.id, user.id);
   if (!sub) return false;
+  // No perm means "may look at this server at all" - the dashboard and the
+  // server page need this. Callers that mutate must pass a perm.
   if (!perm) return true;
+  // Owner-only gate: a subuser row never satisfies it, whatever it holds.
+  if (perm === OWNER) return false;
   let perms = [];
   try { perms = JSON.parse(sub.permissions || '[]'); } catch (_) {}
-  return perms.includes(perm) || perms.includes('*');
+  if (!Array.isArray(perms)) return false;
+  if (perms.includes('*')) return true;
+  return perms.includes(perm);
 }
 
 function setDbStatus(id, status) {
@@ -2497,7 +2534,8 @@ async function setUserVmsUnsuspended(userId) {
 
 module.exports = {
   VM_DIR, vmDir, dbVms, getVm, create, start, stop, restart, remove, update,
-  resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, allocPort, allocVncPort, allocAgentPort,
+  resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, isOwnerOrAdmin,
+  SUBUSER_PERMS, OWNER, sanitizeSubuserPerms, allocPort, allocVncPort, allocAgentPort,
     parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner, applyNeofetchSpoof,
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,

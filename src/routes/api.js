@@ -192,15 +192,26 @@ router.post('/user/password', json, (req, res) => {
 });
 
 // ---------- VMs ----------
-function loadVm(req, res, next) {
-  const vm = vmService.getVm(req.params.id);
-  if (!vm || !vmService.canAccess(req.user, vm)) return res.status(404).json({ error: 'Server not found' });
-  const row = db.prepare('SELECT agent_token FROM vms WHERE id = ?').get(vm.id);
-  if (row && row.agent_token) {
-    Object.defineProperty(vm, 'agent_token', { value: row.agent_token, enumerable: false, configurable: true });
-  }
-  req.vm = vm;
-  next();
+// Factory, not a bare middleware: every route must name the permission it needs.
+// Calling loadVm with no perm (the old signature) let any subuser row through,
+// so a console-only subuser could read the file manager, rewrite the root
+// password, resize the disk and hand the machine to someone else.
+function loadVm(perm) {
+  return function loadVmWithPerm(req, res, next) {
+    const vm = vmService.getVm(req.params.id);
+    if (!vm || !vmService.canAccess(req.user, vm, perm || null)) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
+    const row = db.prepare('SELECT agent_token FROM vms WHERE id = ?').get(vm.id);
+    if (row && row.agent_token) {
+      Object.defineProperty(vm, 'agent_token', { value: row.agent_token, enumerable: false, configurable: true });
+    }
+    // The serialized VM carries the plaintext root password. Owners and admins
+    // need it; a subuser never does, so drop it before it can be serialized out.
+    if (!vmService.isOwnerOrAdmin(req.user, vm)) delete vm.password;
+    req.vm = vm;
+    next();
+  };
 }
 
 router.get('/vms', (req, res) => {
@@ -224,20 +235,20 @@ router.post('/vms', json, async (req, res) => {
   }
 });
 
-router.get('/vms/:id', loadVm, (req, res) => res.json({ vm: req.vm }));
-router.post('/vms/:id/start', loadVm, async (req, res) => {
+router.get('/vms/:id', loadVm(), (req, res) => res.json({ vm: req.vm }));
+router.post('/vms/:id/start', loadVm('power'), async (req, res) => {
   try { await vmService.start(req.vm, { user: req.user }); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/stop', loadVm, async (req, res) => {
+router.post('/vms/:id/stop', loadVm('power'), async (req, res) => {
   try { await vmService.stop(req.vm, { user: req.user, force: !!req.body.force }); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/restart', loadVm, async (req, res) => {
+router.post('/vms/:id/restart', loadVm('power'), async (req, res) => {
   try { await vmService.restart(req.vm, req.user); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.get(['/vms/:id/status', '/vms/:id/stats'], loadVm, async (req, res) => {
+router.get(['/vms/:id/status', '/vms/:id/stats'], loadVm(), async (req, res) => {
   try {
     if (vmService.isRemoteVm(req.vm)) {
       const stats = await vmService.liveStatsRemote(req.vm);
@@ -249,17 +260,17 @@ router.get(['/vms/:id/status', '/vms/:id/stats'], loadVm, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-router.get('/vms/:id/bootlog', loadVm, (req, res) => {
+router.get('/vms/:id/bootlog', loadVm('console'), (req, res) => {
   res.json({ ok: true, log: vmService.getBootLog(req.vm) });
 });
-router.get('/vms/:id/bootlog/stream', loadVm, (req, res) => {
+router.get('/vms/:id/bootlog/stream', loadVm('console'), (req, res) => {
   bootLogService.handleSseStream(req, res, req.vm);
 });
-router.post('/vms/:id/bootlog/clear', loadVm, (req, res) => {
+router.post('/vms/:id/bootlog/clear', loadVm('console'), (req, res) => {
   bootLogService.clearBootLogs(req.vm);
   res.json({ ok: true });
 });
-router.get('/vms/:id/bootlog/diagnose', loadVm, (req, res) => {
+router.get('/vms/:id/bootlog/diagnose', loadVm('console'), (req, res) => {
   try {
     const result = require('../services/bootLogAiService').diagnose(req.vm);
     res.json({ ok: true, ...result });
@@ -267,58 +278,58 @@ router.get('/vms/:id/bootlog/diagnose', loadVm, (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-router.delete('/vms/:id', loadVm, async (req, res) => {
+router.delete('/vms/:id', loadVm('owner'), async (req, res) => {
   try {
     if (req.vm.owner_id !== req.user.id && req.user.role !== 'admin' && !req.user.root_admin) return res.status(403).json({ error: 'Forbidden' });
     await vmService.remove(req.vm, req.user);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.patch('/vms/:id', loadVm, json, (req, res) => {
+router.patch('/vms/:id', loadVm('owner'), json, (req, res) => {
   try { res.json({ ok: true, vm: vmService.update(req.vm, req.body, req.user) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/resize', loadVm, json, async (req, res) => {
+router.post('/vms/:id/resize', loadVm('owner'), json, async (req, res) => {
   try { res.json({ ok: true, vm: await vmService.resizeDisk(req.vm, req.body.disk_size, req.user) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---------- Files (via VM Agent API, SSH fallback) ----------
-router.get('/vms/:id/files', loadVm, async (req, res) => {
+router.get('/vms/:id/files', loadVm('files'), async (req, res) => {
   try {
     const files = await agentService.listDir(req.vm, req.query.path || '/');
     res.json({ ok: true, files, transport: req.vm.agent_port ? 'agent' : 'ssh' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.get('/vms/:id/files/read', loadVm, async (req, res) => {
+router.get('/vms/:id/files/read', loadVm('files'), async (req, res) => {
   try {
     const content = await agentService.readFile(req.vm, req.query.path);
     res.json({ ok: true, content });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/files/write', loadVm, json, async (req, res) => {
+router.post('/vms/:id/files/write', loadVm('files'), json, async (req, res) => {
   try {
     await agentService.writeFile(req.vm, req.body.path, req.body.content);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/files/mkdir', loadVm, json, async (req, res) => {
+router.post('/vms/:id/files/mkdir', loadVm('files'), json, async (req, res) => {
   try { await agentService.mkdir(req.vm, req.body.path); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/files/delete', loadVm, json, async (req, res) => {
+router.post('/vms/:id/files/delete', loadVm('files'), json, async (req, res) => {
   try { await agentService.rm(req.vm, req.body.path, { recursive: !!req.body.recursive }); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/files/rename', loadVm, json, async (req, res) => {
+router.post('/vms/:id/files/rename', loadVm('files'), json, async (req, res) => {
   try { await agentService.rename(req.vm, req.body.from, req.body.to); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/files/chmod', loadVm, json, async (req, res) => {
+router.post('/vms/:id/files/chmod', loadVm('files'), json, async (req, res) => {
   try { await agentService.chmod(req.vm, req.body.path, req.body.mode); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/files/upload', loadVm, express.raw({ limit: '200mb', type: '*/*' }), async (req, res) => {
+router.post('/vms/:id/files/upload', loadVm('files'), express.raw({ limit: '200mb', type: '*/*' }), async (req, res) => {
   const targetPath = String(req.headers['x-file-path'] || '/');
   try {
     await agentService.upload(req.vm, targetPath, req.body);
@@ -327,7 +338,7 @@ router.post('/vms/:id/files/upload', loadVm, express.raw({ limit: '200mb', type:
     res.status(500).json({ error: e.message });
   }
 });
-router.get('/vms/:id/files/download', loadVm, async (req, res) => {
+router.get('/vms/:id/files/download', loadVm('files'), async (req, res) => {
   try {
     const data = await agentService.download(req.vm, req.query.path);
     const name = req.query.path.split('/').pop() || 'file';
@@ -339,57 +350,61 @@ router.get('/vms/:id/files/download', loadVm, async (req, res) => {
 });
 
 // ---------- Backups / Schedules / Subusers ----------
-router.get('/vms/:id/backups', loadVm, (req, res) => res.json({ backups: backupService.listForVm(req.vm.id), slots: backupService.slotsFor(req.vm.id) }));
-router.post('/vms/:id/backups', loadVm, json, (req, res) => {
+router.get('/vms/:id/backups', loadVm('backups'), (req, res) => res.json({ backups: backupService.listForVm(req.vm.id), slots: backupService.slotsFor(req.vm.id) }));
+router.post('/vms/:id/backups', loadVm('backups'), json, (req, res) => {
   try {
     const slots = backupService.slotsFor(req.vm.id);
     if (slots.free <= 0) return res.status(400).json({ error: `Backup slot limit reached (${slots.used}/${slots.slots}). Delete a backup or raise the machine's backup slots.` });
     res.json({ ok: true, backup: backupService.createBackup(req.vm, { user: req.user, name: req.body.name }) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/vms/:id/backups/:bid/restore', loadVm, async (req, res) => {
+router.post('/vms/:id/backups/:bid/restore', loadVm('backups'), async (req, res) => {
   const b = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
   if (!b) return res.status(404).json({ error: 'Backup not found' });
   try { await backupService.restoreBackup(b, { user: req.user }); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.delete('/vms/:id/backups/:bid', loadVm, (req, res) => {
+router.delete('/vms/:id/backups/:bid', loadVm('backups'), (req, res) => {
   const b = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
   if (!b) return res.status(404).json({ error: 'Backup not found' });
   backupService.deleteBackup(b, { user: req.user });
   res.json({ ok: true });
 });
 
-router.get('/vms/:id/schedules', loadVm, (req, res) => {
+router.get('/vms/:id/schedules', loadVm('owner'), (req, res) => {
   res.json({ schedules: db.prepare('SELECT * FROM schedules WHERE vm_id = ?').all(req.vm.id) });
 });
-router.post('/vms/:id/schedules', loadVm, json, (req, res) => {
+router.post('/vms/:id/schedules', loadVm('owner'), json, (req, res) => {
   try { res.json({ ok: true, schedule: scheduleService.add({ ...req.body, vm_id: req.vm.id }, req.user) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.delete('/vms/:id/schedules/:sid', loadVm, (req, res) => {
+router.delete('/vms/:id/schedules/:sid', loadVm('owner'), (req, res) => {
   try { scheduleService.remove(req.params.sid, req.user); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/vms/:id/subusers', loadVm, (req, res) => {
+router.get('/vms/:id/subusers', loadVm('owner'), (req, res) => {
   res.json({ subusers: db.prepare('SELECT s.*, u.username, u.email FROM subusers s JOIN users u ON u.id = s.user_id WHERE s.vm_id = ?').all(req.vm.id) });
 });
-router.post('/vms/:id/subusers', loadVm, json, (req, res) => {
+router.post('/vms/:id/subusers', loadVm('owner'), json, (req, res) => {
   try {
     const exists = db.prepare('SELECT id FROM subusers WHERE vm_id = ? AND user_id = ?').get(req.vm.id, req.body.user_id);
     if (exists) return res.status(400).json({ error: 'Already exists' });
+    // Was `req.body.permissions || ['*']`, so posting only a user_id handed out
+    // full control of the server. Fails closed now.
+    const perms = vmService.sanitizeSubuserPerms(req.body.permissions);
+    if (!perms.length) return res.status(400).json({ error: 'permissions required (console, files, backups, power, or * for full access)' });
     const info = db.prepare('INSERT INTO subusers (vm_id, user_id, permissions, created_at) VALUES (?,?,?,?)')
-      .run(req.vm.id, req.body.user_id, JSON.stringify(req.body.permissions || ['*']), new Date().toISOString());
+      .run(req.vm.id, req.body.user_id, JSON.stringify(perms), new Date().toISOString());
     res.json({ ok: true, id: Number(info.lastInsertRowid) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.delete('/vms/:id/subusers/:sid', loadVm, (req, res) => {
+router.delete('/vms/:id/subusers/:sid', loadVm('owner'), (req, res) => {
   db.prepare('DELETE FROM subusers WHERE id = ? AND vm_id = ?').run(req.params.sid, req.vm.id);
   res.json({ ok: true });
 });
 
-router.get('/vms/:id/activity', loadVm, (req, res) => {
+router.get('/vms/:id/activity', loadVm(), (req, res) => {
   res.json({ logs: activity.listActivity({ vm_id: req.vm.id, limit: 200 }) });
 });
 

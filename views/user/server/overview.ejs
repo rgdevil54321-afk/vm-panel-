@@ -428,7 +428,7 @@ async function loadTmate(regen, btn) {
   if (btn) { btn.disabled = true; btn.textContent = regen ? 'Generating...' : 'Getting...'; }
   el.textContent = 'Connecting to the VM (first boot takes 1-3 min for SSH + tmate)...';
   try {
-    await VP.api('/servers/<%= vm.id %>/power', { method: 'POST', body: { action: 'tmate', regen: !!regen } });
+    await VP.api('/servers/<%= vm.id %>/tmate', { method: 'POST', body: { regen: !!regen } });
     const started = Date.now();
     const poll = async () => {
       try {

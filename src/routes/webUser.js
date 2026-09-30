@@ -43,21 +43,30 @@ function myVms(user) {
   ).all(user.id).map(vmService.serializeVm);
 }
 
-function loadVm(req, res, next) {
-  const vm = vmService.getVm(parseInt(req.params.id, 10));
-  if (!vm || !vmService.canAccess(req.user, vm)) {
-    return res.status(404).render('error/404', {
-      code: 404, title: 'Not Found', message: 'Server not found or no access.',
-      settings: settings.all(), user: req.user,
-    });
-  }
-  const owner = db.prepare('SELECT username, email FROM users WHERE id = ?').get(vm.owner_id);
-  if (owner) {
-    vm.owner_name = owner.username;
-    vm.owner_email = owner.email;
-  }
-  req.vm = vm;
-  next();
+// Factory, not a bare middleware: every route must name the permission it needs.
+// Calling loadVm with no perm (the old signature) let any subuser row through, so
+// a console-only subuser could rewrite the root password, resize the disk, drive
+// the file manager and hand the machine to someone else.
+function loadVm(perm) {
+  return function loadVmWithPerm(req, res, next) {
+    const vm = vmService.getVm(parseInt(req.params.id, 10));
+    if (!vm || !vmService.canAccess(req.user, vm, perm || null)) {
+      return res.status(404).render('error/404', {
+        code: 404, title: 'Not Found', message: 'Server not found or no access.',
+        settings: settings.all(), user: req.user,
+      });
+    }
+    const owner = db.prepare('SELECT username, email FROM users WHERE id = ?').get(vm.owner_id);
+    if (owner) {
+      vm.owner_name = owner.username;
+      vm.owner_email = owner.email;
+    }
+    // The serialized VM carries the plaintext root password. Owners and admins
+    // need it; a subuser never does, so drop it before the view can render it.
+    if (!vmService.isOwnerOrAdmin(req.user, vm)) delete vm.password;
+    req.vm = vm;
+    next();
+  };
 }
 
 router.get('/dashboard', (req, res) => {
@@ -78,21 +87,21 @@ router.get('/dashboard', (req, res) => {
   render(res, 'dashboard', { vms, allVms, canSeeAll: isAdmin, running, recentActivity });
 });
 
-router.get('/servers/:id', loadVm, (req, res) => {
+router.get('/servers/:id', loadVm(), (req, res) => {
   const allUsers = (req.user.role === 'admin' || req.user.root_admin)
     ? db.prepare('SELECT id, username, email FROM users ORDER BY username').all()
     : [];
   render(res, 'server/overview', { vm: req.vm, specs: specs.display(req.vm), backups: backupService.listForVm(req.vm.id), allUsers });
 });
 
-router.get('/servers/:id/overview', loadVm, (req, res) => {
+router.get('/servers/:id/overview', loadVm(), (req, res) => {
   const allUsers = (req.user.role === 'admin' || req.user.root_admin)
     ? db.prepare('SELECT id, username, email FROM users ORDER BY username').all()
     : [];
   render(res, 'server/overview', { vm: req.vm, specs: specs.display(req.vm), backups: backupService.listForVm(req.vm.id), allUsers });
 });
 
-router.get('/servers/:id/status', loadVm, async (req, res) => {
+router.get('/servers/:id/status', loadVm(), async (req, res) => {
   try {
     res.json({ ok: true, stats: await vmService.fullStatsFor(req.vm) });
   } catch (e) {
@@ -100,24 +109,24 @@ router.get('/servers/:id/status', loadVm, async (req, res) => {
   }
 });
 
-router.get('/servers/:id/console', loadVm, (req, res) => {
+router.get('/servers/:id/console', loadVm('console'), (req, res) => {
   render(res, 'server/console', { vm: req.vm });
 });
 
-router.get('/servers/:id/bootlog', loadVm, (req, res) => {
+router.get('/servers/:id/bootlog', loadVm('console'), (req, res) => {
   res.json({ ok: true, log: vmService.getBootLog(req.vm) });
 });
 
-router.get('/servers/:id/bootlog/stream', loadVm, (req, res) => {
+router.get('/servers/:id/bootlog/stream', loadVm('console'), (req, res) => {
   bootLogService.handleSseStream(req, res, req.vm);
 });
 
-router.post('/servers/:id/bootlog/clear', loadVm, (req, res) => {
+router.post('/servers/:id/bootlog/clear', loadVm('console'), (req, res) => {
   bootLogService.clearBootLogs(req.vm);
   res.json({ ok: true });
 });
 
-router.get('/servers/:id/bootlog/diagnose', loadVm, (req, res) => {
+router.get('/servers/:id/bootlog/diagnose', loadVm('console'), (req, res) => {
   try {
     const result = require('../services/bootLogAiService').diagnose(req.vm);
     res.json({ ok: true, ...result });
@@ -126,16 +135,16 @@ router.get('/servers/:id/bootlog/diagnose', loadVm, (req, res) => {
   }
 });
 
-router.get('/servers/:id/files', loadVm, (req, res) => {
+router.get('/servers/:id/files', loadVm('files'), (req, res) => {
   render(res, 'server/files', { vm: req.vm });
 });
 
-router.get('/servers/:id/backups', loadVm, (req, res) => {
+router.get('/servers/:id/backups', loadVm('backups'), (req, res) => {
   render(res, 'server/backups', { vm: req.vm, backups: backupService.listForVm(req.vm.id), slots: backupService.slotsFor(req.vm.id) });
 });
 
 // ---------- Snapshots ----------
-router.get('/servers/:id/snapshots', loadVm, async (req, res) => {
+router.get('/servers/:id/snapshots', loadVm('owner'), async (req, res) => {
   try {
     const data = await vmService.snapshotsFor(req.vm);
     render(res, 'server/snapshots', { vm: req.vm, snapshots: data.snapshots || [], running: vmService.statusOf(req.vm) === 'running' });
@@ -144,7 +153,7 @@ router.get('/servers/:id/snapshots', loadVm, async (req, res) => {
   }
 });
 
-router.get('/servers/:id/snapshots/list', loadVm, async (req, res) => {
+router.get('/servers/:id/snapshots/list', loadVm('owner'), async (req, res) => {
   try {
     const data = await vmService.snapshotsFor(req.vm);
     return res.json({ ok: true, snapshots: data.snapshots || [] });
@@ -153,7 +162,7 @@ router.get('/servers/:id/snapshots/list', loadVm, async (req, res) => {
   }
 });
 
-router.post('/servers/:id/snapshots', loadVm, express.json(), async (req, res) => {
+router.post('/servers/:id/snapshots', loadVm('owner'), express.json(), async (req, res) => {
   try {
     const name = String(req.body.name || '').trim() || ('snapshot-' + Date.now().toString(36));
     const result = await vmService.createSnapshotFor(req.vm, name);
@@ -164,7 +173,7 @@ router.post('/servers/:id/snapshots', loadVm, express.json(), async (req, res) =
   }
 });
 
-router.post('/servers/:id/snapshots/:sname/revert', loadVm, async (req, res) => {
+router.post('/servers/:id/snapshots/:sname/revert', loadVm('owner'), async (req, res) => {
   try {
     const result = await vmService.revertSnapshotFor(req.vm, req.params.sname);
     activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:snapshot:revert', details: { name: req.params.sname } });
@@ -174,7 +183,7 @@ router.post('/servers/:id/snapshots/:sname/revert', loadVm, async (req, res) => 
   }
 });
 
-router.post('/servers/:id/snapshots/:sname/delete', loadVm, async (req, res) => {
+router.post('/servers/:id/snapshots/:sname/delete', loadVm('owner'), async (req, res) => {
   try {
     const result = await vmService.deleteSnapshotFor(req.vm, req.params.sname);
     activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'vm:snapshot:delete', details: { name: req.params.sname } });
@@ -185,11 +194,11 @@ router.post('/servers/:id/snapshots/:sname/delete', loadVm, async (req, res) => 
 });
 
 // ---------- Storage volumes ----------
-router.get('/servers/:id/volumes', loadVm, (req, res) => {
+router.get('/servers/:id/volumes', loadVm('owner'), (req, res) => {
   render(res, 'server/volumes', { vm: req.vm, running: vmService.statusOf(req.vm) === 'running', ...vmService.volumesFor(req.vm) });
 });
 
-router.post('/servers/:id/volumes', loadVm, express.json(), async (req, res) => {
+router.post('/servers/:id/volumes', loadVm('owner'), express.json(), async (req, res) => {
   try {
     const updated = await vmService.addDataDiskFor(req.vm, req.body, req.user);
     return res.json({ ok: true, vm: updated });
@@ -198,7 +207,7 @@ router.post('/servers/:id/volumes', loadVm, express.json(), async (req, res) => 
   }
 });
 
-router.post('/servers/:id/volumes/:name/grow', loadVm, express.json(), async (req, res) => {
+router.post('/servers/:id/volumes/:name/grow', loadVm('owner'), express.json(), async (req, res) => {
   try {
     const updated = await vmService.growDataDiskFor(req.vm, req.params.name, req.body.size, req.user);
     return res.json({ ok: true, vm: updated });
@@ -207,20 +216,20 @@ router.post('/servers/:id/volumes/:name/grow', loadVm, express.json(), async (re
   }
 });
 
-router.get('/servers/:id/schedules', loadVm, (req, res) => {
+router.get('/servers/:id/schedules', loadVm('owner'), (req, res) => {
   const schedules = db.prepare('SELECT * FROM schedules WHERE vm_id = ? ORDER BY id DESC').all(req.vm.id);
   render(res, 'server/schedules', { vm: req.vm, schedules });
 });
 
-router.get('/servers/:id/startup', loadVm, (req, res) => {
+router.get('/servers/:id/startup', loadVm('owner'), (req, res) => {
   render(res, 'server/startup', { vm: req.vm });
 });
 
-router.get('/servers/:id/settings', loadVm, (req, res) => {
+router.get('/servers/:id/settings', loadVm(), (req, res) => {
   render(res, 'server/settings', { vm: req.vm });
 });
 
-router.get('/servers/:id/subusers', loadVm, (req, res) => {
+router.get('/servers/:id/subusers', loadVm('owner'), (req, res) => {
   const subs = db.prepare(
     'SELECT s.*, u.username, u.email FROM subusers s JOIN users u ON u.id = s.user_id WHERE s.vm_id = ? ORDER BY s.id DESC'
   ).all(req.vm.id);
@@ -228,19 +237,19 @@ router.get('/servers/:id/subusers', loadVm, (req, res) => {
   render(res, 'server/subusers', { vm: req.vm, subs, allUsers });
 });
 
-router.get('/servers/:id/activity', loadVm, (req, res) => {
+router.get('/servers/:id/activity', loadVm(), (req, res) => {
   const logs = activity.listActivity({ vm_id: req.vm.id, limit: 100 });
   render(res, 'server/activity', { vm: req.vm, logs });
 });
 
 // ---------- Webhooks ----------
-router.get('/servers/:id/webhooks', loadVm, (req, res) => {
+router.get('/servers/:id/webhooks', loadVm('owner'), (req, res) => {
   const webhookService = require('../services/webhookService');
   const hooks = webhookService.getWebhooks(req.vm);
   render(res, 'server/webhooks', { vm: req.vm, hooks, running: vmService.statusOf(req.vm) === 'running' });
 });
 
-router.post('/servers/:id/webhooks', loadVm, express.json(), (req, res) => {
+router.post('/servers/:id/webhooks', loadVm('owner'), express.json(), (req, res) => {
   try {
     const webhookService = require('../services/webhookService');
     if (!String(req.body.url || '').trim()) return res.status(400).json({ error: 'URL is required' });
@@ -260,7 +269,7 @@ router.post('/servers/:id/webhooks', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.delete('/servers/:id/webhooks/:index', loadVm, (req, res) => {
+router.delete('/servers/:id/webhooks/:index', loadVm('owner'), (req, res) => {
   try {
     const webhookService = require('../services/webhookService');
     const hooks = webhookService.getWebhooks(req.vm);
@@ -274,7 +283,7 @@ router.delete('/servers/:id/webhooks/:index', loadVm, (req, res) => {
   }
 });
 
-router.post('/servers/:id/power', loadVm, express.json(), async (req, res) => {
+router.post('/servers/:id/power', loadVm('power'), express.json(), async (req, res) => {
   const action = req.body.action;
   try {
     if (action === 'start') {
@@ -298,10 +307,10 @@ router.post('/servers/:id/power', loadVm, express.json(), async (req, res) => {
     if (action === 'tmate') {
       // Async job (Cloudflare cuts long requests): start it and let the
       // browser poll /servers/:id/tmate-status until the address is ready.
+      // tmate is a console feature, not a power one, so it lives on its own
+      // console-scoped route below; reachable here for callers still posting
+      // action:'tmate' to /power (this route is 'power'-scoped).
       const regen = !!(req.body && req.body.regen);
-      if (!vmService.canAccess(req.user, req.vm, 'power')) {
-        return res.status(403).json({ error: 'No permission for this server' });
-      }
       const job = vmService.startTmateJob(req.vm, regen);
       return res.json({ ok: true, pending: true, job: job.job, note: job.note });
     }
@@ -311,14 +320,22 @@ router.post('/servers/:id/power', loadVm, express.json(), async (req, res) => {
   }
 });
 
-router.get('/servers/:id/tmate-status', loadVm, (req, res) => {
-  if (!vmService.canAccess(req.user, req.vm, 'power')) {
-    return res.status(403).json({ error: 'No permission for this server' });
+// Console-scoped counterpart to the tmate branch of /power, so a subuser with
+// "Console" can open a remote shell without also being able to power the VM off.
+router.post('/servers/:id/tmate', loadVm('console'), express.json(), (req, res) => {
+  try {
+    const job = vmService.startTmateJob(req.vm, !!(req.body && req.body.regen));
+    return res.json({ ok: true, pending: true, job: job.job, note: job.note });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
+});
+
+router.get('/servers/:id/tmate-status', loadVm('console'), (req, res) => {
   return res.json(vmService.tmateJobStatus(req.vm));
 });
 
-router.post('/servers/:id/settings', loadVm, express.json(), (req, res) => {
+router.post('/servers/:id/settings', loadVm('owner'), express.json(), (req, res) => {
   try {
     const vm = vmService.update(req.vm, req.body, req.user);
     return res.json({ ok: true, vm });
@@ -327,7 +344,7 @@ router.post('/servers/:id/settings', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.post('/servers/:id/resize', loadVm, express.json(), async (req, res) => {
+router.post('/servers/:id/resize', loadVm('owner'), express.json(), async (req, res) => {
   try {
     const vm = await vmService.resizeDisk(req.vm, req.body.disk_size, req.user);
     return res.json({ ok: true, vm });
@@ -336,7 +353,7 @@ router.post('/servers/:id/resize', loadVm, express.json(), async (req, res) => {
   }
 });
 
-router.post('/servers/:id/backups', loadVm, express.json(), (req, res) => {
+router.post('/servers/:id/backups', loadVm('backups'), express.json(), (req, res) => {
   try {
     const slots = backupService.slotsFor(req.vm.id);
     if (slots.free <= 0) return res.status(400).json({ error: `Backup slot limit reached (${slots.used}/${slots.slots}). Delete a backup or raise the machine's backup slots.` });
@@ -347,7 +364,7 @@ router.post('/servers/:id/backups', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.post('/servers/:id/backups/:bid/restore', loadVm, async (req, res) => {
+router.post('/servers/:id/backups/:bid/restore', loadVm('backups'), async (req, res) => {
   try {
     const backup = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
     if (!backup) return res.status(404).json({ error: 'Backup not found' });
@@ -358,7 +375,7 @@ router.post('/servers/:id/backups/:bid/restore', loadVm, async (req, res) => {
   }
 });
 
-router.post('/servers/:id/backups/:bid/delete', loadVm, (req, res) => {
+router.post('/servers/:id/backups/:bid/delete', loadVm('backups'), (req, res) => {
   try {
     const backup = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
     if (!backup) return res.status(404).json({ error: 'Backup not found' });
@@ -369,13 +386,13 @@ router.post('/servers/:id/backups/:bid/delete', loadVm, (req, res) => {
   }
 });
 
-router.post('/servers/:id/backups/:bid/download', loadVm, (req, res) => {
+router.post('/servers/:id/backups/:bid/download', loadVm('backups'), (req, res) => {
   const backup = db.prepare('SELECT * FROM backups WHERE id = ? AND vm_id = ?').get(req.params.bid, req.vm.id);
   if (!backup) return res.status(404).send('Backup not found');
   res.download(backup.file, `${req.vm.name}-${backup.name}.qcow2`);
 });
 
-router.post('/servers/:id/schedules', loadVm, express.json(), (req, res) => {
+router.post('/servers/:id/schedules', loadVm('owner'), express.json(), (req, res) => {
   try {
     const scheduleService = require('../services/scheduleService');
     const sched = scheduleService.add({ ...req.body, vm_id: req.vm.id }, req.user);
@@ -385,7 +402,7 @@ router.post('/servers/:id/schedules', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.post('/servers/:id/schedules/:sid/delete', loadVm, (req, res) => {
+router.post('/servers/:id/schedules/:sid/delete', loadVm('owner'), (req, res) => {
   try {
     const scheduleService = require('../services/scheduleService');
     const sched = db.prepare('SELECT * FROM schedules WHERE id = ? AND vm_id = ?').get(req.params.sid, req.vm.id);
@@ -397,16 +414,20 @@ router.post('/servers/:id/schedules/:sid/delete', loadVm, (req, res) => {
   }
 });
 
-router.post('/servers/:id/subusers', loadVm, express.json(), (req, res) => {
+router.post('/servers/:id/subusers', loadVm('owner'), express.json(), (req, res) => {
   try {
     const { user_id, permissions } = req.body;
     if (!user_id) return res.status(400).json({ error: 'user_id required' });
     if (Number(user_id) === req.vm.owner_id) return res.status(400).json({ error: 'Owner cannot be a subuser' });
     const exists = db.prepare('SELECT id FROM subusers WHERE vm_id = ? AND user_id = ?').get(req.vm.id, user_id);
     if (exists) return res.status(400).json({ error: 'User already has access to this server' });
+    // Was `permissions || ['*']`, so a request that omitted the field handed out
+    // full control of the server. Fails closed now.
+    const perms = vmService.sanitizeSubuserPerms(permissions);
+    if (!perms.length) return res.status(400).json({ error: 'Pick at least one permission' });
     db.prepare(
       'INSERT INTO subusers (vm_id, user_id, permissions, created_at) VALUES (?,?,?,?)'
-    ).run(req.vm.id, user_id, JSON.stringify(permissions || ['*']), new Date().toISOString());
+    ).run(req.vm.id, user_id, JSON.stringify(perms), new Date().toISOString());
     activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'subuser:add', details: { user_id } });
     return res.json({ ok: true });
   } catch (e) {
@@ -414,7 +435,7 @@ router.post('/servers/:id/subusers', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.post('/servers/:id/subusers/:sid/delete', loadVm, (req, res) => {
+router.post('/servers/:id/subusers/:sid/delete', loadVm('owner'), (req, res) => {
   try {
     db.prepare('DELETE FROM subusers WHERE id = ? AND vm_id = ?').run(req.params.sid, req.vm.id);
     activity.logActivity({ user_id: req.user.id, vm_id: req.vm.id, event: 'subuser:remove' });
@@ -424,7 +445,7 @@ router.post('/servers/:id/subusers/:sid/delete', loadVm, (req, res) => {
   }
 });
 
-router.post('/servers/:id/transfer', loadVm, express.json(), (req, res) => {
+router.post('/servers/:id/transfer', loadVm('owner'), express.json(), (req, res) => {
   if (req.user.role !== 'admin' && !req.user.root_admin && req.vm.owner_id !== req.user.id) {
     return res.status(403).json({ error: 'Only server owner or administrators can transfer ownership' });
   }
@@ -438,7 +459,7 @@ router.post('/servers/:id/transfer', loadVm, express.json(), (req, res) => {
   }
 });
 
-router.post('/servers/:id/delete', loadVm, async (req, res) => {
+router.post('/servers/:id/delete', loadVm('owner'), async (req, res) => {
   if (req.vm.owner_id !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Only the owner can delete this server' });
   }
@@ -473,7 +494,7 @@ router.post('/account', express.urlencoded({ extended: true }), (req, res) => {
 });
 
 router.get('/settings', (req, res) => {
-  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet — ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.', 'google_linked': 'Google account linked successfully!', 'google_unlinked': 'Google account unlinked.', 'google_not_configured': 'Google linking is not configured yet - ask an admin to add the OAuth client ID/secret.', 'google_denied': 'Google authorization was cancelled.', 'google_oauth_failed': 'Google authorization failed. Try again.', 'google_already_linked': 'That Google account is already linked to a different user.', 'link_required': 'Link both a Discord and a Google account below to continue using the panel.' };
+  const msgs = { 'discord_linked': 'Discord account linked successfully!', 'discord_unlinked': 'Discord account unlinked.', 'discord_not_configured': 'Discord linking is not configured yet â€” ask an admin to add the OAuth client ID/secret in the Bot section.', 'discord_denied': 'Discord authorization was cancelled.', 'discord_oauth_failed': 'Discord authorization failed. Try again.', 'discord_badstate': 'Discord authorization expired or was tampered with. Try again.', 'google_linked': 'Google account linked successfully!', 'google_unlinked': 'Google account unlinked.', 'google_not_configured': 'Google linking is not configured yet - ask an admin to add the OAuth client ID/secret.', 'google_denied': 'Google authorization was cancelled.', 'google_oauth_failed': 'Google authorization failed. Try again.', 'google_already_linked': 'That Google account is already linked to a different user.', 'link_required': 'Link both a Discord and a Google account below to continue using the panel.' };
   const err = msgs[req.query.err] ? msgs[req.query.err] : (req.query.err || '');
   const ok = msgs[req.query.ok] ? msgs[req.query.ok] : (req.query.ok || '');
   render(res, 'userSettings', { tfaSetup: null, error: err, success: ok });

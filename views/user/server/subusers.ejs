@@ -52,6 +52,7 @@
         <div class="check mt-1"><input type="checkbox" id="permConsole"/> Console</div>
         <div class="check mt-1"><input type="checkbox" id="permFiles"/> File manager</div>
         <div class="check mt-1"><input type="checkbox" id="permBackups"/> Backups</div>
+        <div class="check mt-1"><input type="checkbox" id="permPower"/> Power (start / stop / restart)</div>
       </div>
       <div class="flex right">
         <button class="btn" data-vp-dismiss>Cancel</button>
@@ -69,7 +70,8 @@ async function saveSub() {
     : [].concat(
         document.getElementById('permConsole').checked ? ['console'] : [],
         document.getElementById('permFiles').checked ? ['files'] : [],
-        document.getElementById('permBackups').checked ? ['backups'] : []
+        document.getElementById('permBackups').checked ? ['backups'] : [],
+        document.getElementById('permPower').checked ? ['power'] : []
       );
   try {
     await VP.api('/servers/<%= vm.id %>/subusers', { method: 'POST', body: { user_id: document.getElementById('subUser').value, permissions: perms } });
