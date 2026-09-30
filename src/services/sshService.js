@@ -46,6 +46,12 @@ function attempt(vm, host, port, readyTimeout) {
   });
 }
 
+// A VM on a remote node is reached through that node's own address; loopback is
+// only ever correct for VMs this panel is hosting itself.
+function isRemoteNode(vm) {
+  return (Number(vm && vm.node_id) || 1) !== 1;
+}
+
 async function connect(vm, { readyTimeout = 5000 } = {}) {
   if (!vm || !vm.ssh_port || !vm.username) {
     throw new Error('VM has no SSH configuration');
@@ -54,8 +60,19 @@ async function connect(vm, { readyTimeout = 5000 } = {}) {
   try {
     return await attempt(vm, host, port, readyTimeout);
   } catch (err) {
-    if (host === '127.0.0.1') throw err;
-    return attempt(vm, '127.0.0.1', Number(vm.ssh_port) || 22, readyTimeout);
+    // Retrying against loopback only makes sense for a VM on this box. For a
+    // remote node the forward lives on the node, so 127.0.0.1 is guaranteed to
+    // fail: it doubled the wait before the user saw anything and replaced the
+    // real error with a misleading loopback one, so a rejected password or a
+    // wrong host surfaced as a plain "connection problem".
+    if (host === '127.0.0.1' || isRemoteNode(vm)) throw err;
+    try {
+      return await attempt(vm, '127.0.0.1', port, readyTimeout);
+    } catch (_) {
+      // Report the original failure; the loopback attempt is a diagnostic aid,
+      // not a better answer.
+      throw err;
+    }
   }
 }
 

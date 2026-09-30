@@ -799,14 +799,23 @@ function serializeVm(row) {
   //      so the SSH/overview hint is never 127.0.0.1.
   let sharedV4 = null;
   if (!staticV4) {
-    try {
-      const nd = require('./hostDetect').detectNetwork();
-      const v4s = (nd.addresses || []).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x.addr) && !String(x.addr).startsWith('127.'));
-      const ts = v4s.find((x) => { const p = String(x.addr).split('.').map(Number); return p[0] === 100 && p[1] >= 64 && p[1] <= 127; });
-      const pub = v4s.find((x) => { const p = String(x.addr).split('.').map(Number); return !(p[0] === 10 || p[0] === 192 && p[1] === 168 || p[0] === 172 && p[1] >= 16 && p[1] <= 31 || p[0] === 169 && p[1] === 254); });
-      if (ts) sharedV4 = ts.addr;
-      else if (pub) sharedV4 = pub.addr;
-    } catch (_) {}
+    // Auto-detection reads the PANEL's own interfaces, so it is only ever the
+    // right answer for a VM that lives on this box. For a remote node the port
+    // forward is on that node, and handing the guest's connect target to the
+    // panel's own address sent every remote VM's terminal and SSH hint to the
+    // wrong machine. Tailscale made it worse: a 100.x mesh address outranks a
+    // real public IP, so a mesh-enabled panel pointed remote VMs at a mesh
+    // address their node is not even on. Remote nodes must use their own host.
+    if (!remote) {
+      try {
+        const nd = require('./hostDetect').detectNetwork();
+        const v4s = (nd.addresses || []).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x.addr) && !String(x.addr).startsWith('127.'));
+        const ts = v4s.find((x) => { const p = String(x.addr).split('.').map(Number); return p[0] === 100 && p[1] >= 64 && p[1] <= 127; });
+        const pub = v4s.find((x) => { const p = String(x.addr).split('.').map(Number); return !(p[0] === 10 || p[0] === 192 && p[1] === 168 || p[0] === 172 && p[1] >= 16 && p[1] <= 31 || p[0] === 169 && p[1] === 254); });
+        if (ts) sharedV4 = ts.addr;
+        else if (pub) sharedV4 = pub.addr;
+      } catch (_) {}
+    }
     if (!sharedV4 && node_host && node_host !== '127.0.0.1' && node_host !== 'localhost' && node_host !== '::1' && !String(node_host).includes(':')) {
       sharedV4 = node_host;
     }

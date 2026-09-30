@@ -511,6 +511,10 @@ body.term-fullscreen #bgOverlay {
   let bootTerm, bootFit;
   let socket = null;
   let connected = false;
+  // True once socket.io has exhausted its own reconnection attempts. While
+  // this is set the socket object will never come back on its own, so
+  // setupSocket() has to build a fresh one instead of reusing the dead one.
+  let socketDead = false;
   let activeTab = 'terminal';
   let bootStreaming = false;
   let autoScroll = true;
@@ -728,16 +732,43 @@ body.term-fullscreen #bgOverlay {
 
   function joinSession(sid, reattach) {
     if (!terms.has(sid)) createTerminalPane(sid);
-    if (!socket || !connected) {
-      setupSocket();
-      setTimeout(() => { if (socket && connected) doJoin(sid, reattach); else setTimeout(() => doJoinWhenReady(sid, reattach), 2500); }, 300);
+    if (socket && connected) {
+      doJoin(sid, reattach);
       return;
     }
-    doJoin(sid, reattach);
+    setupSocket();
+    waitForSocketThenJoin(sid, reattach);
   }
 
-  function doJoinWhenReady(sid, reattach) {
-    if (connected && socket) doJoin(sid, reattach);
+  // Reconnect used to fire a single check 2.8s after the click (300ms, then a
+  // one-shot doJoinWhenReady at 2500ms). socket.io reconnects on a 2s delay
+  // with jitter, so on a slow or flaky link the socket was often still down
+  // when that one check ran: the join was dropped silently, nothing was
+  // retried, and the button looked completely dead. Poll until it is up.
+  let joinPoll = null;
+  function waitForSocketThenJoin(sid, reattach) {
+    if (joinPoll) { clearTimeout(joinPoll.timer); }
+    const budgetMs = 180000; // matches the server-side console:join deadline
+    const started = Date.now();
+    const tick = () => {
+      if (!terms.has(sid)) { joinPoll = null; return; } // tab closed while waiting
+      if (socket && connected) {
+        joinPoll = null;
+        doJoin(sid, reattach);
+        return;
+      }
+      if (Date.now() - started > budgetMs) {
+        joinPoll = null;
+        if (isVmRunning) {
+          setState('connection failed', 'pill-red', true);
+          const entry = terms.get(sid);
+          if (entry) entry.term.writeln('\r\n\x1b[31m[Error] could not reach the panel websocket - check your connection and press Reconnect\x1b[0m\r\n');
+        }
+        return;
+      }
+      joinPoll = { timer: setTimeout(tick, 500) };
+    };
+    tick();
   }
 
   function doJoin(sid, reattach) {
@@ -791,7 +822,18 @@ body.term-fullscreen #bgOverlay {
 
   // ---------- Socket setup ----------
   function setupSocket() {
-    if (socket) return;
+    // A live or reconnecting socket is reused as-is. A socket that has
+    // permanently given up is torn down first: the old unconditional
+    // `if (socket) return` meant Reconnect stayed a no-op forever after the
+    // first time the manager gave up, which is exactly when a user is most
+    // likely to be clicking it.
+    if (socket && !socketDead && (socket.connected || socket.active)) return;
+    if (socket) {
+      try { socket.removeAllListeners(); socket.io.removeAllListeners(); } catch (_) {}
+      try { socket.disconnect(); } catch (_) {}
+      socket = null;
+    }
+    socketDead = false;
     socket = io({
       transports: ['websocket', 'polling'],
       auth: { token: vpToken() },
@@ -799,8 +841,13 @@ body.term-fullscreen #bgOverlay {
       reconnectionDelay: 2000,
     });
 
+    if (socket.io) {
+      socket.io.on('reconnect_failed', () => { socketDead = true; });
+    }
+
     socket.on('connect', () => {
       connected = true;
+      socketDead = false;
       if (activeTab === 'terminal') {
         if (isVmRunning) {
           if (terms.size === 0) window.newTerminal();
