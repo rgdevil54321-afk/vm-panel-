@@ -283,4 +283,5 @@ function downloadBuffer(conn, remotePath) {
 module.exports = {
   connect, exec, withExec, shellStream, shellStreamWithRetry, listDir, readFile, writeFile,
   mkdir, rm, rename, chmod, uploadBuffer, downloadBuffer,
+  sshTarget,
 };

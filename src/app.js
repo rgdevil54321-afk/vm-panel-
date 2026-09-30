@@ -294,7 +294,9 @@ function attachConsoleSocket(io) {
       const joinToken = sid + ':' + Date.now();
       socket.data.pendingJoins.add(joinToken);
       let lastWaitingAt = 0;
+      let loggedFirstError = false;
       const waitBudgetMs = 180000;
+      const startTs = Date.now();
       const deadline = Date.now() + waitBudgetMs;
       socket.emit('console:waiting', { error: '', deadline, total: waitBudgetMs, sessionId: sid });
 
@@ -306,6 +308,15 @@ function attachConsoleSocket(io) {
           const now = Date.now();
           if (now - lastWaitingAt < 3000) return;
           lastWaitingAt = now;
+          // First failure only: without this the panel log says nothing at all
+          // about a terminal that never connects, and the reason has to be
+          // guessed at from the browser. Include the dialled target, since a
+          // wrong host is the failure that actually happens.
+          if (!loggedFirstError) {
+            loggedFirstError = true;
+            const t = sshService.sshTarget(vm);
+            logger.warn(`[console] vm ${vid} (node ${vm.node_id || 1}) ssh to ${t.host}:${t.port} failed: ${(err && err.message) || err}`);
+          }
           if (socket.connected && socket.data.pendingJoins.has(joinToken)) {
             socket.emit('console:waiting', { error: (err && err.message) ? err.message : String(err), deadline, total: waitBudgetMs, sessionId: sid });
           }
@@ -355,6 +366,8 @@ function attachConsoleSocket(io) {
         })
         .catch((e) => {
           if (socket.data.pendingJoins) socket.data.pendingJoins.delete(joinToken);
+          const t = sshService.sshTarget(vm);
+          logger.warn(`[console] vm ${vid} (node ${vm.node_id || 1}) gave up on ${t.host}:${t.port} after ${Math.round((Date.now() - startTs) / 1000)}s: ${(e && e.message) || e}`);
           if (!socket.connected) return;
           if (!vmService.isRunning(vm)) {
             socket.emit('console:offline');
