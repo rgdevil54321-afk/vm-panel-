@@ -90,7 +90,7 @@ function enforceApiKeyScopes(req, res) {
   // whichever prefix matched, so normalise before testing.
   const full = String(req.originalUrl || req.url || '').split('?')[0];
   const path = full.replace(/^\/api(?=\/)/, '');
-  const isAdminPath = path.startsWith('/admin');
+  const isAdminPath = path === '/admin' || path.startsWith('/admin/');
   if (isAdminPath) {
     res.status(403).json({ error: 'This API key is not allowed on admin endpoints. Use the panel key or a key scoped "*".' });
     return false;
