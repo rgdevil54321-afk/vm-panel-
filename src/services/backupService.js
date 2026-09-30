@@ -62,11 +62,14 @@ function createBackup(vm, { user = null, name = null, kind = 'full' } = {}) {
   return db.prepare('SELECT * FROM backups WHERE id = ?').get(Number(info.lastInsertRowid));
 }
 
-function restoreBackup(backup, { user = null } = {}) {
+// async + awaited stop: stop() is async, and renaming the qcow2 while QEMU
+// still holds it open left the guest running on the old (unlinked) inode while
+// the panel reported a successful restore.
+async function restoreBackup(backup, { user = null } = {}) {
   const vm = vmService.getVm(backup.vm_id);
   if (!vm) throw new Error('VM not found');
   if (vmService.isRunning(vm)) {
-    vmService.stop(vm, { user, force: true });
+    await vmService.stop(vm, { user, force: true });
   }
   if (!fs.existsSync(backup.file)) throw new Error('Backup file missing');
   const tmp = vm.img_file + '.restore';

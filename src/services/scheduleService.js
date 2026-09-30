@@ -30,7 +30,7 @@ function runJob(schedule, vm) {
     logger.info(`[cron] running "${sched.name}" (${sched.action}) for ${curVm.name}`);
     try {
       if (sched.action === 'start') await vmService.start(curVm);
-      else if (sched.action === 'stop') vmService.stop(curVm);
+      else if (sched.action === 'stop') await vmService.stop(curVm);
       else if (sched.action === 'restart') await vmService.restart(curVm);
       else if (sched.action === 'backup') {
         backupService.createBackup(curVm, { name: `sched-${Date.now()}` });

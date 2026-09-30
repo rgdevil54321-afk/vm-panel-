@@ -116,7 +116,14 @@ function attachVncProxy(server) {
 
   server.on('upgrade', (req, socket, head) => {
     const m = req.url.match(/^\/vncws\/(\d+)(?:[?].*)?$/);
-    if (!m) return;
+    // This is the only 'upgrade' listener on webServer, and socket.io is built
+    // from the same server. Returning early left socket.io's own handshake
+    // sockets open and unanswered, one per console page load. Only reclaim paths
+    // we actually own; everything else is another handler's business.
+    if (!m) {
+      if (req.url.startsWith('/vncws/')) socket.destroy();
+      return;
+    }
 
     const ctx = authenticate(parseInt(m[1], 10), req);
     if (!ctx) {

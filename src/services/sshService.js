@@ -65,12 +65,28 @@ function exec(conn, cmd, { timeout = 30000 } = {}) {
       if (err) return reject(err);
       let out = '';
       let errOut = '';
+      let settled = false;
+      // timeout used to be destructured and then ignored, so a guest that
+      // accepted the channel and wedged left this promise pending forever and
+      // held the SSH connection open via withExec's finally.
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { stream.destroy(); } catch (_) {}
+        reject(new Error('exec timed out after ' + timeout + 'ms'));
+      }, timeout);
+      const done = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(arg);
+      };
       stream.on('data', (d) => { out += d.toString(); });
       stream.stderr.on('data', (d) => { errOut += d.toString(); });
       stream.on('close', (code) => {
-        resolve({ code, stdout: out, stderr: errOut });
+        done(resolve, { code, stdout: out, stderr: errOut });
       });
-      stream.on('error', reject);
+      stream.on('error', (e) => done(reject, e));
     });
   });
 }
@@ -89,7 +105,9 @@ function shellStream(vm) {
   return connect(vm).then((conn) => {
     return new Promise((resolve, reject) => {
       conn.shell({ term: 'xterm-256color' }, (err, stream) => {
-        if (err) return reject(err);
+        // A failed shell() used to reject without ending conn, leaking one
+        // open SSH socket per retry (app.js retries every 2.5s for 3 minutes).
+        if (err) { try { conn.end(); } catch (_) {} return reject(err); }
         resolve({ conn, stream });
       });
     });
