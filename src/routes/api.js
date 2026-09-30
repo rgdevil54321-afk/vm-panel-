@@ -57,6 +57,17 @@ router.get('/settings/public', (req, res) => {
   });
 });
 
+// Express 4 does not attach a rejection handler to a promise returned by a
+// route, and Node >=15 terminates the process on an unhandled rejection. An
+// async handler that awaits without its own try/catch therefore takes the whole
+// panel down. Wrap them.
+const ah = (fn) => (req, res, next) => {
+  try {
+    const out = fn(req, res, next);
+    if (out && typeof out.catch === 'function') out.catch(next);
+  } catch (e) { next(e); }
+};
+
 // Beacon save endpoint: sendBeacon cannot set Authorization headers,
 // so auth falls back to the login cookie (same-origin). Registered
 // BEFORE router.use(apiAuth) on purpose.
@@ -185,7 +196,7 @@ router.post('/user/avatar', uploadAvatar.single('avatar'), (req, res) => {
 
 router.post('/user/password', json, (req, res) => {
   const bcrypt = require('bcryptjs');
-  if (!bcrypt.compareSync(req.body.current, req.user.password)) return res.status(400).json({ error: 'Current password incorrect' });
+  if (!bcrypt.compareSync(String(req.body.current || ''), req.user.password)) return res.status(400).json({ error: 'Current password incorrect' });
   if (!req.body.password || req.body.password.length < 6) return res.status(400).json({ error: 'Password too short' });
   authService.updateUser(req.user.id, { password: req.body.password });
   res.json({ ok: true });
@@ -339,9 +350,13 @@ router.post('/vms/:id/files/upload', loadVm('files'), express.raw({ limit: '200m
   }
 });
 router.get('/vms/:id/files/download', loadVm('files'), async (req, res) => {
+  // req.query.path is undefined with no query string, and .split() on that
+  // threw a TypeError that surfaced as a 500 with a stack-shaped message.
+  const wantPath = String(req.query.path || '');
+  if (!wantPath) return res.status(400).json({ error: 'path is required' });
   try {
-    const data = await agentService.download(req.vm, req.query.path);
-    const name = req.query.path.split('/').pop() || 'file';
+    const data = await agentService.download(req.vm, wantPath);
+    const name = wantPath.split('/').pop() || 'file';
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     res.send(data);
   } catch (e) {
@@ -379,7 +394,13 @@ router.post('/vms/:id/schedules', loadVm('owner'), json, (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.delete('/vms/:id/schedules/:sid', loadVm('owner'), (req, res) => {
-  try { scheduleService.remove(req.params.sid, req.user); res.json({ ok: true }); }
+  // loadVm only proves access to :id (VM A). :sid went straight to
+  // scheduleService.remove, which deletes by id alone, so
+  // DELETE /vms/A/schedules/<sid-of-B> deleted a schedule on VM B.
+  const sched = db.prepare('SELECT id FROM schedules WHERE id = ? AND vm_id = ?')
+    .get(req.params.sid, req.vm.id);
+  if (!sched) return res.status(404).json({ error: 'Schedule not found' });
+  try { scheduleService.remove(sched.id, req.user); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -516,7 +537,9 @@ router.get('/wallpapers/live', (req, res) => {
   }
 });
 
-router.post('/wallpapers/apply', json, (req, res) => {
+// Panel-global appearance settings. These were reachable by any logged-in user,
+// so a normal account could retheme the panel for everyone.
+router.post('/wallpapers/apply', apiAdmin, json, (req, res) => {
   try {
     const { url, mode = 'image', overlay, blur, transparency } = req.body || {};
     if (url) {
@@ -539,7 +562,7 @@ router.post('/wallpapers/apply', json, (req, res) => {
   }
 });
 
-router.post('/customization/save', json, (req, res) => {
+router.post('/customization/save', apiAdmin, json, (req, res) => {
   try {
     const fields = [
       'panel.bg_mode', 'panel.bg_color', 'panel.bg_url', 'panel.bg_video_url',
@@ -555,7 +578,7 @@ router.post('/customization/save', json, (req, res) => {
   }
 });
 
-router.post('/settings/music-volume', json, (req, res) => {
+router.post('/settings/music-volume', apiAdmin, json, (req, res) => {
   try {
     if (req.body.volume !== undefined) settings.set('panel.music_volume', String(req.body.volume));
     res.json({ ok: true });
@@ -564,7 +587,7 @@ router.post('/settings/music-volume', json, (req, res) => {
   }
 });
 
-router.get('/admin/nodes/status', (req, res) => {
+router.get('/admin/nodes/status', apiAdmin, (req, res) => {
   try {
     const nodeService = require('../services/nodeService');
     res.json({ ok: true, stats: nodeService.getNodeLiveStats(), cluster: nodeService.getClusterSummary() });
@@ -742,9 +765,14 @@ router.post('/admin/users/:id/assign-plan', apiAdmin, json, (req, res) => {
     if (!target) return res.status(404).json({ error: 'User not found' });
     const plan = req.body && req.body.plan_id ? bs.getPlan(req.body.plan_id) : null;
     if (!plan) return res.status(400).json({ error: 'Plan not found' });
-    bs.applyPlanToUser(plan, target);
+    // applyPlanToUser only copies the max_* quotas onto the user row: no
+    // user_plans entry, no users.plan_id, no expiry. So the assignment never
+    // showed up in the admin sectors list, PlanGuard never evaluated it,
+    // planOfUser() stayed null and vps_type fell back to the panel default -
+    // while the UI reported success. assignPlanToUser is the full path.
+    const assigned = bs.assignPlanToUser(target, plan, { assignedBy: req.user.id });
     activity.logActivity({ user_id: req.user.id, event: 'billing:plan_assign', details: { user_id: target.id, plan: plan.name } });
-    res.json({ ok: true, plan });
+    res.json({ ok: true, plan, assignment: assigned });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -765,7 +793,7 @@ router.post('/billing/coupon/redeem', apiAuth, json, (req, res) => {
 });
 
 // ---------- Discord bot (admin) ----------
-router.get('/admin/bot/status', apiAdmin, async (req, res) => {
+router.get('/admin/bot/status', apiAdmin, ah(async (req, res) => {
   const d = require('../services/discordService');
   const gw = require('../services/discordGateway');
   const base = {
@@ -790,7 +818,7 @@ router.get('/admin/bot/status', apiAdmin, async (req, res) => {
     token_app_id, app_info, app_error,
     me: me.ok ? me.data : null, me_error: me.ok ? null : (me.error || 'discord api unreachable'),
   });
-});
+}));
 
 router.post('/admin/bot/detect', apiAdmin, json, async (req, res) => {
   try {
@@ -859,28 +887,28 @@ router.post('/admin/bot/lifecycle', apiAdmin, json, async (req, res) => {
   }
 });
 
-router.get('/admin/bot/guilds', apiAdmin, async (req, res) => {
+router.get('/admin/bot/guilds', apiAdmin, ah(async (req, res) => {
   const d = require('../services/discordService');
   if (!d.botConfigured()) return res.status(400).json({ ok: false, guilds: [], error: 'Bot token not configured' });
   const r = await d.getGuilds();
   res.json({ ok: r.ok, guilds: r.guilds, error: r.ok ? null : (r.error || 'discord api error') });
-});
+}));
 
-router.get('/admin/bot/guilds/:gid/invites', apiAdmin, async (req, res) => {
+router.get('/admin/bot/guilds/:gid/invites', apiAdmin, ah(async (req, res) => {
   const d = require('../services/discordService');
   if (!d.botConfigured()) return res.status(400).json({ ok: false, invites: [], error: 'Bot token not configured' });
   const r = await d.getGuildInvites(req.params.gid);
   res.json({ ok: r.ok, guild_id: req.params.gid, invites: r.invites, error: r.ok ? null : (r.error || 'discord api error') });
-});
+}));
 
-router.get('/admin/bot/guilds/:gid/member/:uid', apiAdmin, async (req, res) => {
+router.get('/admin/bot/guilds/:gid/member/:uid', apiAdmin, ah(async (req, res) => {
   const d = require('../services/discordService');
   if (!d.botConfigured()) return res.status(400).json({ ok: false, member: null, error: 'Bot token not configured' });
   const r = await d.getGuildMember(req.params.gid, req.params.uid);
   res.json({ ok: r.ok, guild_id: req.params.gid, user_id: req.params.uid, member: r.ok ? r.data : null, error: r.ok ? null : (r.error || 'discord api error') });
-});
+}));
 
-router.post('/admin/bot/test', apiAdmin, json, async (req, res) => {
+router.post('/admin/bot/test', apiAdmin, json, ah(async (req, res) => {
   const d = require('../services/discordService');
   if (!d.botConfigured()) return res.status(400).json({ ok: false, error: 'Bot token not configured' });
   const me = await d.getBotUser();
@@ -898,12 +926,12 @@ router.post('/admin/bot/test', apiAdmin, json, async (req, res) => {
     dm = { ok: false, error: 'No Discord target: enter a Discord user ID, or link your own Discord account in Settings.' };
   }
   res.json({ ok: true, me: me.data, dm: dm ? { ok: dm.ok, error: dm.error, target: dmTarget || null } : null });
-});
+}));
 
-router.post('/admin/bot/run-guard', apiAdmin, async (req, res) => {
+router.post('/admin/bot/run-guard', apiAdmin, ah(async (req, res) => {
   const pg = require('../services/planGuardService');
   res.json(await pg.run());
-});
+}));
 
 // ---------- Billing: user plan assignments (admin) ----------
 router.get('/admin/billing/user-plans', apiAdmin, (req, res) => {
@@ -996,22 +1024,22 @@ router.get('/admin/updates/status', apiAdmin, async (req, res) => {
     res.json({ ok: true, current, log, ahead });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-router.post('/admin/updates/fetch', apiAdmin, async (req, res) => {
+router.post('/admin/updates/fetch', apiAdmin, ah(async (req, res) => {
   const us = require('../services/updatesService');
   res.json(await us.fetchUpdates());
-});
-router.post('/admin/updates/update', apiAdmin, async (req, res) => {
+}));
+router.post('/admin/updates/update', apiAdmin, ah(async (req, res) => {
   const us = require('../services/updatesService');
   res.json(await us.updateNow());
-});
-router.post('/admin/updates/rollback', apiAdmin, async (req, res) => {
+}));
+router.post('/admin/updates/rollback', apiAdmin, ah(async (req, res) => {
   const us = require('../services/updatesService');
   res.json(await us.rollback());
-});
-router.post('/admin/updates/nodes', apiAdmin, async (req, res) => {
+}));
+router.post('/admin/updates/nodes', apiAdmin, ah(async (req, res) => {
   const us = require('../services/updatesService');
   res.json(await us.updateAllNodes());
-});
+}));
 router.get('/admin/neofetch/export', apiAdmin, (req, res) => {
   const ns = require('../services/neofetchService');
   res.json({

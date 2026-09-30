@@ -14,6 +14,17 @@ const { requireLinkedAccounts } = require('../middleware/requireLinkedAccounts')
 const { uploadAvatar } = require('../middleware/upload');
 const logger = require('../lib/logger');
 const crypto = require('crypto');
+
+// Express 4 does not attach a rejection handler to a promise returned by a
+// route, and Node >=15 terminates the process on an unhandled rejection. An
+// async handler that awaits without its own try/catch therefore takes the whole
+// panel down. Wrap them.
+const ah = (fn) => (req, res, next) => {
+  try {
+    const out = fn(req, res, next);
+    if (out && typeof out.catch === 'function') out.catch(next);
+  } catch (e) { next(e); }
+};
 const router = express.Router();
 
 function render(res, view, vars = {}) {
@@ -520,7 +531,7 @@ router.get('/settings/discord/link', (req, res) => {
   res.redirect(d.authorizeUrl(oauthRedirectUri(req), discordState(req.user.id)));
 });
 
-router.get('/settings/discord/callback', async (req, res) => {
+router.get('/settings/discord/callback', ah(async (req, res) => {
   const { code, state, error } = req.query;
   if (error) return res.redirect('/settings?err=discord_denied');
   const parts = String(state || '').split('.');
@@ -554,7 +565,7 @@ router.get('/settings/discord/callback', async (req, res) => {
     logger.warn('[discord] guild auto-join error: ' + e.message);
   }
   res.redirect('/settings?ok=discord_linked' + (joined ? '&joined=' + joined : ''));
-});
+}));
 
 router.post('/settings/discord/unlink', express.json(), (req, res) => {
   db.prepare('UPDATE users SET discord_id = NULL, discord_name = NULL, discord_avatar = NULL, discord_linked_at = NULL, updated_at = ? WHERE id = ?')
@@ -588,7 +599,11 @@ router.get('/settings/google/link', (req, res) => {
   res.redirect(g.authorizeUrl(googleRedirectUri(req), discordState(req.user.id)));
 });
 
-router.get('/settings/google/callback', async (req, res) => {
+router.get('/settings/google/callback', (req, res, next) => {
+  handleGoogleCallback(req, res).catch(next);
+});
+
+async function handleGoogleCallback(req, res) {
   const { code, state, error } = req.query;
   if (error) return res.redirect('/settings?err=google_denied');
   const userId = googleStateOk(state);
@@ -606,7 +621,7 @@ router.get('/settings/google/callback', async (req, res) => {
     .run(gid, String(me.data.name || me.data.email || '').slice(0, 64), avatar, new Date().toISOString(), new Date().toISOString(), userId);
   activity.logActivity({ user_id: userId, event: 'account:google_link', details: { google_id: gid } });
   res.redirect('/settings?ok=google_linked');
-});
+}
 
 router.post('/settings/google/unlink', express.json(), (req, res) => {
   db.prepare('UPDATE users SET google_id = NULL, google_name = NULL, google_avatar = NULL, google_linked_at = NULL, updated_at = ? WHERE id = ?')
@@ -625,7 +640,9 @@ router.post('/profile/avatar', uploadAvatar.single('avatar'), (req, res) => {
 router.post('/profile/password', express.json(), (req, res) => {
   const { current, password } = req.body;
   const bcrypt = require('bcryptjs');
-  if (!bcrypt.compareSync(current, req.user.password)) return res.status(400).json({ error: 'Current password is incorrect' });
+  // bcryptjs throws on a non-string first argument, so a missing or non-string
+  // "current" escaped as a 500 instead of the intended 400.
+  if (!bcrypt.compareSync(String(current || ''), req.user.password)) return res.status(400).json({ error: 'Current password is incorrect' });
   if (!password || password.length < 6) return res.status(400).json({ error: 'New password too short' });
   authService.updateUser(req.user.id, { password });
   activity.logActivity({ user_id: req.user.id, event: 'profile:password_changed' });
@@ -674,15 +691,28 @@ router.post('/settings', express.urlencoded({ extended: true }), (req, res) => {
     const data = {};
     if (req.body.avatar_url) data.avatar = req.body.avatar_url;
     if (req.body.language) data.language = req.body.language;
-    if (req.body.music_enabled !== undefined) data.music_enabled = req.body.music_enabled === 'on' || req.body.music_enabled === '1' || req.body.music_enabled === 'true' ? 1 : 0;
-    if (req.body.music_volume !== undefined) data.music_volume = Math.max(0, Math.min(100, parseInt(req.body.music_volume, 10) || 35));
-    if (req.body.sfx_enabled !== undefined) data.sfx_enabled = req.body.sfx_enabled === 'on' || req.body.sfx_enabled === '1' || req.body.sfx_enabled === 'true' ? 1 : 0;
     authService.updateUser(req.user.id, data);
-    const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
-    return render(res, 'account', { success: 'Settings saved!', loginHistory, tfaSetup: null });
+    // music_*/sfx_* are not on authService.updateUser's allow-list, so passing
+    // them through `data` silently dropped them while still reporting success.
+    // Write them directly, matching /api/user/ambient-music and /api/user/sfx.
+    const b = req.body;
+    const flag = (v) => (v === 'on' || v === '1' || v === 'true' || v === true ? 1 : 0);
+    const sets = [];
+    const vals = [];
+    if (b.music_enabled !== undefined) { sets.push('music_enabled = ?'); vals.push(flag(b.music_enabled)); }
+    if (b.music_volume !== undefined) { sets.push('music_volume = ?'); vals.push(Math.max(0, Math.min(100, parseInt(b.music_volume, 10) || 35))); }
+    if (b.sfx_enabled !== undefined) { sets.push('sfx_enabled = ?'); vals.push(flag(b.sfx_enabled)); }
+    if (b.sfx_volume !== undefined) { sets.push('sfx_volume = ?'); vals.push(Math.max(0, Math.min(100, parseInt(b.sfx_volume, 10) || 40))); }
+    if (sets.length) {
+      sets.push('updated_at = ?');
+      vals.push(new Date().toISOString(), req.user.id);
+      db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    }
+    // render() prefixes user/, so this used to land on the Account page instead
+    // of the Settings form the user submitted from.
+    return render(res, 'userSettings', { tfaSetup: null, success: 'Settings saved!', error: '' });
   } catch (e) {
-    const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
-    return render(res, 'account', { error: e.message, loginHistory, tfaSetup: null });
+    return render(res, 'userSettings', { tfaSetup: null, success: '', error: e.message });
   }
 });
 

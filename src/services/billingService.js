@@ -67,7 +67,11 @@ function updatePlan(id, data) {
     data.max_cpu !== undefined && data.max_cpu !== '' ? parseInt(data.max_cpu, 10) : plan.max_cpu,
     data.max_mem_mb !== undefined && data.max_mem_mb !== '' ? parseInt(data.max_mem_mb, 10) : plan.max_mem_mb,
     data.max_disk_gb !== undefined && data.max_disk_gb !== '' ? parseInt(data.max_disk_gb, 10) : plan.max_disk_gb,
-    data.active === undefined || data.active === true || data.active === 1 || data.active === '1' ? 1 : 0,
+    // Every sibling column falls back to the existing row when the key is
+    // absent. `active` did not: `data.active === undefined` made the first
+    // disjunct true, so a partial update reactivated a deliberately
+    // deactivated plan and re-exposed it through listPlans(true).
+    data.active === undefined ? plan.active : (data.active === false || data.active === 0 || data.active === '0' ? 0 : 1),
     data.kind !== undefined ? (PLAN_KINDS.includes(data.kind) ? data.kind : 'paid') : plan.kind,
     data.invites_required !== undefined ? (parseInt(data.invites_required, 10) > 0 ? parseInt(data.invites_required, 10) : 0) : plan.invites_required,
     data.boost_required !== undefined ? (data.boost_required === true || data.boost_required === 1 || data.boost_required === '1' ? 1 : 0) : plan.boost_required,
@@ -276,6 +280,9 @@ function setUserPlanStatus(userPlanId, status, detail = '') {
   if (!up) return false;
   db.prepare('UPDATE user_plans SET status = ?, last_check_at = ?, last_check_detail = ? WHERE id = ?')
     .run(status, new Date().toISOString(), String(detail).slice(0, 200), userPlanId);
+  // Was missing: returned undefined on success while returning false when the
+  // row was absent, so the "false or truthy" contract was a trap for callers.
+  return true;
 }
 
 function logPlanCheck(userPlanId, userId, ok, detail) {

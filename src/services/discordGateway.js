@@ -175,14 +175,21 @@ function onMessage(raw) {
 
 function connect() {
   if (stopped || !WebSocket || !configured() || !enabled()) return;
+  // A second connect() while the first socket is still CONNECTING (readyState
+  // 0) overwrote the module-level ws, orphaning it. The orphan's close handler
+  // then nulled the reference to the healthy socket and scheduled a spurious
+  // reconnect. Two quick bot-config saves hit exactly this.
+  if (ws) return;
   try {
     ws = new WebSocket(GATEWAY, { perMessageDeflate: true });
+    const mine = ws;
     ws.on('open', () => { /* nothing to send until HELLO */ });
     ws.on('message', onMessage);
     ws.on('error', () => { /* handled by close */ });
     ws.on('close', () => {
-      ws = null;
-      if (!stopped) {
+      // Only clear the reference if it is still ours.
+      if (ws === mine) ws = null;
+      if (!stopped && ws === null) {
         try { if (heartbeatTimer) clearInterval(heartbeatTimer); } catch (_) { /* ignore */ }
         heartbeatTimer = null;
         heartbeatAck = true;
@@ -203,7 +210,7 @@ function isAvailable() { return !!WebSocket; }
 function start() {
   stopped = false;
   startRotation();
-  if (!isRunning()) connect();
+  if (!ws) connect();
 }
 
 function stop() {
