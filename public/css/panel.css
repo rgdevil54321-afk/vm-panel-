@@ -933,7 +933,10 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-glow);
-  background: rgba(15, 23, 42, 0.85);
+  /* Was rgba(15, 23, 42, 0.85), which overrode --bg-input on every theme and
+     turned a focused Daylight field dark navy. Lifted slightly off the resting
+     value so focus still reads as a change. */
+  background: color-mix(in srgb, var(--bg-input) 82%, var(--surface-2));
 }
 select {
   cursor: pointer;
@@ -963,8 +966,11 @@ textarea {
   cursor: pointer;
 }
 .check input {
-  width: 17px;
-  height: 17px;
+  /* 18px to agree with v3.css, which draws the tick with borders on a
+     appearance:none box. `accent-color` is the fallback for when v3.css has
+     not loaded; the v3 rules set appearance:none and ignore it. */
+  width: 18px;
+  height: 18px;
   cursor: pointer;
   margin: 0;
   accent-color: var(--accent);
@@ -1405,14 +1411,24 @@ tr:hover td { background: rgba(255, 255, 255, 0.028); }
   box-shadow: 0 6px 20px var(--accent-glow), 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
-/* Inputs: focus glow */
+/* Inputs: focus glow
+
+   These two rules used to carry !important, which caused three real problems:
+   the focus ring was a hardcoded rgba(99,102,241,.14) so it stayed indigo on
+   every non-indigo theme (Aurora, Matrix, Sakura, Crimson, ...); the
+   !important radius flattened the topbar search back to a rectangle even
+   though v2.css asks for a 999px pill; and the !important transition
+   restricted every field to border-color + box-shadow, defeating the richer
+   transitions in polish.css, v2.css and v3.css. Cascade order and specificity
+   already put these rules ahead of the base `input` rule above, so the
+   !important flags are not needed to win. */
 input, select, textarea {
-  border-radius: var(--radius-sm) !important;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--border-focus) !important;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14) !important;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 /* Range sliders: accent-filled track */
@@ -1422,10 +1438,14 @@ input[type="range"] {
   height: 6px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.1);
-  outline: none !important;
-  box-shadow: none !important;
+  /* `outline: none !important` / `box-shadow: none !important` used to sit here.
+     The box-shadow flag suppressed the track's inset shadow and hairline ring
+     from v3.css, and the outline flag would have outranked v2.css's
+     `:focus-visible` outline at (0,1,1), removing the keyboard focus ring from
+     every slider. Both are gone: v3.css supplies the track's own shadow, and
+     leaving `outline` to the UA plus v2.css restores focus visibility. */
 }
-input[type="range"]:focus { box-shadow: 0 0 0 3px rgba(99,102,241,0.14) !important; }
+input[type="range"]:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
