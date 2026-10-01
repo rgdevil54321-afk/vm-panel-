@@ -201,10 +201,10 @@
           <% for (const a of recentActivity.slice(0, 8)) { %>
             <tr>
               <td>
-                <span class="pill pill-blue mono font-bold"><%= a.event %></span>
+                <span class="pill pill-blue font-bold" title="<%= a.event %>"><%= a.event_label || a.event %></span>
               </td>
-              <td class="muted mono text-sm truncate" style="max-width:380px">
-                <%= a.details ? JSON.stringify(a.details) : '—' %>
+              <td class="muted text-sm truncate" style="max-width:380px" title="<%= a.details_text || '' %>">
+                <%= a.details_text || '—' %>
               </td>
               <td class="muted text-sm"><%= new Date(a.created_at).toLocaleString() %></td>
             </tr>

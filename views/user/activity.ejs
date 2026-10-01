@@ -12,9 +12,9 @@
         <tbody>
         <% for (const a of logs) { %>
           <tr>
-            <td><span class="pill pill-blue"><%= a.event %></span></td>
+            <td><span class="pill pill-blue" title="<%= a.event %>"><%= a.event_label || a.event %></span></td>
             <td><% if (a.vm_id) { %><a href="/servers/<%= a.vm_id %>"><%= a.vm_name || ('#'+a.vm_id) %></a><% } else { %>-<% } %></td>
-            <td class="muted truncate" style="max-width:320px"><%= a.details ? JSON.stringify(a.details) : '-' %></td>
+            <td class="muted truncate" style="max-width:320px" title="<%= a.details_text || '' %>"><%= a.details_text || '-' %></td>
             <td class="muted"><%= a.ip || '-' %></td>
             <td class="muted"><%= new Date(a.created_at).toLocaleString() %></td>
           </tr>
