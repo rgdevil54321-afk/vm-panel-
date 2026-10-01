@@ -361,13 +361,26 @@ function attachConsoleSocket(io) {
           const onEnd = () => closeSession(session, 'stream-closed');
           stream.on('close', onEnd);
           stream.on('error', onEnd);
+          // The transport can die without the channel ever emitting close (node
+          // reboot, reset connection, network drop). Only the stream was
+          // watched, so the session stayed "live" server-side, the tab kept
+          // claiming to be connected, and it lingered until the idle sweep.
+          // closeSession is idempotent, so racing with onEnd is fine.
+          try {
+            conn.on('error', () => closeSession(session, 'conn-closed'));
+            conn.on('close', () => closeSession(session, 'conn-closed'));
+            conn.on('end', () => closeSession(session, 'conn-closed'));
+          } catch (_) {}
           try { stream.setWindow(session.rows, session.cols); } catch (_) {}
           attach(session, { replay: false });
         })
         .catch((e) => {
           if (socket.data.pendingJoins) socket.data.pendingJoins.delete(joinToken);
-          const t = sshService.sshTarget(vm);
-          logger.warn(`[console] vm ${vid} (node ${vm.node_id || 1}) gave up on ${t.host}:${t.port} after ${Math.round((Date.now() - startTs) / 1000)}s: ${(e && e.message) || e}`);
+          const cancelled = /Connection cancelled/.test(String((e && e.message) || e));
+          if (!cancelled) {
+            const t = sshService.sshTarget(vm);
+            logger.warn(`[console] vm ${vid} (node ${vm.node_id || 1}) gave up on ${t.host}:${t.port} after ${Math.round((Date.now() - startTs) / 1000)}s: ${(e && e.message) || e}`);
+          }
           if (!socket.connected) return;
           if (!vmService.isRunning(vm)) {
             socket.emit('console:offline');

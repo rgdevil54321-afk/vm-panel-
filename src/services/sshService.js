@@ -54,12 +54,23 @@ function isRemoteNode(vm) {
 
 async function connect(vm, { readyTimeout = 5000 } = {}) {
   if (!vm || !vm.ssh_port || !vm.username) {
-    throw new Error('VM has no SSH configuration');
+    const err = new Error('VM has no SSH configuration');
+    // Retrying cannot invent a missing port or username, and the caller retries
+    // for three minutes -- so the user waited three minutes for a message that
+    // was already known. Flagged so the retry loop gives up immediately.
+    err.permanent = true;
+    throw err;
   }
   const { host, port } = sshTarget(vm);
   try {
     return await attempt(vm, host, port, readyTimeout);
   } catch (err) {
+    // The guest answered and then refused the credentials. A VM that is merely
+    // still booting refuses the TCP connection instead, so this cannot be a
+    // transient boot state -- retrying just burns the whole budget.
+    if (err && /authentication method|permission denied|too many authentication/i.test(String(err.message))) {
+      err.permanent = true;
+    }
     // Retrying against loopback only makes sense for a VM on this box. For a
     // remote node the forward lives on the node, so 127.0.0.1 is guaranteed to
     // fail: it doubled the wait before the user saw anything and replaced the
@@ -118,13 +129,34 @@ async function withExec(vm, cmd, opts) {
   }
 }
 
-function shellStream(vm) {
+function shellStream(vm, { shellTimeout = 10000 } = {}) {
   return connect(vm).then((conn) => {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer = null;
+      // Everything here settles the promise. It used not to: once attempt()
+      // had resolved, its `error` handler was inert (`if (!settled)`), and
+      // nothing at all listened for `close`. So a connection that dropped
+      // between `ready` and the shell channel opening left this promise pending
+      // forever -- shellStreamWithRetry sat in `await` with no timeout, no
+      // error and no retry, and the terminal stayed on "connecting..." until
+      // the page was reloaded. Once the shell is up, `settled` makes every
+      // listener below a no-op, leaving the live session to app.js.
+      const done = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try { conn.end(); } catch (_) {}
+        fn(arg);
+      };
+      timer = setTimeout(() => done(reject, new Error('SSH shell request timed out')), shellTimeout);
+      conn.on('error', (e) => done(reject, e));
+      conn.on('close', () => done(reject, new Error('SSH connection closed before the shell opened')));
       conn.shell({ term: 'xterm-256color' }, (err, stream) => {
-        // A failed shell() used to reject without ending conn, leaking one
-        // open SSH socket per retry (app.js retries every 2.5s for 3 minutes).
-        if (err) { try { conn.end(); } catch (_) {} return reject(err); }
+        if (err) return done(reject, err);
+        if (settled) { try { stream.end(); } catch (_) {} return; }
+        settled = true;
+        clearTimeout(timer);
         resolve({ conn, stream });
       });
     });
@@ -146,6 +178,10 @@ async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, sh
     } catch (err) {
       lastErr = err;
       if (onError) { try { onError(err, attempt); } catch (_) {} }
+      // Nothing a retry can change: no SSH port/username, or the guest
+      // answered and rejected the credentials. Looping for the full three
+      // minutes only delays telling the user something already known.
+      if (err && err.permanent) throw err;
       // maxRetries = 0 (or falsy) keeps retrying until shouldContinue() is false or the deadline passes
       if (maxRetries && attempt + 1 >= maxRetries) throw lastErr;
       attempt += 1;
