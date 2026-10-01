@@ -897,6 +897,21 @@ function serializeVm(row) {
   if (token) {
     Object.defineProperty(out, 'agent_token', { value: token, enumerable: false, configurable: true, writable: true });
   }
+
+  // The guest's plaintext password, hidden the same way as the agent token.
+  // `out = { ...row }` used to carry it as an ordinary enumerable property, so
+  // any route that serialized a VM straight to JSON shipped the root password
+  // to the browser. GET /api/vms is exactly that route and never went through
+  // the loadVm() gate that deletes the password for non-owners -- so a subuser
+  // holding only `files` received SSH credentials for every VM shared with
+  // them. Stripping it per-call site is whack-a-mole; making the property
+  // non-enumerable fixes every path at once. Property access still works, so
+  // sshService can read vm.password when dialling the guest.
+  const pass = out.password;
+  delete out.password;
+  if (pass) {
+    Object.defineProperty(out, 'password', { value: pass, enumerable: false, configurable: true, writable: true });
+  }
   return out;
 }
 
