@@ -1,0 +1,500 @@
+/* ============================================================================
+   VLX v3 — control primitives + finishing pass
+   ----------------------------------------------------------------------------
+   Loads after panel.css, polish.css, v2.css and modal.css. This layer owns the
+   *basics* the panel renders on every single page:
+
+     · the button variant set (btn-success / btn-warning were referenced by four
+       views with no rule anywhere, so they rendered as neutral grey)
+     · checkboxes + radios (22 checkboxes and 3 radios shipped as raw OS widgets)
+     · range sliders (the comment in panel.css claimed an "accent-filled track";
+       the track was flat. --vlx-range is written by panel.js)
+     · segmented controls that toggle .active (the dashboard server filter had no
+       active state at all, so JS set a class nothing read)
+     · inline <code>, dividers, small text utilities
+     · theme-correct surfaces: several dropdown / overlay / autofill colours were
+       hardcoded dark and broke the Daylight theme
+
+   Everything here is built on the single --* token namespace from panel.css so
+   all eleven themes keep working. Nothing reintroduces a second token prefix.
+
+   Design notes: hairlines stay 1px, radius stays --radius-sm, motion uses the
+   shared --ease curve, and every colour is either a token or a color-mix of
+   one. No new hues are introduced -- success/amber reuse --green / --yellow.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   Theme-aware surface tokens.
+   Several rules across the earlier layers hardcoded dark values (#0b1020,
+   rgba(11,16,28,.92)) for menus, overlays and autofill. Those read fine on the
+   ten dark themes and fall apart on Daylight, where they render as near-black
+   boxes on a white page. These two tokens are the single fix; the rules at the
+   bottom of this file consume them.
+   --------------------------------------------------------------------------- */
+:root {
+  /* Opaque surface for native-rendered menus (select popups, autofill). */
+  --menu-surface: #0b1020;
+  /* Opaque surface for a real field, used for the slider thumb's contrast ring
+     and Chrome's autofill fill. */
+  --field-surface: #0f172a;
+  /* Top-bar-to-bottom fill of a range track. panel.js keeps it in sync with the
+     input's value; the 0% default is honest -- an unfilled track -- rather than
+     guessing a midpoint. */
+  --vlx-range: 0%;
+}
+
+html[data-theme="daylight"] {
+  --menu-surface: #ffffff;
+  --field-surface: #ffffff;
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons -- the missing variants.
+   bot.ejs (Start / Restart), templates.ejs (Restore Defaults) and updates.ejs
+   (Rollback to Previous) all asked for a semantic tint and got plain grey.
+   --------------------------------------------------------------------------- */
+.btn-success,
+.btn-warning {
+  color: #fff;
+  border-color: transparent;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 88%, #fff), var(--green) 55%, color-mix(in srgb, var(--green) 82%, #065f46));
+  box-shadow: 0 4px 14px var(--green-glow);
+}
+.btn-success:hover {
+  background: linear-gradient(135deg, var(--green), color-mix(in srgb, var(--green) 76%, #065f46));
+  color: #fff;
+  box-shadow: 0 8px 24px var(--green-glow);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--yellow) 88%, #fff), var(--yellow) 55%, color-mix(in srgb, var(--yellow) 80%, #b45309));
+  box-shadow: 0 4px 14px var(--yellow-glow);
+}
+.btn-warning:hover {
+  background: linear-gradient(135deg, var(--yellow), color-mix(in srgb, var(--yellow) 78%, #b45309));
+  color: #fff;
+  box-shadow: 0 8px 24px var(--yellow-glow);
+}
+
+.btn-success:disabled,
+.btn-warning:disabled {
+  box-shadow: none;
+}
+
+/* A shared sheen for the two new variants, matching the accent buttons which
+   already have one from v2.css. */
+.btn-success::after,
+.btn-warning::after {
+  content: "";
+  position: absolute;
+  inset: 1px 1px auto 1px;
+  height: 45%;
+  border-radius: calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 40% 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Segmented controls.
+
+   dashboard.ejs renders "My Servers / All Servers" as two `.btn.btn-sm.vmf`
+   inside a glass container, and setFilter() swaps a `.active` class between
+   them. Nothing in any stylesheet read `.active`, so the two tabs were
+   indistinguishable and the filter looked inert.
+   --------------------------------------------------------------------------- */
+.vmf {
+  position: relative;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+.vmf:hover {
+  background: var(--surface);
+  border-color: transparent;
+  color: var(--text);
+}
+.vmf.active {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--accent-2)));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+.vmf.active:hover {
+  background: linear-gradient(135deg, var(--accent-light), var(--accent));
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Checkboxes and radios.
+
+   These are the most repeated control in the panel and were the only ones still
+   drawn by the operating system, which is why they read as unfinished next to
+   the glass surfaces around them.
+
+   `.switch input` is excluded on purpose: the toggle hides the real input with
+   opacity/width/height 0 and positions the pill behind it, so giving it a
+   visible box would break every switch in settings, billing and bot.
+   --------------------------------------------------------------------------- */
+input[type="checkbox"]:not(.switch input),
+input[type="radio"]:not(.switch input) {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid color-mix(in srgb, var(--text-dim) 62%, transparent);
+  border-radius: 6px !important;
+  background: var(--bg-input);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+
+input[type="checkbox"]:not(.switch input):hover:not(:disabled),
+input[type="radio"]:not(.switch input):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+}
+
+/* The mark is drawn with two borders on a rotated box rather than an SVG mask,
+   so it inherits the accent on every engine and needs no extra asset. */
+input[type="checkbox"]:not(.switch input):checked,
+input[type="checkbox"]:not(.switch input):indeterminate {
+  background: linear-gradient(135deg, var(--accent-light), var(--accent) 55%, var(--accent-2));
+  border-color: transparent;
+  box-shadow: 0 2px 10px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+input[type="checkbox"]:not(.switch input):checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 4.5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+input[type="checkbox"]:not(.switch input):indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 7.5px;
+  width: 9px;
+  height: 0;
+  border-top: 2px solid #fff;
+}
+
+input[type="radio"]:not(.switch input) {
+  border-radius: 50% !important;
+}
+input[type="radio"]:not(.switch input):checked {
+  background: var(--bg-input);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 2px var(--accent), 0 2px 10px var(--accent-glow);
+}
+input[type="radio"]:not(.switch input):checked::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-light), var(--accent));
+}
+
+/* A tick that arrives by keyboard or by script should land, not pop. */
+@keyframes vlxTick {
+  from { transform: rotate(43deg) scale(0.4); opacity: 0; }
+  to { transform: rotate(43deg) scale(1); opacity: 1; }
+}
+input[type="checkbox"]:not(.switch input):checked::after,
+input[type="radio"]:not(.switch input):checked::after {
+  animation: vlxTick var(--dur) var(--ease);
+}
+
+input[type="checkbox"]:not(.switch input):focus-visible,
+input[type="radio"]:not(.switch input):focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+input[type="checkbox"]:not(.switch input):active:not(:disabled),
+input[type="radio"]:not(.switch input):active:not(:disabled) {
+  transform: scale(0.92);
+}
+input[type="checkbox"]:not(.switch input):disabled,
+input[type="radio"]:not(.switch input):disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Range sliders.
+
+   panel.css documented an "accent-filled track" and then set a flat track. The
+   fill percentage cannot be derived from the value in CSS, so panel.js mirrors
+   it into --vlx-range on load and on every input/change event.
+   --------------------------------------------------------------------------- */
+input[type="range"] {
+  background:
+    linear-gradient(90deg,
+      var(--accent) 0,
+      color-mix(in srgb, var(--accent) 82%, var(--accent-2)) var(--vlx-range),
+      var(--surface-2) var(--vlx-range),
+      var(--surface-2) 100%) !important;
+  border: 0 !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--border-soft);
+}
+input[type="range"]::-webkit-slider-thumb {
+  /* The ring matches the page background rather than a hardcoded navy so it
+     stays visible on the Daylight theme. */
+  border: 3px solid var(--bg) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-soft);
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5), 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.04);
+}
+input[type="range"]::-moz-range-thumb {
+  border: 3px solid var(--bg) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+input[type="range"]::-moz-range-track {
+  background: transparent;
+}
+input[type="range"]:focus-visible {
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28), 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   File inputs.
+
+   Nine file inputs exist; eight are display:none and one is visible (the bot
+   avatar upload in bot.ejs). Styling ::file-selector-button makes the visible
+   one read as part of the panel instead of an OS widget.
+   --------------------------------------------------------------------------- */
+input[type="file"] {
+  padding: 5px 6px;
+  cursor: pointer;
+}
+input[type="file"]::file-selector-button {
+  margin-right: 10px;
+  padding: 6px 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+input[type="file"]::file-selector-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Inline code.
+
+   Twenty-five <code> elements ship across settings, billing, create and nodes.
+   Most carried class="mono" and nothing else, so they rendered as bare
+   monospace text with no separation from the sentence around them.
+   --------------------------------------------------------------------------- */
+code,
+kbd,
+samp {
+  font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  padding: 1.5px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: color-mix(in srgb, var(--accent-light) 68%, var(--text));
+  white-space: nowrap;
+}
+code.mono {
+  padding: inherit;
+  border: 0;
+  background: none;
+  color: inherit;
+  white-space: inherit;
+}
+
+/* kbd reads as a physical key, so it gets a pressed-slab treatment instead. */
+kbd {
+  color: var(--text);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  box-shadow: 0 1px 0 var(--border-soft), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  text-transform: uppercase;
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------------------
+   Divider.
+
+   .hr was a flat 1px line; fading it at both ends stops it cutting the card in
+   half at full strength.
+   --------------------------------------------------------------------------- */
+.hr,
+hr {
+  border: 0;
+  height: 1px;
+  margin: 20px 0;
+  background: linear-gradient(90deg, transparent, var(--border) 10%, var(--border) 90%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Small text utilities that views reference but no stylesheet defined.
+   create.ejs uses text-center on the creation progress line, which was silently
+   left-aligned.
+   --------------------------------------------------------------------------- */
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+.text-white { color: #fff; }
+.text-nowrap { white-space: nowrap; }
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Placeholder + readonly.
+
+   Only two inputs in the panel had a styled placeholder; the rest fell back to
+   the UA grey, which is lighter than --text-dim and therefore too loud.
+   --------------------------------------------------------------------------- */
+input::placeholder,
+textarea::placeholder,
+select::placeholder {
+  color: color-mix(in srgb, var(--text-dim) 78%, transparent);
+  opacity: 1;
+}
+
+input[readonly]:not([type="checkbox"]):not([type="radio"]),
+textarea[readonly] {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border-style: dashed;
+  color: var(--text-muted);
+  cursor: default;
+}
+input[readonly]:not([type="checkbox"]):not([type="radio"]):focus,
+textarea[readonly]:focus {
+  border-color: var(--border-soft);
+  box-shadow: none;
+}
+
+/* Disabled text inputs and selects were given no treatment at all: v2.css
+   targets .input:disabled, a class name no view ever uses. */
+input:disabled:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Stat tiles.
+
+   The icon wash was hardcoded to indigo/sky, so on Aurora, Sakura, Graphite,
+   Matrix and Synthwave the dashboard tiles did not belong to their own theme.
+   --------------------------------------------------------------------------- */
+.stat-icon {
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 18%, transparent),
+      color-mix(in srgb, var(--accent-2) 12%, transparent)) !important;
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border)) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Background sub-panes (admin settings: wallpaper / overlay / favicon pickers).
+   Five panes in settings.ejs carried the class with no rule anywhere, so they
+   sat on the bare card instead of reading as a nested surface.
+   --------------------------------------------------------------------------- */
+.bg-subpane {
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Theme-correct surfaces.
+
+   Every rule below replaces a hardcoded dark value so Daylight renders a light
+   menu instead of a black one. Nothing else about these components changes.
+   --------------------------------------------------------------------------- */
+select option {
+  background-color: var(--menu-surface);
+  color: var(--text);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-surface) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+}
+
+.user-menu-dd {
+  background: var(--glass-strong);
+  border-color: var(--border-soft);
+}
+
+.toast {
+  background: var(--glass-strong);
+  border-color: var(--border-soft);
+}
+
+.modal-card {
+  background: var(--glass-strong);
+}
+
+.auth-card {
+  background: var(--glass-strong);
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion.
+
+   polish.css already collapses transition and animation durations globally; this
+   additionally drops the tick/keyframe flourishes so a reduced-motion user does
+   not see a checkmark scale in.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  input[type="checkbox"]:not(.switch input):checked::after,
+  input[type="radio"]:not(.switch input):checked::after {
+    animation: none;
+  }
+  input[type="checkbox"]:not(.switch input):active:not(:disabled),
+  input[type="radio"]:not(.switch input):active:not(:disabled),
+  input[type="range"]:hover::-webkit-slider-thumb {
+    transform: none;
+  }
+}

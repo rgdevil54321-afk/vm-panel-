@@ -95,7 +95,11 @@ body::after {
 .btn:hover svg { transform: translateX(2px) scale(1.06); }
 .btn-primary { box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 32%, transparent); }
 .btn-primary:hover { box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 48%, transparent); }
-.btn:not(.btn-primary):not(.btn-danger):not(.btn-green):not(.btn-outline):not(.ghost):hover {
+/* Tinted button variants own their own border, so they are excluded here —
+   otherwise the accent hairline from this rule would sit on top of the
+   green/amber/red gradient on hover. `.btn-success` / `.btn-warning` are
+   defined in v3.css. */
+.btn:not(.btn-primary):not(.btn-danger):not(.btn-green):not(.btn-success):not(.btn-warning):not(.btn-outline):not(.ghost):hover {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 

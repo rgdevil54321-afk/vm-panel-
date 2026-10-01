@@ -182,6 +182,21 @@ window.VP = Object.assign(window.VP || {}, (() => {
       document.addEventListener('click', (e) => { if (!menu.contains(e.target)) close(); });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
     }
+
+    // ---- range slider fill ----
+    // CSS cannot read an input's value, so the accent portion of the track is
+    // painted from a --vlx-range custom property (see v3.css). Delegated so it
+    // also covers sliders added to the page after load.
+    const paintRange = (r) => {
+      const min = parseFloat(r.min || 0);
+      const max = parseFloat(r.max || 100);
+      if (!isFinite(min) || !isFinite(max) || max === min) { r.style.removeProperty('--vlx-range'); return; }
+      const pct = Math.min(100, Math.max(0, ((parseFloat(r.value || min) - min) / (max - min)) * 100));
+      r.style.setProperty('--vlx-range', pct.toFixed(2) + '%');
+    };
+    qsa('input[type="range"]').forEach(paintRange);
+    document.addEventListener('input', (e) => { if (e.target.matches('input[type="range"]')) paintRange(e.target); });
+    document.addEventListener('change', (e) => { if (e.target.matches('input[type="range"]')) paintRange(e.target); });
   });
 
   return { toast, api, qs, qsa, el, fmtBytes, fmtDate, confirmDialog, hide, show, state };
