@@ -133,6 +133,7 @@ function getNodeLiveStats() {
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
   const memPct = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+  const swapStats = getSwapStats();
 
   // Real host RAM (via /proc/meminfo) vs container cgroup cap, same as the agent.
   let hostTotalMb = totalMem / 1024 / 1024;
@@ -181,7 +182,6 @@ function getNodeLiveStats() {
   const load = os.loadavg();
   const cpuStats = getCpuStats();
   const netStats = getNetStats();
-  const swapStats = getSwapStats();
   pushHistoryPoint(cpuStats.overall, memPct, netStats.rx_kbps, netStats.tx_kbps);
 
   // Branded overlay: the panel's "host name" / CPU / GPU are admin-configurable
@@ -224,7 +224,12 @@ function getNodeLiveStats() {
     cpu: { model: customCpu || realCpu, cores_count: cpus.length, percent: cpuStats.overall, per_core: cpuStats.cores, load_avg: [load[0].toFixed(2), load[1].toFixed(2), load[2].toFixed(2)] },
     gpu: { name: customGpu || realGpu },
     memory: { total_mb: Math.round(totalMem / 1024 / 1024), used_mb: Math.round(usedMem / 1024 / 1024), free_mb: Math.round(freeMem / 1024 / 1024), percent: memPct, host_total_mb: Math.round(hostTotalMb), host_free_mb: Math.round(hostFreeMb), cgroup_limit_mb: cgroupLimitMb ? Math.round(cgroupLimitMb) : null, container_capped: !!cgroupLimitMb },
+    // RAM + swap, reported alongside rather than folded into memory.total_mb.
+    // Swap is disk-backed and slower, so treating the sum as usable RAM would
+    // let an allocation check pass for a VM that cannot fit in physical RAM.
+    // committed_mb is what the host can actually back: RAM plus swap.
     swap: swapStats,
+    memory_committed_mb: Math.round((totalMem + (swapStats.total_mb || 0) * 1024 * 1024) / 1024 / 1024),
     disk: diskInfo,
     network: netStats,
     hypervisor: { qemu_installed: true, qemu_version: qemuVer, kvm_support: vmService.hasKvm(), cloud_init: true },

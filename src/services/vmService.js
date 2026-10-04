@@ -1624,14 +1624,26 @@ async function create({ user, data }) {
   const password = String(data.password || 'vpanel' + Math.random().toString(36).slice(2, 8));
   const diskSize = String(data.disk_size || settings.get('vm.default_disk') || '20G').toUpperCase();
   // Pre-flight: enough free disk for this VM's image?
+  //
+  // qcow2 images are sparse (created without `preallocation`, see the
+  // qemu-img create calls below), so a 100G disk costs only the blocks actually
+  // written. Comparing the virtual size against free space therefore blocked
+  // any VM larger than the host disk even when ten such VMs would total a few
+  // GB of real usage. Check the host can still back the image at all, and warn
+  // rather than refuse when the virtual size exceeds free space.
   {
     const wantBytes = (parseInt(String(diskSize).replace(/[^0-9]/g, ''), 10) || 20) * 1024 ** 3;
     try {
       const { execSync } = require('child_process');
       const dfOut = execSync(`df -B1 "${VM_DIR}"`, { encoding: 'utf8' }).trim().split('\n')[1].split(/\s+/);
       const freeBytes = parseInt(dfOut[3], 10) || 0;
-      if (freeBytes < wantBytes + 2 * 1024 ** 3) {
-        throw new Error(`Not enough disk space: VM needs ${Math.round(wantBytes / 1024 ** 3)} GB (+2 GB headroom) but only ${(freeBytes / 1024 ** 3).toFixed(1)} GB is free on the panel host.`);
+      const MIN_FREE = 2 * 1024 ** 3;
+      if (freeBytes < MIN_FREE) {
+        throw new Error(`Not enough disk space: only ${(freeBytes / 1024 ** 3).toFixed(1)} GB free on the panel host. Free at least 2 GB before creating a VM.`);
+      }
+      if (freeBytes < wantBytes) {
+        // Sparse image, so this is fine: only written blocks consume space.
+        logger.warn(`[vm] ${diskSize} requested but only ${(freeBytes / 1024 ** 3).toFixed(1)} GB free; qcow2 is sparse so this is allowed until real usage catches up.`);
       }
     } catch (e) {
       if (String(e.message).startsWith('Not enough disk')) throw e;
@@ -2334,8 +2346,13 @@ async function addDataDiskFor(vm, data, user) {
   if (isLocalVm(vm)) {
     const wantBytes = size.endsWith('G') ? number * 1024 ** 3 : number * 1024 ** 2;
     const freeNow = freeDiskBytesLocal();
-    if (freeNow < wantBytes + 2 * 1024 ** 3) {
-      throw new Error(`Not enough disk space: needs ${size} (+2 GB headroom) but only ${(freeNow / 1024 ** 3).toFixed(1)} GB free on the local host.`);
+    // Sparse qcow2 (no preallocation), so the virtual size does not need to fit
+    // in free space. Only refuse when the host has no usable room left at all.
+    if (freeNow < 2 * 1024 ** 3) {
+      throw new Error(`Not enough disk space: only ${(freeNow / 1024 ** 3).toFixed(1)} GB free on the local host. Free at least 2 GB before adding a data disk.`);
+    }
+    if (freeNow < wantBytes) {
+      logger.warn(`[vm] data disk ${size} requested but only ${(freeNow / 1024 ** 3).toFixed(1)} GB free; qcow2 is sparse so this is allowed.`);
     }
     const dir = vmDir(vm);
     let disks = parseDataDisks(vm);

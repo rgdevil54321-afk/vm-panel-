@@ -51,7 +51,7 @@
       </div>
       <div>
         <div class="stat-value"><%= detail.stats.memory.percent %><span style="font-size:14px;color:var(--text-dim)">%</span></div>
-        <div class="stat-label">RAM · <%= (detail.stats.memory.used_mb/1024).toFixed(1) %> / <%= (detail.stats.memory.total_mb/1024).toFixed(1) %> GB</div>
+        <div class="stat-label">RAM · <%= (detail.stats.memory.used_mb/1024).toFixed(1) %> / <%= (detail.stats.memory.total_mb/1024).toFixed(1) %> GB<% if (detail.stats.swap && detail.stats.swap.total_mb > 0) { %><span title="Swap is disk-backed and slower than RAM. RAM + swap = <%= (detail.stats.memory_committed_mb/1024).toFixed(0) %> GB the node can commit to."> + <%= (detail.stats.swap.total_mb/1024).toFixed(0) %> GB swap</span><% } %></div>
         <div class="meter" style="margin-top:6px"><div class="meter-fill green" style="width:<%= detail.stats.memory.percent %>%"></div></div>
       </div>
     </div>
