@@ -1327,6 +1327,143 @@ EOF
 # =============================================================================
 # MAIN INTERACTIVE MENU
 # =============================================================================
+# ---------------------------------------------------------------------------
+# Status probes for the menu.
+#
+# Each returns one of: installed / connected / running / missing / stopped /
+# not installed, so the menu can answer "is this thing actually up?" without the
+# operator opening five submenus. Everything is best-effort: a probe never
+# aborts the menu, it just reports unknown. Deliberately cheap - no node -e, no
+# reading the DB - because this runs on every redraw.
+# ---------------------------------------------------------------------------
+st_online()   { printf "${GREEN}online${NC}"; }
+st_offline()  { printf "${RED}offline${NC}"; }
+st_stopped()  { printf "${YELLOW}stopped${NC}"; }
+st_none()     { printf "${RED}not installed${NC}"; }
+st_yes()      { printf "${GREEN}yes${NC}"; }
+st_no()       { printf "${DIM}no${NC}"; }
+
+# Panel: pm2 process vpanel.
+st_panel() {
+  if ! command -v pm2 >/dev/null 2>&1; then st_none; return; fi
+  local s
+  s=$(pm2 jlist 2>/dev/null | node -e '
+    let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
+      try{const p=JSON.parse(d).find(x=>x.name==="vpanel");
+      if(!p){process.stdout.write("missing");return;}
+      const st=(p.pm2_env&&p.pm2_env.status)||"unknown";
+      process.stdout.write(st);}catch(e){process.stdout.write("unknown");}
+    });' 2>/dev/null)
+  [ -z "$s" ] && s=$(pm2 ls 2>/dev/null | awk '$4=="vpanel"{print $18; exit}')
+  case "$s" in
+    online)  st_online ;;
+    stopped) st_stopped ;;
+    errored) printf "${RED}errored${NC}" ;;
+    missing) st_none ;;
+    *)       st_no ;;
+  esac
+}
+
+# Node agent: pm2 process venlix-node, or the agent binary present.
+st_agent() {
+  if command -v pm2 >/dev/null 2>&1; then
+    local s
+    s=$(pm2 jlist 2>/dev/null | node -e '
+      let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
+        try{const p=JSON.parse(d).find(x=>/venlix[-_]?node/.test(x.name));
+        if(!p){process.stdout.write("missing");return;}
+        process.stdout.write((p.pm2_env&&p.pm2_env.status)||"unknown");}catch(e){process.stdout.write("unknown");}
+      });' 2>/dev/null)
+    case "$s" in
+      online)  st_online; return ;;
+      stopped) st_stopped; return ;;
+      errored) printf "${RED}errored${NC}"; return ;;
+    esac
+  fi
+  if [ -f /opt/venlix-node/agent.js ]; then st_stopped; else st_none; fi
+}
+
+# Cloudflare tunnel: venlix-tunnel under systemd or pm2.
+st_tunnel() {
+  if systemctl list-unit-files 2>/dev/null | grep -q venlix-tunnel; then
+    local s; s=$(systemctl is-active venlix-tunnel 2>/dev/null)
+    [ "$s" = "active" ] && { st_connected; return; }
+    [ "$s" = "activating" ] && { printf "${YELLOW}connecting${NC}"; return; }
+    st_offline; return
+  fi
+  if command -v pm2 >/dev/null 2>&1 && pm2 ls 2>/dev/null | grep -q venlix-tunnel; then
+    pm2 ls 2>/dev/null | grep venlix-tunnel | grep -q online && { st_connected; return; }
+    st_stopped; return
+  fi
+  if command -v cloudflared >/dev/null 2>&1 || [ -x /usr/local/bin/cloudflared ]; then
+    printf "${YELLOW}installed, not running${NC}"; return
+  fi
+  st_none
+}
+st_connected() { printf "${GREEN}connected${NC}"; }
+
+# Tailscale mesh.
+st_tailscale() {
+  if ! command -v tailscale >/dev/null 2>&1; then st_none; return; fi
+  # Distinguish "installed but not connected" from "broken": a binary that is
+  # present but logged out is a normal state, not a fault.
+  local s
+  s=$(tailscale status 2>/dev/null | head -1)
+  case "$s" in
+    *"Logged out"*|*"Tailscale is stopped"*)
+      printf "${YELLOW}installed, not connected${NC}"; return ;;
+  esac
+  if tailscale status >/dev/null 2>&1; then
+    local ip
+    ip=$(tailscale ip -4 2>/dev/null | head -1)
+    if [ -n "$ip" ]; then printf "${GREEN}connected${NC} ${DIM}%s${NC}" "$ip"; return; fi
+    st_connected; return
+  fi
+  printf "${YELLOW}installed, not connected${NC}"
+}
+
+# Caddy for SSL.
+st_caddy() {
+  if ! command -v caddy >/dev/null 2>&1; then st_none; return; fi
+  if systemctl is-active --quiet caddy 2>/dev/null; then st_online; return; fi
+  st_stopped
+}
+
+# Firewall: ufw or firewalld.
+st_firewall() {
+  if command -v ufw >/dev/null 2>&1; then
+    local s; s=$(ufw status 2>/dev/null | head -1 | grep -o "Status: .*")
+    case "$s" in *active*) st_online ;; *) st_stopped ;; esac
+    return
+  fi
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --state >/dev/null 2>&1 && st_online || st_stopped
+    return
+  fi
+  st_none
+}
+
+# Database file + admin count.
+st_db() {
+  local db=""
+  for c in data/vpanel.db /root/vm-panel-/data/vpanel.db "$PWD/data/vpanel.db"; do
+    [ -f "$c" ] && { db="$c"; break; }
+  done
+  if [ -z "$db" ]; then st_none; return; fi
+  printf "${GREEN}present${NC} ${DIM}%s${NC}" "$(du -h "$db" 2>/dev/null | cut -f1)"
+}
+
+# Last backup.
+st_backup() {
+  local d="storage/backups"
+  [ -d "$d" ] || d="/root/vm-panel-/storage/backups"
+  if [ ! -d "$d" ]; then st_none; return; fi
+  local last
+  last=$(ls -1t "$d" 2>/dev/null | head -1)
+  [ -z "$last" ] && { printf "${DIM}none yet${NC}"; return; }
+  printf "${GREEN}%s${NC} ${DIM}ago${NC}" "$(date -r "$d/$last" +%d\ %b 2>/dev/null)"
+}
+
 show_menu() {
   while true; do
     safe_clear
@@ -1357,6 +1494,16 @@ show_menu() {
     echo "   ${CYAN}[13]${NC} 🎭 Host Identity      Hostname / CPU / GPU (neofetch)"
     echo "   ${CYAN}[14]${NC} 🔓 Unlock Install      Clear install blacklist (unlock password)"
     echo "   ${CYAN}[15]${NC} 🕸️  Tailscale Mesh       Private shared IPv4 for VMs"
+    echo ""
+    echo "  ${BOLD}STATUS${NC}"
+    printf "   ${CYAN}Panel${NC}         %b\n"     "$(st_panel)"
+    printf "   ${CYAN}Node agent${NC}    %b\n"     "$(st_agent)"
+    printf "   ${CYAN}Tunnel${NC}        %b\n"     "$(st_tunnel)"
+    printf "   ${CYAN}Tailscale${NC}     %b\n"     "$(st_tailscale)"
+    printf "   ${CYAN}SSL / Caddy${NC}   %b\n"     "$(st_caddy)"
+    printf "   ${CYAN}Firewall${NC}      %b\n"     "$(st_firewall)"
+    printf "   ${CYAN}Database${NC}      %b\n"     "$(st_db)"
+    printf "   ${CYAN}Last backup${NC}   %b\n"     "$(st_backup)"
     echo ""
     echo "   ${RED}[0]${NC} 🚪 Exit"
     echo ""
