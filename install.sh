@@ -1385,10 +1385,29 @@ st_agent() {
 
 # Cloudflare tunnel: venlix-tunnel under systemd or pm2.
 st_tunnel() {
-  if systemctl list-unit-files 2>/dev/null | grep -q venlix-tunnel; then
-    local s; s=$(systemctl is-active venlix-tunnel 2>/dev/null)
-    [ "$s" = "active" ] && { st_connected; return; }
-    [ "$s" = "activating" ] && { printf "${YELLOW}connecting${NC}"; return; }
+  # Any unit name the tunnel may live under. `cloudflared.service` is what
+  # `cloudflared service install` writes; `venlix-tunnel.service` is what this
+  # repo's installer writes. Checking only the second reported "installed, not
+  # running" on a box whose connector was crash-looping under the first.
+  local units
+  units=$(systemctl list-unit-files 2>/dev/null | awk '/venlix-tunnel\.service|cloudflared\.service/ {print $1}')
+  if [ -n "$units" ]; then
+    local u s
+    for u in $units; do
+      s=$(systemctl is-active "$u" 2>/dev/null)
+      [ "$s" = "active" ] && { st_connected; return; }
+    done
+    # Not active anywhere: distinguish a crash loop from a plain stop, because
+    # they need different fixes and "offline" hides which one this is.
+    for u in $units; do
+      s=$(systemctl is-active "$u" 2>/dev/null)
+      [ "$s" = "activating" ] && { printf "${YELLOW}connecting${NC}"; return; }
+    done
+    local fails
+    fails=$(systemctl show "$units" -p NRestarts --value 2>/dev/null | head -1)
+    if [ -n "$fails" ] && [ "$fails" -gt 20 ] 2>/dev/null; then
+      printf "${RED}crash-looping${NC} ${DIM}(%s restarts)${NC}" "$fails"; return
+    fi
     st_offline; return
   fi
   if command -v pm2 >/dev/null 2>&1 && pm2 ls 2>/dev/null | grep -q venlix-tunnel; then
