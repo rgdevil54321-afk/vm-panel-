@@ -2031,7 +2031,11 @@ async function start(vm, { user = null } = {}) {
       tail = fs.readFileSync(path.join(dir, 'qemu.log'), 'utf8').split('\n').slice(-12).join('\n').trim();
     } catch (_) {}
     setDbStatus(vm.id, 'stopped');
-    throw new Error('QEMU failed to start. ' + (tail ? 'Output:\n' + tail : 'No output captured.'));
+    let hint = '';
+    if (/cannot (set up|allocate) guest memory|Cannot allocate memory/i.test(tail)) {
+      hint = `\n\nQEMU could not map ${vm.memory || 0} MB of guest RAM. The kernel refused the allocation because of its overcommit policy. QEMU allocates guest RAM lazily, so on a KVM host you must allow overcommit:  sudo sysctl -w vm.overcommit_memory=1  (persist it in /etc/sysctl.d/99-venlix-vm.conf). Adding swap is also recommended when oversubscribing RAM.`;
+    }
+    throw new Error('QEMU failed to start. ' + (tail ? 'Output:\n' + tail : 'No output captured.') + hint);
   }
   setDbStatus(vm.id, 'running');
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:start' });

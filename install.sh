@@ -191,6 +191,26 @@ do_install() {
     export NO_KVM=1
   fi
 
+  # Step 3b: Host memory overcommit for KVM guests.
+  # QEMU maps guest RAM lazily via mmap. The default kernel heuristic
+  # (vm.overcommit_memory=0) refuses any single mapping larger than the RAM
+  # that is free at that moment, so starting a guest whose RAM is bigger than
+  # what is free fails with "cannot set up guest memory 'pc.ram': Cannot
+  # allocate memory". Always-overcommit lets the node's RAM overcommit ratio
+  # actually take effect.
+  log_info "Configuring host memory overcommit for KVM guests..."
+  cat > /etc/sysctl.d/99-venlix-vm.conf <<'SYSCTL_EOF' 2>/dev/null || true
+# Venlix VM panel: permit KVM guests to map more guest RAM than is free at
+# start time (guest RAM is allocated lazily by QEMU).
+vm.overcommit_memory=1
+SYSCTL_EOF
+  sysctl --system >/dev/null 2>&1 || sysctl -w vm.overcommit_memory=1 >/dev/null 2>&1 || true
+  if [ "$(cat /proc/sys/vm/overcommit_memory 2>/dev/null)" = "1" ]; then
+    log_ok "vm.overcommit_memory=1 set (KVM RAM overcommit enabled)"
+  else
+    log_warn "Could not enable memory overcommit. Run: sudo sysctl -w vm.overcommit_memory=1"
+  fi
+
   # Step 4: NPM Dependencies
   log_info "Step 5/7: Installing NPM packages & building native binaries..."
   npm install --no-audit --no-fund

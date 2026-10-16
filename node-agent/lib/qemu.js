@@ -1136,9 +1136,13 @@ function startVm(vm) {
       tail = fs.readFileSync(path.join(dir, 'qemu.log'), 'utf8').split('\n').slice(-12).join('\n').trim();
     } catch (e) {}
     try { fs.unlinkSync(pidFile); } catch (e) {}
+    let hint = '';
+    if (/cannot (set up|allocate) guest memory|Cannot allocate memory/i.test(tail)) {
+      hint = `\n\nQEMU could not map ${parseInt(vm.memory, 10) || 0} MB of guest RAM: the kernel refused the mmap under its overcommit policy. Enable overcommit on this node:  sudo sysctl -w vm.overcommit_memory=1  (persist in /etc/sysctl.d/99-venlix-vm.conf). Adding swap is also recommended when oversubscribing RAM.`;
+    }
     return {
       ok: false,
-      error: 'QEMU failed to start. ' + (tail ? 'Last QEMU output:\n' + tail : 'No output captured (is qemu-system-x86_64 installed? On containers without /dev/kvm set NO_KVM=1 in the agent .env).'),
+      error: 'QEMU failed to start. ' + (tail ? 'Last QEMU output:\n' + tail : 'No output captured (is qemu-system-x86_64 installed? On containers without /dev/kvm set NO_KVM=1 in the agent .env).') + hint,
     };
   }
 
