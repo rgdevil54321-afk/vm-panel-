@@ -300,9 +300,17 @@ function attachConsoleSocket(io) {
       const deadline = Date.now() + waitBudgetMs;
       socket.emit('console:waiting', { error: '', deadline, total: waitBudgetMs, sessionId: sid });
 
+      // A failed attempt on a VM hosted here costs readyTimeout + retryDelay +
+      // (worst case) shellTimeout. Loopback dials fail fast, so use tight values:
+      // the terminal latches onto the guest as soon as sshd is ready instead of
+      // waiting out long timeouts every round. Remote nodes keep the more
+      // forgiving values (their network round-trip is real).
+      const localVm = (Number(vm.node_id) || 1) === 1;
       sshService.shellStreamWithRetry(vm, {
         maxRetries: 0,
-        retryDelay: 2500,
+        retryDelay: localVm ? 1000 : 2500,
+        readyTimeout: localVm ? 2500 : 5000,
+        shellTimeout: localVm ? 5000 : 10000,
         deadline,
         onError: (err) => {
           const now = Date.now();

@@ -137,8 +137,8 @@ async function withExec(vm, cmd, opts) {
   }
 }
 
-function shellStream(vm, { shellTimeout = 10000 } = {}) {
-  return connect(vm).then((conn) => {
+function shellStream(vm, { shellTimeout = 10000, readyTimeout = 5000 } = {}) {
+  return connect(vm, { readyTimeout }).then((conn) => {
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer = null;
@@ -171,7 +171,7 @@ function shellStream(vm, { shellTimeout = 10000 } = {}) {
   });
 }
 
-async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, shouldContinue = () => true, onError = null, deadline = 0 } = {}) {
+async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, readyTimeout = 5000, shellTimeout = 10000, shouldContinue = () => true, onError = null, deadline = 0 } = {}) {
   let lastErr;
   let attempt = 0;
   for (;;) {
@@ -182,7 +182,7 @@ async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, sh
       throw lastErr || new Error('SSH connection timed out');
     }
     try {
-      return await shellStream(vm);
+      return await shellStream(vm, { readyTimeout, shellTimeout });
     } catch (err) {
       lastErr = err;
       if (onError) { try { onError(err, attempt); } catch (_) {} }
