@@ -2,18 +2,26 @@ const { Client } = require('ssh2');
 const path = require('path');
 const logger = require('../lib/logger');
 
-// Where the panel must dial to reach a guest: NAT / shared-IP VMs live behind a
-// port forward on the node's own reachable address, dedicated-IP guests answer
-// on their own address. Loopback is only correct for VMs on the panel's box.
+// Where the panel must dial to reach a guest. Every guest runs on QEMU user-mode
+// networking, so inbound SSH only arrives through a hostfwd port:
+//   - Local VMs: the forward lives on THIS box and binds 0.0.0.0, so 127.0.0.1 is
+//     always the correct (and fastest) target. serializeVm's connect_host is the
+//     node's reachable address for the USER's ssh client, which for a local VM is
+//     auto-detected as the Tailscale or public IP; dialling that from here just
+//     adds a 5s timeout whenever the mesh/public address is slow or blocked.
+//   - Remote VMs: the forward is on the node, so dial the node's own address.
 function sshTarget(vm) {
+  const remote = (Number(vm && vm.node_id) || 1) !== 1;
   let host = '127.0.0.1';
   let port = Number(vm && vm.ssh_port) || 22;
-  try {
-    const s = require('./vmService').serializeVm(vm);
-    if (s && s.connect_host) host = String(s.connect_host);
-    const p = Number(s && s.connect_port);
-    if (p) port = p;
-  } catch (_) {}
+  if (remote) {
+    try {
+      const s = require('./vmService').serializeVm(vm);
+      if (s && s.connect_host) host = String(s.connect_host);
+      const p = Number(s && s.connect_port);
+      if (p) port = p;
+    } catch (_) {}
+  }
   return { host, port };
 }
 
