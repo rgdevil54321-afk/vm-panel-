@@ -78,7 +78,20 @@ router.get('/admin/servers', (req, res) => {
 
 router.get('/admin/servers/create', (req, res) => {
   const users = db.prepare('SELECT id, username, email FROM users ORDER BY username').all();
-  const nodes = nodeService.allNodes();
+  // Decorate each node with its physical RAM and the RAM ceiling implied by its
+  // overcommit ratio, so the create form can let the admin type any value the
+  // node will actually accept (physical x ratio) instead of a fixed 64 GB cap.
+  const nodes = nodeService.allNodes().map((n) => {
+    const stats = nodeService.cachedStats(n.id);
+    const totalMb = (stats && stats.memory && parseInt(stats.memory.total_mb, 10)) || 0;
+    const ratio = parseFloat(n.ram_overcommit_ratio) || 1;
+    const capMb = totalMb > 0 ? Math.floor(totalMb * ratio) : 0;
+    return Object.assign({}, n, {
+      ram_overcommit_ratio: ratio,
+      mem_total_mb: totalMb,
+      mem_cap_mb: capMb,
+    });
+  });
   render(res, 'create', { osList: vmService.getOsList(), users, nodes });
 });
 

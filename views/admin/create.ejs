@@ -61,9 +61,9 @@
         <div class="card-title" style="margin-bottom:16px;font-size:16px">0 · Deploy Target Node</div>
         <div class="form-group">
           <label>Hypervisor Node *</label>
-          <select id="fNode" onchange="updateSummary()">
+          <select id="fNode" onchange="onNodeChange()">
             <% for (const n of nodes) { %>
-              <option value="<%= n.id %>" data-ratio="<%= parseFloat(n.ram_overcommit_ratio) || 1 %>" <%= n.id === 1 ? 'selected' : '' %>>
+              <option value="<%= n.id %>" data-ratio="<%= parseFloat(n.ram_overcommit_ratio) || 1 %>" data-memmb="<%= n.mem_total_mb || 0 %>" data-capmb="<%= n.mem_cap_mb || 0 %>" <%= n.id === 1 ? 'selected' : '' %>>
                 <%= n.name %> (<%= n.host %>:<%= n.port %>)<%= n.status === 'online' ? ' — Online' : ' — Offline' %>
               </option>
             <% } %>
@@ -138,15 +138,21 @@
             <span id="memValBadge" class="pill pill-green mono font-bold">2048 MB (2.0 GB)</span>
           </div>
           <div class="flex" style="gap:14px;align-items:center">
-            <input type="range" min="512" max="16384" step="256" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMemRange" style="flex:1" oninput="syncMem(this.value)"/>
-            <input type="number" min="256" max="65536" step="128" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMem" style="width:90px" oninput="syncMem(this.value)"/>
+            <input type="range" min="512" max="65536" step="256" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMemRange" style="flex:1" oninput="syncMem(this.value)"/>
+            <input type="number" min="256" max="4194304" step="128" value="<%= settings['vm.default_memory'] || '2048' %>" id="fMem" style="width:110px" oninput="onMemInput(this.value)" onchange="syncMem(this.value)"/>
+            <span class="muted text-sm" style="white-space:nowrap">MB</span>
           </div>
-          <div class="flex mt-2" style="gap:6px">
+          <div id="memCapHint" class="form-hint" style="margin-top:6px"></div>
+          <div class="flex mt-2" style="gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-sm" onclick="syncMem(1024)">1 GB</button>
             <button type="button" class="btn btn-sm" onclick="syncMem(2048)">2 GB</button>
             <button type="button" class="btn btn-sm" onclick="syncMem(4096)">4 GB</button>
             <button type="button" class="btn btn-sm" onclick="syncMem(8192)">8 GB</button>
             <button type="button" class="btn btn-sm" onclick="syncMem(16384)">16 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(32768)">32 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(65536)">64 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMem(131072)">128 GB</button>
+            <button type="button" class="btn btn-sm" onclick="syncMemMax()">Max</button>
           </div>
         </div>
 
@@ -595,13 +601,100 @@ function syncCpu(v) {
   updateSummary();
 }
 
+// Sanity ceiling used only when a node's physical RAM is unknown (e.g. the
+// node has not been probed yet). The server still enforces the real cap.
+const FALLBACK_MEM_CAP_MB = 4194304; // 4 TB
+
+// The RAM ceiling implied by the currently selected node:
+// physical RAM x overcommit ratio. Falls back to FALLBACK_MEM_CAP_MB when the
+// node's memory total is not known yet, so typing is never blocked by stale data.
+function currentNodeMemCap() {
+  const sel = document.getElementById('fNode');
+  if (!sel || !sel.options.length) return FALLBACK_MEM_CAP_MB;
+  const opt = sel.options[sel.selectedIndex];
+  const cap = parseFloat(opt.getAttribute('data-capmb'));
+  if (Number.isFinite(cap) && cap > 0) return Math.floor(cap);
+  return FALLBACK_MEM_CAP_MB;
+}
+
+// Re-apply the selected node's ceiling to the number/range inputs and update the
+// explanatory hint. Called on load and whenever the target node changes.
+function refreshMemCap() {
+  const cap = currentNodeMemCap();
+  const num = document.getElementById('fMem');
+  const range = document.getElementById('fMemRange');
+  num.max = cap;
+  // Keep the slider usable: let it reach the target but don't let its range
+  // explode on a heavily overcommitted node. Typing is never limited by this.
+  range.max = Math.min(cap, 262144); // up to 256 GB on the slider
+  if (parseFloat(range.value) > parseFloat(range.max)) range.value = range.max;
+
+  const sel = document.getElementById('fNode');
+  const opt = sel && sel.options[sel.selectedIndex];
+  const ratio = opt ? (parseFloat(opt.getAttribute('data-ratio')) || 1) : 1;
+  const totalMb = opt ? (parseFloat(opt.getAttribute('data-memmb')) || 0) : 0;
+  const hint = document.getElementById('memCapHint');
+  if (hint) {
+    if (totalMb > 0 && ratio > 1) {
+      hint.innerHTML = 'Overcommit ' + ratio.toFixed(1) + '\u00d7 \u00b7 this node accepts up to <b>' + Math.round(cap / 1024) + ' GB</b> RAM per VM. Type any value up to that.';
+      hint.style.color = '#fbbf24';
+    } else if (totalMb > 0) {
+      hint.textContent = 'Strict mode \u00b7 this node accepts up to ' + Math.round(cap / 1024) + ' GB RAM (physical).';
+      hint.style.color = '';
+    } else {
+      hint.textContent = '';
+    }
+  }
+  return cap;
+}
+
+// Free typing: never rewrite the field while the user is typing, otherwise the
+// first keystroke ("1") would be clamped up to the 256 MB floor mid-entry.
+// Only the badge/slider/summary update live. Clamping happens on commit.
+function onMemInput(v) {
+  const n = parseInt(v, 10);
+  const badge = document.getElementById('memValBadge');
+  if (!Number.isFinite(n) || n <= 0) {
+    badge.textContent = '\u2014 MB';
+    updateSummary();
+    return;
+  }
+  const range = document.getElementById('fMemRange');
+  if (n <= parseFloat(range.max)) range.value = n;
+  const gb = (n % 1024 === 0) ? (n / 1024).toFixed(0) : (n / 1024).toFixed(1);
+  badge.textContent = `${n} MB (${gb} GB)`;
+  updateSummary();
+}
+
+// Clamp to [256, node cap] and write the normalised value back to the field.
 function syncMem(v) {
-  v = Math.max(256, Math.min(65536, parseInt(v, 10) || 512));
+  const cap = currentNodeMemCap();
+  v = Math.max(256, Math.min(cap, parseInt(v, 10) || 512));
   document.getElementById('fMem').value = v;
   document.getElementById('fMemRange').value = v;
-  const gb = (v / 1024).toFixed(1);
+  const gb = (v % 1024 === 0) ? (v / 1024).toFixed(0) : (v / 1024).toFixed(1);
   document.getElementById('memValBadge').textContent = `${v} MB (${gb} GB)`;
   updateSummary();
+}
+
+// Read the committed RAM value for submission, clamping against the cap so a
+// value typed and submitted without a blur still goes out normalised.
+function commitMemMb() {
+  const cap = currentNodeMemCap();
+  const v = parseInt(document.getElementById('fMem').value, 10);
+  const n = Math.max(256, Math.min(cap, Number.isFinite(v) ? v : 512));
+  document.getElementById('fMem').value = n;
+  return n;
+}
+
+function syncMemMax() {
+  syncMem(currentNodeMemCap());
+}
+
+function onNodeChange() {
+  refreshMemCap();
+  // Re-clamp the current value against the newly selected node's ceiling.
+  syncMem(document.getElementById('fMem').value);
 }
 
 function setDisk(d) {
@@ -710,7 +803,7 @@ async function createVm() {
   fd.append('hostname', document.getElementById('fHost').value || slug);
   fd.append('username', document.getElementById('fUser').value || 'root');
   fd.append('password', document.getElementById('fPass').value || '');
-  fd.append('memory', document.getElementById('fMem').value || '2048');
+  fd.append('memory', commitMemMb());
   fd.append('cpus', document.getElementById('fCpus').value || '2');
   fd.append('disk_size', (document.getElementById('fDisk').value || '20G').toUpperCase());
   fd.append('storage_pool', document.getElementById('fPool').value || '');
@@ -865,5 +958,7 @@ if (targetOwner && document.getElementById('fOwner')) {
   } catch (_) { /* pools unavailable — default pool is used */ }
 })();
 genPassword();
+refreshMemCap();
+syncMem(document.getElementById('fMem').value);
 updateSummary();
 </script>
