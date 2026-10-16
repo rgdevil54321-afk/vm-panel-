@@ -63,12 +63,13 @@
           <label>Hypervisor Node *</label>
           <select id="fNode" onchange="updateSummary()">
             <% for (const n of nodes) { %>
-              <option value="<%= n.id %>" <%= n.id === 1 ? 'selected' : '' %>>
+              <option value="<%= n.id %>" data-ratio="<%= parseFloat(n.ram_overcommit_ratio) || 1 %>" <%= n.id === 1 ? 'selected' : '' %>>
                 <%= n.name %> (<%= n.host %>:<%= n.port %>)<%= n.status === 'online' ? ' — Online' : ' — Offline' %>
               </option>
             <% } %>
           </select>
           <div class="form-hint">Choose which node will provision and run this virtual machine. Pick the local Primary Node or any connected remote node.</div>
+          <div id="ocHint" class="form-hint" style="display:none;color:#fbbf24;font-weight:600;margin-top:6px"></div>
         </div>
       </div>
 
@@ -662,6 +663,16 @@ function updateSummary() {
   const owner = ownerSel ? ownerSel.options[ownerSel.selectedIndex].text.split('·')[0].trim() : '';
   const nodeSel = document.getElementById('fNode');
   const nodeLabel = nodeSel ? nodeSel.options[nodeSel.selectedIndex].text.split(' (')[0].trim() : 'Primary Node';
+  const nodeRatio = nodeSel ? (parseFloat(nodeSel.options[nodeSel.selectedIndex].getAttribute('data-ratio')) || 1) : 1;
+  const ocHint = document.getElementById('ocHint');
+  if (ocHint) {
+    if (nodeRatio > 1) {
+      ocHint.style.display = 'block';
+      ocHint.textContent = '\u26a0 Selected node has ' + nodeRatio.toFixed(1) + '\u00d7 RAM overcommit enabled. VMs can be allocated past the physical total; heavy concurrent load may cause swap pressure or OOM kills.';
+    } else {
+      ocHint.style.display = 'none';
+    }
+  }
 
   document.getElementById('sumOs').textContent = osName;
   document.getElementById('sumNode').textContent = nodeLabel;

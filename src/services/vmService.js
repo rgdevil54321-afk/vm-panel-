@@ -53,6 +53,60 @@ function memoryBudget() {
   return { bytes: avail, limitedBy };
 }
 
+// Per-node RAM overcommit ratio, read from the nodes table (the primary node is
+// a row with id=1). Clamped to 1.0–50.0; anything invalid falls back to 1.0
+// (strict, no overcommit). This value is used ONLY to gate allocation at VM
+// creation/start. It is never mixed with swap or memory_committed_mb.
+function nodeRamOvercommitRatio(nodeId) {
+  let ratio = 1.0;
+  const id = Number(nodeId) || 1;
+  try {
+    let row = db.prepare('SELECT ram_overcommit_ratio FROM nodes WHERE id = ?').get(id);
+    if (!row && id === 1) {
+      // The local primary node is usually id=1, but install-local-node.sh does
+      // not force that id. Fall back to whichever row carries the local token.
+      row = db.prepare("SELECT ram_overcommit_ratio FROM nodes WHERE agent_token = 'local-primary-no-agent' ORDER BY id ASC LIMIT 1").get();
+    }
+    const r = parseFloat(row && row.ram_overcommit_ratio);
+    if (Number.isFinite(r) && r >= 1.0) ratio = Math.min(r, 50.0);
+  } catch (_) {}
+  return ratio;
+}
+
+// Sum of RAM (MB) allocated to every VM on a node, from the DB. Optionally
+// exclude one VM (used at start time, where the VM is already in the table and
+// must not be counted twice).
+function allocatedRamMb(nodeId, excludeVmId) {
+  const id = Number(nodeId) || 1;
+  try {
+    if (excludeVmId) {
+      const row = db.prepare('SELECT COALESCE(SUM(CAST(memory AS INTEGER)), 0) AS mb FROM vms WHERE COALESCE(node_id, 1) = ? AND id <> ?').get(id, excludeVmId);
+      return parseInt(row && row.mb, 10) || 0;
+    }
+    const row = db.prepare('SELECT COALESCE(SUM(CAST(memory AS INTEGER)), 0) AS mb FROM vms WHERE COALESCE(node_id, 1) = ?').get(id);
+    return parseInt(row && row.mb, 10) || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+// Enforce the ratio-based RAM cap. Returns { ok, ratio, allocatedMb, wantMb,
+// maxAllocMb, totalMb }. Callers decide whether to throw.
+function checkRamOvercommit(nodeId, wantMb, excludeVmId) {
+  const ratio = nodeRamOvercommitRatio(nodeId);
+  const totalMb = Math.round(os.totalmem() / 1024 / 1024);
+  const allocatedMb = allocatedRamMb(nodeId, excludeVmId);
+  const maxAllocMb = Math.floor(totalMb * ratio);
+  const ok = ratio <= 1.0 ? true : (allocatedMb + wantMb <= maxAllocMb);
+  return { ok, ratio, allocatedMb, wantMb, maxAllocMb, totalMb };
+}
+
+// Human-readable RAM overcommit limit error (creation/start paths).
+function ramOvercommitError(info) {
+  const fmt = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB');
+  return `RAM overcommit limit reached: allocated ${fmt(info.allocatedMb)}, this VM needs ${fmt(info.wantMb)}, cap is ${fmt(info.maxAllocMb)} (${info.ratio.toFixed(1)}× of ${fmt(info.totalMb)} physical). Lower this VM's RAM or raise the node's overcommit ratio.`;
+}
+
 function ensureDirs() {
   for (const d of [VM_DIR, config.uploads.backup]) {
     fs.mkdirSync(d, { recursive: true });
@@ -1651,6 +1705,17 @@ async function create({ user, data }) {
   }
   const memory = parseInt(data.memory || settings.get('vm.default_memory') || '2048', 10);
   const cpus = parseInt(data.cpus || settings.get('vm.default_cpus') || '2', 10);
+  // Pre-flight (creation-time): enforce the node's RAM overcommit cap. This is
+  // the same ratio-based rule used at start time. Ratio 1.0 is a no-op here so
+  // default behavior is unchanged; the strict free-RAM check still happens at
+  // start. Swap is never counted toward the cap.
+  {
+    const ratio = nodeRamOvercommitRatio(targetNodeId);
+    if (ratio > 1.0) {
+      const info = checkRamOvercommit(targetNodeId, memory);
+      if (!info.ok) throw new Error(ramOvercommitError(info));
+    }
+  }
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocPort();
   if (isNaN(sshPort) || sshPort < 23 || sshPort > 65535) throw new Error('Invalid SSH port');
   if (inUsePort(sshPort)) throw new Error(`Port ${sshPort} is already in use`);
@@ -1896,10 +1961,31 @@ async function start(vm, { user = null } = {}) {
   // per-instance modules when the seed actually changed.
   writeSeed(vm);
   // Pre-flight: enough free RAM for the guest (+64MB QEMU overhead)?
+  // When a node has a RAM overcommit ratio > 1.0, the check is relaxed to
+  // ratio-based allocation (allocated <= total * ratio) instead of the strict
+  // free-RAM check. This lets admins intentionally oversubscribe RAM without
+  // the panel blocking every VM past the physical total. Swap is NOT counted
+  // toward the cap — it is disk-backed and cannot be treated as usable RAM.
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
+  const wantMb = Math.round(wantBytes / 1024 / 1024);
+  const ramRatio = nodeRamOvercommitRatio(vm.node_id || 1);
   const budget = memoryBudget();
-  if (budget.bytes < wantBytes + 64 * 1024 * 1024) {
-    throw new Error(`Not enough free memory to start this VM: it needs ${Math.round(wantBytes / 1024 / 1024)} MB (+64 MB QEMU overhead) but only ${Math.max(0, Math.round(budget.bytes / 1024 / 1024))} MB is available — limited by the ${budget.limitedBy}. The physical host may have much more RAM, but this process runs inside a container/cgroup cap. Fix: raise the container memory limit (Proxmox LXC: Options > Memory; Docker: --memory), or set the VM's RAM lower.`);
+  if (ramRatio <= 1.0) {
+    // Strict behavior (default): block unless free RAM fits the guest.
+    if (budget.bytes < wantBytes + 64 * 1024 * 1024) {
+      throw new Error(`Not enough free memory to start this VM: it needs ${wantMb} MB (+64 MB QEMU overhead) but only ${Math.max(0, Math.round(budget.bytes / 1024 / 1024))} MB is available — limited by the ${budget.limitedBy}. The physical host may have much more RAM, but this process runs inside a container/cgroup cap. Fix: raise the container memory limit (Proxmox LXC: Options > Memory; Docker: --memory), set the VM's RAM lower, or set a node RAM overcommit ratio above 1.0 if you intend to oversubscribe.`);
+    }
+  } else {
+    // Overcommit-aware: allow if within the ratio cap, unless the container
+    // cgroup is the hard limit (overcommit cannot bypass a container cap).
+    if (budget.limitedBy.startsWith('container/cgroup')) {
+      if (budget.bytes < wantBytes + 64 * 1024 * 1024) {
+        throw new Error(`Not enough memory to start this VM inside this container: it needs ${wantMb} MB (+64 MB overhead) but only ${Math.max(0, Math.round(budget.bytes / 1024 / 1024))} MB is available — limited by the ${budget.limitedBy}. Overcommit cannot bypass a container/cgroup cap. Fix: raise the container memory limit, or set the VM's RAM lower.`);
+      }
+    } else {
+      const info = checkRamOvercommit(vm.node_id || 1, wantMb, vm.id);
+      if (!info.ok) throw new Error(ramOvercommitError(info));
+    }
   }
   ensureVncPort(vm);
   ensureAgentPort(vm);

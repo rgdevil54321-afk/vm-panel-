@@ -211,6 +211,17 @@ function getNodeLiveStats() {
     }
   }
 
+  let ramOvercommitRatio = 1.0;
+  try {
+    let row = db.prepare('SELECT ram_overcommit_ratio FROM nodes WHERE id = 1').get();
+    if (!row) {
+      row = db.prepare("SELECT ram_overcommit_ratio FROM nodes WHERE agent_token = 'local-primary-no-agent' ORDER BY id ASC LIMIT 1").get();
+    }
+    const r = parseFloat(row && row.ram_overcommit_ratio);
+    if (Number.isFinite(r) && r >= 1.0) {
+      ramOvercommitRatio = Math.min(r, 50.0);
+    }
+  } catch (_) {}
   return {
     id: 1,
     name: 'Primary Node',
@@ -230,6 +241,7 @@ function getNodeLiveStats() {
     // committed_mb is what the host can actually back: RAM plus swap.
     swap: swapStats,
     memory_committed_mb: Math.round((totalMem + (swapStats.total_mb || 0) * 1024 * 1024) / 1024 / 1024),
+    ram_overcommit_ratio: ramOvercommitRatio,
     disk: diskInfo,
     network: netStats,
     hypervisor: { qemu_installed: true, qemu_version: qemuVer, kvm_support: vmService.hasKvm(), cloud_init: true },

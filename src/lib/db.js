@@ -460,6 +460,11 @@ if (!vmsColumns.includes('node_id')) {
   db.exec('ALTER TABLE vms ADD COLUMN node_id INTEGER');
   db.exec('CREATE INDEX IF NOT EXISTS idx_vms_node ON vms(node_id)');
 }
+// RAM overcommit ratio (display + creation-only guard). Default 1.0 = strict.
+const nodeCols = db.prepare('PRAGMA table_info(nodes)').all().map((c) => c.name);
+if (!nodeCols.includes('ram_overcommit_ratio')) {
+  db.exec('ALTER TABLE nodes ADD COLUMN ram_overcommit_ratio REAL NOT NULL DEFAULT 1.0');
+}
 // ---- Per-user preferences ----
 const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
 if (!userColumns.includes('music_enabled')) {

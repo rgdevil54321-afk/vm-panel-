@@ -52,13 +52,25 @@ function createNode({ name, host, port, agent_token, location }) {
 function updateNode(id, data) {
   const node = getNode(id);
   if (!node) throw new Error('Node not found');
-  const fields = ['name', 'host', 'port', 'agent_token', 'location'];
+  const fields = ['name', 'host', 'port', 'agent_token', 'location', 'ram_overcommit_ratio'];
   const set = [];
   const vals = {};
   for (const f of fields) {
     if (data[f] !== undefined && data[f] !== '') {
       set.push(`${f} = @${f}`);
-      vals[f] = f === 'port' ? parseInt(data[f], 10) : String(data[f]);
+      if (f === 'port') {
+        vals[f] = parseInt(data[f], 10);
+      } else if (f === 'ram_overcommit_ratio') {
+        // Clamp to 1.0–50.0 and reject NaN/Infinity so a bad value cannot
+        // silently disable enforcement or allow an absurd overcommit.
+        let r = parseFloat(data[f]);
+        if (!Number.isFinite(r)) r = 1.0;
+        if (r < 1.0) r = 1.0;
+        if (r > 50.0) r = 50.0;
+        vals[f] = r;
+      } else {
+        vals[f] = String(data[f]);
+      }
     }
   }
   if (set.length) {
@@ -424,6 +436,7 @@ function getClusterSummary() {
       last_seen_at: node.last_seen_at,
       vm_total: vmCount,
       vm_running: runningOnNode,
+      ram_overcommit_ratio: parseFloat(node.ram_overcommit_ratio) || 1.0,
       stats,
     });
   }
