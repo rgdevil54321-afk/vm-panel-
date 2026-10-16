@@ -18,6 +18,7 @@ const { attachVncProxy } = require('./services/vncService');
 
 const authService = require('./services/authService');
 const license = require('./lib/license');
+const hostPrep = require('./lib/hostPrep');
 
 function createWebApp() {
   const app = express();
@@ -501,6 +502,11 @@ function bootstrap() {
   ]) {
     fs.mkdirSync(d, { recursive: true });
   }
+
+  // Apply the host overcommit policy before anything can start a VM; without it
+  // QEMU refuses to reserve guest RAM larger than the host's free memory.
+  try { hostPrep.ensureMemoryOvercommit(); } catch (e) { logger.warn('[host] overcommit: ' + e.message); }
+  try { hostPrep.warnIfNoSwap(); } catch (_) { /* informational only */ }
 
   scheduleService.loadAll();
   planGuardService.start();
