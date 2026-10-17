@@ -465,6 +465,12 @@ const nodeCols = db.prepare('PRAGMA table_info(nodes)').all().map((c) => c.name)
 if (!nodeCols.includes('ram_overcommit_ratio')) {
   db.exec('ALTER TABLE nodes ADD COLUMN ram_overcommit_ratio REAL NOT NULL DEFAULT 1.0');
 }
+// Pinned ceiling (MB) on the total RAM VMs may use at once on a node. 0 = auto
+// (physical RAM minus a reserve kept for the panel). Enforced at start so guests
+// can never starve the panel process and get it OOM-killed.
+if (!nodeCols.includes('max_vm_memory_mb')) {
+  db.exec('ALTER TABLE nodes ADD COLUMN max_vm_memory_mb INTEGER NOT NULL DEFAULT 0');
+}
 // ---- Per-user preferences ----
 const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
 if (!userColumns.includes('music_enabled')) {

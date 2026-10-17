@@ -52,7 +52,7 @@ function createNode({ name, host, port, agent_token, location }) {
 function updateNode(id, data) {
   const node = getNode(id);
   if (!node) throw new Error('Node not found');
-  const fields = ['name', 'host', 'port', 'agent_token', 'location', 'ram_overcommit_ratio'];
+  const fields = ['name', 'host', 'port', 'agent_token', 'location', 'ram_overcommit_ratio', 'max_vm_memory_mb'];
   const set = [];
   const vals = {};
   for (const f of fields) {
@@ -68,6 +68,12 @@ function updateNode(id, data) {
         if (r < 1.0) r = 1.0;
         if (r > 50.0) r = 50.0;
         vals[f] = r;
+      } else if (f === 'max_vm_memory_mb') {
+        // Pinned VM RAM ceiling in MB. 0 = auto (physical minus panel reserve).
+        // Reject negatives/NaN so a bad value cannot disable the safety cap.
+        let v = parseInt(data[f], 10);
+        if (!Number.isFinite(v) || v < 0) v = 0;
+        vals[f] = v;
       } else {
         vals[f] = String(data[f]);
       }

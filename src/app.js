@@ -507,6 +507,7 @@ function bootstrap() {
   // QEMU refuses to reserve guest RAM larger than the host's free memory.
   try { hostPrep.ensureMemoryOvercommit(); } catch (e) { logger.warn('[host] overcommit: ' + e.message); }
   try { hostPrep.warnIfNoSwap(); } catch (_) { /* informational only */ }
+  try { hostPrep.protectPanelProcess(); } catch (e) { logger.warn('[host] oom: ' + e.message); }
 
   scheduleService.loadAll();
   planGuardService.start();

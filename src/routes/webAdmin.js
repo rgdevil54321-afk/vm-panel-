@@ -47,14 +47,31 @@ router.get('/admin', (req, res) => {
 
 router.get('/admin/nodes', (req, res) => {
   const cluster = nodeService.getClusterSummary();
+  // Annotate each node with its pinned VM RAM ceiling (the hard limit that keeps
+  // the panel safe) so the list can show it without re-deriving it in the view.
+  cluster.nodes = (cluster.nodes || []).map((n) => Object.assign({}, n, {
+    vm_ram_cap_mb: vmService.vmRamCapMb(n.id),
+    vm_ram_reserve_mb: vmService.hostReserveMb(n.id),
+  }));
   const nodes = nodeService.allNodes().map((n) => ({ ...n, vm_count: require('../services/nodeRegistry').nodeVmCount(n.id) }));
   render(res, 'nodes', { cluster, nodes });
 });
 
 router.get('/admin/nodes/:id', async (req, res) => {
   try {
-    const detail = await nodeService.getNodeDetail(parseInt(req.params.id, 10));
-    render(res, 'nodeDetail', { detail });
+    const nodeId = parseInt(req.params.id, 10);
+    const detail = await nodeService.getNodeDetail(nodeId);
+    // Pinned VM RAM ceiling (what actually gates VM start) plus the reserve kept
+    // back for the panel, so the card can show a real number instead of a guess.
+    const pinnedCapMb = vmService.vmRamCapMb(nodeId);
+    const reserveMb = vmService.hostReserveMb(nodeId);
+    const pinned = {
+      cap_mb: pinnedCapMb != null ? pinnedCapMb : 0,
+      reserve_mb: reserveMb,
+      explicit_mb: parseInt(detail.node.max_vm_memory_mb, 10) || 0,
+      running_mb: vmService.runningRamMb(nodeId),
+    };
+    render(res, 'nodeDetail', { detail, pinned });
   } catch (e) {
     const cluster = nodeService.getClusterSummary();
     render(res, 'nodes', { cluster, nodes: nodeService.allNodes(), error: e.message });
@@ -78,18 +95,25 @@ router.get('/admin/servers', (req, res) => {
 
 router.get('/admin/servers/create', (req, res) => {
   const users = db.prepare('SELECT id, username, email FROM users ORDER BY username').all();
-  // Decorate each node with its physical RAM and the RAM ceiling implied by its
-  // overcommit ratio, so the create form can let the admin type any value the
-  // node will actually accept (physical x ratio) instead of a fixed 64 GB cap.
+  // Decorate each node with its physical RAM, the RAM ceiling implied by its
+  // overcommit ratio, and the hard pinned VM RAM cap (which is what actually
+  // gates start). The create form lets the admin type any value up to the pinned
+  // cap, since anything larger could never be started without risking the panel.
   const nodes = nodeService.allNodes().map((n) => {
     const stats = nodeService.cachedStats(n.id);
     const totalMb = (stats && stats.memory && parseInt(stats.memory.total_mb, 10)) || 0;
     const ratio = parseFloat(n.ram_overcommit_ratio) || 1;
-    const capMb = totalMb > 0 ? Math.floor(totalMb * ratio) : 0;
+    const ratioCapMb = totalMb > 0 ? Math.floor(totalMb * ratio) : 0;
+    const pinnedCapMb = vmService.vmRamCapMb(n.id);
+    const reserveMb = vmService.hostReserveMb(n.id);
+    const capMb = pinnedCapMb != null ? pinnedCapMb : ratioCapMb;
     return Object.assign({}, n, {
       ram_overcommit_ratio: ratio,
       mem_total_mb: totalMb,
       mem_cap_mb: capMb,
+      mem_pinned_cap_mb: pinnedCapMb != null ? pinnedCapMb : 0,
+      mem_reserve_mb: reserveMb,
+      max_vm_memory_mb: parseInt(n.max_vm_memory_mb, 10) || 0,
     });
   });
   render(res, 'create', { osList: vmService.getOsList(), users, nodes });

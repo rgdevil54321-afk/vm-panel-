@@ -107,6 +107,108 @@ function ramOvercommitError(info) {
   return `RAM overcommit limit reached: allocated ${fmt(info.allocatedMb)}, this VM needs ${fmt(info.wantMb)}, cap is ${fmt(info.maxAllocMb)} (${info.ratio.toFixed(1)}× of ${fmt(info.totalMb)} physical). Lower this VM's RAM or raise the node's overcommit ratio.`;
 }
 
+// ---------------------------------------------------------------------------
+// Pinned VM RAM ceiling (panel-safety)
+// ---------------------------------------------------------------------------
+// The panel runs on the same host as the guests it manages. If guests are
+// allowed to consume all of RAM the kernel will pick a victim to OOM-kill, and
+// that victim is often the panel itself. So we pin a hard ceiling on the RAM
+// that running VMs may hold at once, and keep the remainder for the panel + OS.
+// This is a real limit on *usage*, independent of the overcommit ratio.
+function physicalRamMb() {
+  return Math.round(os.totalmem() / 1024 / 1024);
+}
+
+// cgroup v1/v2 memory limit in MB, or 0 when unlimited/absent. Used so a panel
+// running inside a container cannot be told it may use the whole host's RAM.
+function cgroupLimitMb() {
+  try {
+    const max = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), 10);
+    if (Number.isFinite(max) && max > 0) return Math.round(max / 1024 / 1024);
+  } catch (_) {}
+  try {
+    const lim = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+    if (Number.isFinite(lim) && lim > 0 && lim < os.totalmem()) return Math.round(lim / 1024 / 1024);
+  } catch (_) {}
+  return 0;
+}
+
+// Physical RAM of a node in MB. The local node is this machine (capped by any
+// container limit); remote nodes report their total through capacity_memory_mb
+// (filled in by the heartbeat). Returns 0 when unknown.
+function nodePhysicalRamMb(nodeId) {
+  const id = Number(nodeId) || 1;
+  if (id === 1) {
+    const phys = physicalRamMb();
+    const cg = cgroupLimitMb();
+    return cg > 0 ? Math.min(phys, cg) : phys;
+  }
+  try {
+    const row = db.prepare('SELECT capacity_memory_mb FROM nodes WHERE id = ?').get(id);
+    return parseInt(row && row.capacity_memory_mb, 10) || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+// RAM kept aside for the panel + OS: the greater of 2 GB and 10% of physical.
+function hostReserveMb(nodeId) {
+  const total = nodePhysicalRamMb(nodeId) || physicalRamMb();
+  return Math.max(2048, Math.round(total * 0.10));
+}
+
+// Pinned ceiling (MB) on the total RAM VMs may use at once on a node. An explicit
+// per-node value set by the admin wins; otherwise it is physical RAM minus the
+// panel reserve. Returns null when the node's physical RAM is unknown (a remote
+// node that has never reported stats) so we never block on a guess — the agent
+// enforces its own limits there.
+function vmRamCapMb(nodeId) {
+  const id = Number(nodeId) || 1;
+  try {
+    const row = db.prepare('SELECT max_vm_memory_mb FROM nodes WHERE id = ?').get(id);
+    const explicit = parseInt(row && row.max_vm_memory_mb, 10) || 0;
+    if (explicit > 0) return explicit;
+  } catch (_) {}
+  const total = nodePhysicalRamMb(nodeId);
+  if (!total) return null;
+  return Math.max(512, total - hostReserveMb(nodeId));
+}
+
+// RAM (MB) held by VMs that are actually running on a node right now.
+function runningRamMb(nodeId, excludeVmId) {
+  const id = Number(nodeId) || 1;
+  let rows = [];
+  try {
+    rows = db.prepare('SELECT * FROM vms WHERE COALESCE(node_id, 1) = ?').all(id);
+  } catch (_) {
+    return 0;
+  }
+  let sum = 0;
+  for (const vm of rows) {
+    if (excludeVmId && Number(vm.id) === Number(excludeVmId)) continue;
+    if (isRunning(vm)) sum += parseInt(vm.memory, 10) || 0;
+  }
+  return sum;
+}
+
+function fmtMb(mb) {
+  const n = Number(mb) || 0;
+  return n >= 1024 ? (n / 1024).toFixed(1) + ' GB' : Math.round(n) + ' MB';
+}
+
+// Returns { ok, capMb, runningMb, wantMb }. ok=false means starting/lifting this
+// VM would push running VM RAM past the pinned ceiling.
+function checkVmRamCap(nodeId, wantMb, excludeVmId) {
+  const capMb = vmRamCapMb(nodeId);
+  if (capMb == null) return { ok: true, capMb: null, runningMb: 0, wantMb };
+  const runningMb = runningRamMb(nodeId, excludeVmId);
+  return { ok: runningMb + wantMb <= capMb, capMb, runningMb, wantMb };
+}
+
+function vmRamCapError(info) {
+  return `Pinned VM RAM limit reached: ${fmtMb(info.runningMb)} already in use by running VMs, this VM needs ${fmtMb(info.wantMb)}, and the node's limit is ${fmtMb(info.capMb)} (the rest is reserved for the panel so it cannot be OOM-killed). Stop another VM, lower this VM's RAM, or raise the node's VM RAM limit in Admin → Nodes.`;
+}
+
 function ensureDirs() {
   for (const d of [VM_DIR, config.uploads.backup]) {
     fs.mkdirSync(d, { recursive: true });
@@ -1705,6 +1807,15 @@ async function create({ user, data }) {
   }
   const memory = parseInt(data.memory || settings.get('vm.default_memory') || '2048', 10);
   const cpus = parseInt(data.cpus || settings.get('vm.default_cpus') || '2', 10);
+  // Pre-flight (creation-time): the pinned VM RAM ceiling is a hard cap. A VM
+  // defined larger than the node's total VM budget could never be started
+  // safely, so refuse it now rather than let it sit unstartable.
+  {
+    const capMb = vmRamCapMb(targetNodeId);
+    if (capMb != null && memory > capMb) {
+      throw new Error(`This VM asks for ${fmtMb(memory)} but the node's pinned VM RAM limit is ${fmtMb(capMb)} (the rest is reserved for the panel so it cannot be OOM-killed). Raise the node's VM RAM limit in Admin → Nodes or lower this VM's RAM.`);
+    }
+  }
   // Pre-flight (creation-time): enforce the node's RAM overcommit cap. This is
   // the same ratio-based rule used at start time. Ratio 1.0 is a no-op here so
   // default behavior is unchanged; the strict free-RAM check still happens at
@@ -1968,6 +2079,15 @@ async function start(vm, { user = null } = {}) {
   // toward the cap — it is disk-backed and cannot be treated as usable RAM.
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
   const wantMb = Math.round(wantBytes / 1024 / 1024);
+
+  // Hard panel-safety ceiling first: never let running guests consume the RAM
+  // reserved for the panel. This applies at every ratio so guests can never
+  // starve the panel process and get it OOM-killed.
+  {
+    const cap = checkVmRamCap(vm.node_id || 1, wantMb, vm.id);
+    if (!cap.ok) throw new Error(vmRamCapError(cap));
+  }
+
   const ramRatio = nodeRamOvercommitRatio(vm.node_id || 1);
   const budget = memoryBudget();
   if (ramRatio <= 1.0) {
@@ -2673,4 +2793,5 @@ module.exports = {
   addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,
   renewExpiry, vmExpiry,
   setUserVmsSuspended, setUserVmsUnsuspended,
+  vmRamCapMb, hostReserveMb, nodePhysicalRamMb, physicalRamMb, runningRamMb, checkVmRamCap,
 };

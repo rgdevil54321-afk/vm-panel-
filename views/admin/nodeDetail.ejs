@@ -80,22 +80,43 @@
     </div>
   </div>
 
-  <!-- RAM Overcommit -->
+  <!-- RAM Overcommit + pinned VM RAM limit -->
   <% const nodeRatio = parseFloat(detail.node.ram_overcommit_ratio) || 1; %>
   <% const physGb = (detail.stats.memory.total_mb / 1024); %>
   <% const allocGb = (detail.stats.vms.allocated_memory_mb / 1024); %>
   <% const maxAllocGb = physGb * nodeRatio; %>
+  <% const pinCapMb = (pinned && pinned.cap_mb) || 0; %>
+  <% const pinReserveMb = (pinned && pinned.reserve_mb) || 0; %>
+  <% const pinRunningMb = (pinned && pinned.running_mb) || 0; %>
+  <% const pinExplicitMb = (pinned && pinned.explicit_mb) || 0; %>
   <div class="card mb-4" style="padding:16px 18px">
-    <div class="flex-between" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
+    <div class="card-title" style="margin:0 0 4px">RAM Limits</div>
+    <div class="muted text-sm">VMs may be allocated up to <b><%= maxAllocGb.toFixed(0) %> GB</b> (physical <%= physGb.toFixed(0) %> GB &times; <%= nodeRatio.toFixed(1) %>×) · currently allocated <b><%= allocGb.toFixed(1) %> GB</b> (<%= physGb > 0 ? Math.round((allocGb / physGb) * 100) : 0 %>% of physical).</div>
+    <% if (nodeRatio > 1) { %>
+      <div class="pill pill-yellow font-bold" style="margin-top:8px">Overcommit active</div>
+      <div class="muted text-sm" style="margin-top:6px;max-width:680px">With <%= nodeRatio.toFixed(1) %>× overcommit, the host can run out of real RAM if many VMs use memory at once. Swap is <b>not</b> counted toward this cap.</div>
+    <% } else { %>
+      <div class="muted text-sm" style="margin-top:6px">Strict mode (1.0×): a VM cannot be created or started unless real free RAM fits it.</div>
+    <% } %>
+    <div class="flex-between" style="flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
       <div>
-        <div class="card-title" style="margin:0 0 4px">RAM Overcommit</div>
-        <div class="muted text-sm">VMs may be allocated up to <b><%= maxAllocGb.toFixed(0) %> GB</b> (physical <%= physGb.toFixed(0) %> GB &times; <%= nodeRatio.toFixed(1) %>×) · currently allocated <b><%= allocGb.toFixed(1) %> GB</b> (<%= physGb > 0 ? Math.round((allocGb / physGb) * 100) : 0 %>% of physical).</div>
-        <% if (nodeRatio > 1) { %>
-          <div class="pill pill-yellow font-bold" style="margin-top:8px">Overcommit active</div>
-          <div class="muted text-sm" style="margin-top:6px;max-width:640px">With <%= nodeRatio.toFixed(1) %>× overcommit, the host can run out of real RAM if many VMs use memory at once. Expect swap pressure and possible OOM kills under heavy concurrent load. Swap is <b>not</b> counted toward this cap.</div>
-        <% } else { %>
-          <div class="muted text-sm" style="margin-top:6px">Strict mode (1.0×): a VM cannot be created or started unless real free RAM fits it.</div>
-        <% } %>
+        <div style="font-weight:700;font-size:13.5px">Pinned VM RAM limit <span class="pill pill-blue font-bold">panel safety</span></div>
+        <div class="muted text-sm" style="max-width:680px;margin-top:4px">
+          Guests may hold at most <b><%= (pinCapMb/1024).toFixed(1) %> GB</b> of RAM between them at once<% if (pinRunningMb > 0) { %> (currently <b><%= (pinRunningMb/1024).toFixed(1) %> GB</b> in use by running VMs)<% } %>.
+          The remaining <b><%= (pinReserveMb/1024).toFixed(1) %> GB</b> is reserved for the panel + OS so the panel can never be OOM-killed by a VM.
+          <% if (pinExplicitMb > 0) { %>Pinned explicitly to <b><%= (pinExplicitMb/1024).toFixed(1) %> GB</b>.<% } else { %>Auto (physical &minus; reserve). Set a value to pin it exactly.<% } %>
+        </div>
+      </div>
+      <div class="flex" style="gap:8px;align-items:center">
+        <label class="muted text-sm" for="ram_pin" style="white-space:nowrap">Pinned limit (MB, 0 = auto)</label>
+        <input id="ram_pin" class="input mono" type="number" min="0" step="512" value="<%= pinExplicitMb %>" style="width:130px" />
+        <button class="btn btn-primary btn-sm" onclick="saveRamPin(<%= detail.node.id %>)">Save</button>
+      </div>
+    </div>
+    <div class="flex-between" style="flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+      <div style="max-width:680px">
+        <div style="font-weight:700;font-size:13.5px">Overcommit ratio</div>
+        <div class="muted text-sm" style="margin-top:4px">Controls how much VMs may be <i>allocated</i> past physical RAM (1.0–50.0). The pinned limit above is the hard ceiling on real usage and always wins.</div>
       </div>
       <div class="flex" style="gap:8px;align-items:center">
         <label class="muted text-sm" for="ram_ratio" style="white-space:nowrap">Ratio (1.0–50.0)</label>
@@ -173,6 +194,17 @@ async function saveRamRatio(nodeId) {
   try {
     await VP.api('/api/admin/nodes/' + nodeId, { method: 'PATCH', body: { ram_overcommit_ratio: v } });
     VP.toast('RAM overcommit set to ' + v.toFixed(1) + '\u00d7', 'success');
+    setTimeout(function () { location.reload(); }, 600);
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function saveRamPin(nodeId) {
+  const el = document.getElementById('ram_pin');
+  let v = parseInt(el.value, 10);
+  if (!isFinite(v) || v < 0) v = 0;
+  el.value = v;
+  try {
+    await VP.api('/api/admin/nodes/' + nodeId, { method: 'PATCH', body: { max_vm_memory_mb: v } });
+    VP.toast(v > 0 ? ('Pinned VM RAM limit set to ' + (v / 1024).toFixed(1) + ' GB') : 'Pinned VM RAM limit set to auto', 'success');
     setTimeout(function () { location.reload(); }, 600);
   } catch (e) { VP.toast(e.message, 'error'); }
 }

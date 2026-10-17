@@ -84,4 +84,24 @@ function warnIfNoSwap() {
   }
 }
 
-module.exports = { ensureMemoryOvercommit, warnIfNoSwap, readOvercommit, readSwapTotalKb };
+// Panel-safety net: bias the kernel to kill a guest (QEMU) before it kills the
+// panel if the host ever does run out of memory. -500 keeps the panel strongly
+// preferred over guests without making it unkillable forever (which would risk a
+// host-wide livelock if the panel itself misbehaved). Best-effort; needs root.
+function protectPanelProcess() {
+  if (process.platform !== 'linux') return { supported: false };
+  const target = -500;
+  try {
+    const cur = parseInt(fs.readFileSync('/proc/self/oom_score_adj', 'utf8').trim(), 10);
+    if (Number.isFinite(cur) && cur <= target) return { supported: true, value: cur, changed: false };
+    fs.writeFileSync('/proc/self/oom_score_adj', String(target));
+    logger.info('[host] oom: panel oom_score_adj set to ' + target + ' (guests are killed before the panel)');
+    return { supported: true, value: target, changed: true };
+  } catch (e) {
+    // Not root, or a kernel without oom_score_adj: the pinned VM RAM cap is the
+    // real protection, so this is only a bonus.
+    return { supported: false, error: e.code || e.message };
+  }
+}
+
+module.exports = { ensureMemoryOvercommit, warnIfNoSwap, protectPanelProcess, readOvercommit, readSwapTotalKb };

@@ -63,7 +63,7 @@
           <label>Hypervisor Node *</label>
           <select id="fNode" onchange="onNodeChange()">
             <% for (const n of nodes) { %>
-              <option value="<%= n.id %>" data-ratio="<%= parseFloat(n.ram_overcommit_ratio) || 1 %>" data-memmb="<%= n.mem_total_mb || 0 %>" data-capmb="<%= n.mem_cap_mb || 0 %>" <%= n.id === 1 ? 'selected' : '' %>>
+              <option value="<%= n.id %>" data-ratio="<%= parseFloat(n.ram_overcommit_ratio) || 1 %>" data-memmb="<%= n.mem_total_mb || 0 %>" data-capmb="<%= n.mem_cap_mb || 0 %>" data-pincapmb="<%= n.mem_pinned_cap_mb || 0 %>" data-reservemb="<%= n.mem_reserve_mb || 0 %>" <%= n.id === 1 ? 'selected' : '' %>>
                 <%= n.name %> (<%= n.host %>:<%= n.port %>)<%= n.status === 'online' ? ' — Online' : ' — Offline' %>
               </option>
             <% } %>
@@ -633,9 +633,14 @@ function refreshMemCap() {
   const opt = sel && sel.options[sel.selectedIndex];
   const ratio = opt ? (parseFloat(opt.getAttribute('data-ratio')) || 1) : 1;
   const totalMb = opt ? (parseFloat(opt.getAttribute('data-memmb')) || 0) : 0;
+  const pinCapMb = opt ? (parseFloat(opt.getAttribute('data-pincapmb')) || 0) : 0;
+  const reserveMb = opt ? (parseFloat(opt.getAttribute('data-reservemb')) || 0) : 0;
   const hint = document.getElementById('memCapHint');
   if (hint) {
-    if (totalMb > 0 && ratio > 1) {
+    if (pinCapMb > 0) {
+      hint.innerHTML = 'Pinned safety limit \u00b7 this node accepts up to <b>' + (pinCapMb / 1024).toFixed(1) + ' GB</b> RAM per VM. ' + (reserveMb > 0 ? ((reserveMb / 1024).toFixed(1) + ' GB is reserved for the panel so it cannot be OOM-killed.') : '');
+      hint.style.color = '#38bdf8';
+    } else if (totalMb > 0 && ratio > 1) {
       hint.innerHTML = 'Overcommit ' + ratio.toFixed(1) + '\u00d7 \u00b7 this node accepts up to <b>' + Math.round(cap / 1024) + ' GB</b> RAM per VM. Type any value up to that.';
       hint.style.color = '#fbbf24';
     } else if (totalMb > 0) {
@@ -757,11 +762,12 @@ function updateSummary() {
   const nodeSel = document.getElementById('fNode');
   const nodeLabel = nodeSel ? nodeSel.options[nodeSel.selectedIndex].text.split(' (')[0].trim() : 'Primary Node';
   const nodeRatio = nodeSel ? (parseFloat(nodeSel.options[nodeSel.selectedIndex].getAttribute('data-ratio')) || 1) : 1;
+  const nodePinCap = nodeSel ? (parseFloat(nodeSel.options[nodeSel.selectedIndex].getAttribute('data-pincapmb')) || 0) : 0;
   const ocHint = document.getElementById('ocHint');
   if (ocHint) {
     if (nodeRatio > 1) {
       ocHint.style.display = 'block';
-      ocHint.textContent = '\u26a0 Selected node has ' + nodeRatio.toFixed(1) + '\u00d7 RAM overcommit enabled. VMs can be allocated past the physical total; heavy concurrent load may cause swap pressure or OOM kills.';
+      ocHint.textContent = '\u26a0 Selected node has ' + nodeRatio.toFixed(1) + '\u00d7 RAM overcommit enabled (allocation may exceed physical). A pinned safety limit' + (nodePinCap > 0 ? ' of ' + (nodePinCap / 1024).toFixed(1) + ' GB' : '') + ' caps real usage so the panel cannot be OOM-killed.';
     } else {
       ocHint.style.display = 'none';
     }
