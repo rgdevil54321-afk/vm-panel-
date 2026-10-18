@@ -601,31 +601,28 @@ function syncCpu(v) {
   updateSummary();
 }
 
-// Sanity ceiling used only when a node's physical RAM is unknown (e.g. the
-// node has not been probed yet). The server still enforces the real cap.
+// Sanity bound on the typed value only — it is NOT a creation limit.
 const FALLBACK_MEM_CAP_MB = 4194304; // 4 TB
 
-// The RAM ceiling implied by the currently selected node:
-// physical RAM x overcommit ratio. Falls back to FALLBACK_MEM_CAP_MB when the
-// node's memory total is not known yet, so typing is never blocked by stale data.
+// Creation ceiling: deliberately NOT tied to physical RAM. A VM may be defined
+// at any size (128 GB, 256 GB, …) regardless of the hardware — the panel only
+// pins real RAM USAGE at start time, and QEMU maps guest RAM lazily, so defining
+// a big VM costs nothing here. A "max" button and the clamping below therefore
+// use this generous bound, never the start-time pin.
 function currentNodeMemCap() {
-  const sel = document.getElementById('fNode');
-  if (!sel || !sel.options.length) return FALLBACK_MEM_CAP_MB;
-  const opt = sel.options[sel.selectedIndex];
-  const cap = parseFloat(opt.getAttribute('data-capmb'));
-  if (Number.isFinite(cap) && cap > 0) return Math.floor(cap);
   return FALLBACK_MEM_CAP_MB;
 }
 
-// Re-apply the selected node's ceiling to the number/range inputs and update the
-// explanatory hint. Called on load and whenever the target node changes.
+// Re-apply the creation ceiling to the number/range inputs and update the
+// explanatory hint, which describes the separate START-time usage pin.
+// Called on load and whenever the target node changes.
 function refreshMemCap() {
   const cap = currentNodeMemCap();
   const num = document.getElementById('fMem');
   const range = document.getElementById('fMemRange');
   num.max = cap;
-  // Keep the slider usable: let it reach the target but don't let its range
-  // explode on a heavily overcommitted node. Typing is never limited by this.
+  // Keep the slider usable: don't let its range explode to 4 TB. The slider is
+  // a convenience only — typing is never limited by it.
   range.max = Math.min(cap, 262144); // up to 256 GB on the slider
   if (parseFloat(range.value) > parseFloat(range.max)) range.value = range.max;
 
@@ -638,16 +635,17 @@ function refreshMemCap() {
   const hint = document.getElementById('memCapHint');
   if (hint) {
     if (pinCapMb > 0) {
-      hint.innerHTML = 'Pinned safety limit \u00b7 this node accepts up to <b>' + (pinCapMb / 1024).toFixed(1) + ' GB</b> RAM per VM. ' + (reserveMb > 0 ? ((reserveMb / 1024).toFixed(1) + ' GB is reserved for the panel so it cannot be OOM-killed.') : '');
+      hint.innerHTML = 'Creation is unlimited \u2014 define any RAM size. At <b>start</b>, running VMs are capped to <b>' + (pinCapMb / 1024).toFixed(1) + ' GB</b> total' + (reserveMb > 0 ? (' so the ' + (reserveMb / 1024).toFixed(1) + ' GB reserved for the panel stays free and the VPS/panel cannot be OOM-killed.') : '.');
       hint.style.color = '#38bdf8';
     } else if (totalMb > 0 && ratio > 1) {
-      hint.innerHTML = 'Overcommit ' + ratio.toFixed(1) + '\u00d7 \u00b7 this node accepts up to <b>' + Math.round(cap / 1024) + ' GB</b> RAM per VM. Type any value up to that.';
+      hint.innerHTML = 'Creation is unlimited \u00b7 node overcommit ' + ratio.toFixed(1) + '\u00d7 \u00b7 VMs may run up to <b>' + Math.round((totalMb * ratio) / 1024) + ' GB</b> total.';
       hint.style.color = '#fbbf24';
     } else if (totalMb > 0) {
-      hint.textContent = 'Strict mode \u00b7 this node accepts up to ' + Math.round(cap / 1024) + ' GB RAM (physical).';
+      hint.textContent = 'Creation is unlimited. Strict mode at start \u00b7 a VM only starts when real free RAM fits it.';
       hint.style.color = '';
     } else {
-      hint.textContent = '';
+      hint.textContent = 'Creation is unlimited \u2014 RAM usage is pinned to a safe level at start.';
+      hint.style.color = '';
     }
   }
   return cap;
@@ -693,7 +691,10 @@ function commitMemMb() {
 }
 
 function syncMemMax() {
-  syncMem(currentNodeMemCap());
+  // Jump to the slider's ceiling, not to currentNodeMemCap() — the latter is a
+  // 4 TB typing sanity bound, while the slider tops out at a sane 256 GB.
+  const range = document.getElementById('fMemRange');
+  syncMem(parseInt(range.max, 10) || 262144);
 }
 
 function onNodeChange() {

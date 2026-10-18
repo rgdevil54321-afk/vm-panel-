@@ -73,38 +73,26 @@ function nodeRamOvercommitRatio(nodeId) {
   return ratio;
 }
 
-// Sum of RAM (MB) allocated to every VM on a node, from the DB. Optionally
-// exclude one VM (used at start time, where the VM is already in the table and
-// must not be counted twice).
-function allocatedRamMb(nodeId, excludeVmId) {
-  const id = Number(nodeId) || 1;
-  try {
-    if (excludeVmId) {
-      const row = db.prepare('SELECT COALESCE(SUM(CAST(memory AS INTEGER)), 0) AS mb FROM vms WHERE COALESCE(node_id, 1) = ? AND id <> ?').get(id, excludeVmId);
-      return parseInt(row && row.mb, 10) || 0;
-    }
-    const row = db.prepare('SELECT COALESCE(SUM(CAST(memory AS INTEGER)), 0) AS mb FROM vms WHERE COALESCE(node_id, 1) = ?').get(id);
-    return parseInt(row && row.mb, 10) || 0;
-  } catch (_) {
-    return 0;
-  }
-}
-
-// Enforce the ratio-based RAM cap. Returns { ok, ratio, allocatedMb, wantMb,
-// maxAllocMb, totalMb }. Callers decide whether to throw.
+// Enforce the ratio-based cap on RUNNING RAM. Returns { ok, ratio, runningMb,
+// wantMb, maxRunningMb, totalMb }. Callers decide whether to throw.
+//
+// This counts RAM actually held by running VMs, not the sum of everything
+// defined in the DB: creation is deliberately unlimited (a VM may be defined as
+// 128 GB or 256 GB regardless of hardware), so allocation totals say nothing
+// about whether the host is safe. Only concurrent usage can push it into OOM.
 function checkRamOvercommit(nodeId, wantMb, excludeVmId) {
   const ratio = nodeRamOvercommitRatio(nodeId);
-  const totalMb = Math.round(os.totalmem() / 1024 / 1024);
-  const allocatedMb = allocatedRamMb(nodeId, excludeVmId);
-  const maxAllocMb = Math.floor(totalMb * ratio);
-  const ok = ratio <= 1.0 ? true : (allocatedMb + wantMb <= maxAllocMb);
-  return { ok, ratio, allocatedMb, wantMb, maxAllocMb, totalMb };
+  const totalMb = nodePhysicalRamMb(nodeId) || Math.round(os.totalmem() / 1024 / 1024);
+  const runningMb = runningRamMb(nodeId, excludeVmId);
+  const maxRunningMb = Math.floor(totalMb * ratio);
+  const ok = ratio <= 1.0 ? true : (runningMb + wantMb <= maxRunningMb);
+  return { ok, ratio, runningMb, wantMb, maxRunningMb, totalMb };
 }
 
-// Human-readable RAM overcommit limit error (creation/start paths).
+// Human-readable overcommit limit error (start path).
 function ramOvercommitError(info) {
   const fmt = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB');
-  return `RAM overcommit limit reached: allocated ${fmt(info.allocatedMb)}, this VM needs ${fmt(info.wantMb)}, cap is ${fmt(info.maxAllocMb)} (${info.ratio.toFixed(1)}× of ${fmt(info.totalMb)} physical). Lower this VM's RAM or raise the node's overcommit ratio.`;
+  return `RAM overcommit limit reached: ${fmt(info.runningMb)} already in use by running VMs, this VM needs ${fmt(info.wantMb)}, cap is ${fmt(info.maxRunningMb)} (${info.ratio.toFixed(1)}× of ${fmt(info.totalMb)} physical). Stop another VM, lower this VM's RAM, or raise the node's overcommit ratio.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1807,24 +1795,22 @@ async function create({ user, data }) {
   }
   const memory = parseInt(data.memory || settings.get('vm.default_memory') || '2048', 10);
   const cpus = parseInt(data.cpus || settings.get('vm.default_cpus') || '2', 10);
-  // Pre-flight (creation-time): the pinned VM RAM ceiling is a hard cap. A VM
-  // defined larger than the node's total VM budget could never be started
-  // safely, so refuse it now rather than let it sit unstartable.
-  {
-    const capMb = vmRamCapMb(targetNodeId);
-    if (capMb != null && memory > capMb) {
-      throw new Error(`This VM asks for ${fmtMb(memory)} but the node's pinned VM RAM limit is ${fmtMb(capMb)} (the rest is reserved for the panel so it cannot be OOM-killed). Raise the node's VM RAM limit in Admin → Nodes or lower this VM's RAM.`);
-    }
-  }
-  // Pre-flight (creation-time): enforce the node's RAM overcommit cap. This is
-  // the same ratio-based rule used at start time. Ratio 1.0 is a no-op here so
-  // default behavior is unchanged; the strict free-RAM check still happens at
-  // start. Swap is never counted toward the cap.
+  // NOTE: creation is deliberately UNLIMITED — there is no creation-time RAM
+  // gate at all. The panel only pins real RAM USAGE at start time (startVm),
+  // which is what stops the VPS/panel from being OOM-killed. A VM may be defined
+  // as 128 GB or 256 GB no matter the hardware: the size is merely stored, QEMU
+  // maps guest RAM lazily, and defining it costs nothing. Spoofed values
+  // (neofetch_mem, panel.ram_name, …) are display-only and never feed any limit
+  // below — every check reads real hardware.
+  // The only thing worth doing here is a heads-up in the log when the new VM
+  // could never actually start under the node's current budget.
   {
     const ratio = nodeRamOvercommitRatio(targetNodeId);
     if (ratio > 1.0) {
       const info = checkRamOvercommit(targetNodeId, memory);
-      if (!info.ok) throw new Error(ramOvercommitError(info));
+      if (!info.ok) {
+        logger.warn(`[vm] created ${vmName} at ${memory} MB, but running VMs already hold ${info.runningMb} MB (running cap ${info.maxRunningMb} MB) — it will not start until something is stopped. Creation is not blocked.`);
+      }
     }
   }
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocPort();
@@ -2073,10 +2059,11 @@ async function start(vm, { user = null } = {}) {
   writeSeed(vm);
   // Pre-flight: enough free RAM for the guest (+64MB QEMU overhead)?
   // When a node has a RAM overcommit ratio > 1.0, the check is relaxed to
-  // ratio-based allocation (allocated <= total * ratio) instead of the strict
+  // ratio-based usage (running RAM <= total * ratio) instead of the strict
   // free-RAM check. This lets admins intentionally oversubscribe RAM without
-  // the panel blocking every VM past the physical total. Swap is NOT counted
-  // toward the cap — it is disk-backed and cannot be treated as usable RAM.
+  // the panel blocking every VM past the physical total. It measures RAM held
+  // by RUNNING VMs, never allocation totals — creation is unlimited. Swap is NOT
+  // counted toward the cap — it is disk-backed and cannot be treated as usable RAM.
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
   const wantMb = Math.round(wantBytes / 1024 / 1024);
 
