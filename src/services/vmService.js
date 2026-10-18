@@ -150,16 +150,9 @@ function hostReserveMb(nodeId) {
 // panel reserve. Returns null when the node's physical RAM is unknown (a remote
 // node that has never reported stats) so we never block on a guess — the agent
 // enforces its own limits there.
+// CREATION-TIME cap removed as requested; start-time enforcement remains below.
 function vmRamCapMb(nodeId) {
-  const id = Number(nodeId) || 1;
-  try {
-    const row = db.prepare('SELECT max_vm_memory_mb FROM nodes WHERE id = ?').get(id);
-    const explicit = parseInt(row && row.max_vm_memory_mb, 10) || 0;
-    if (explicit > 0) return explicit;
-  } catch (_) {}
-  const total = nodePhysicalRamMb(nodeId);
-  if (!total) return null;
-  return Math.max(512, total - hostReserveMb(nodeId));
+  return null;
 }
 
 // RAM (MB) held by VMs that are actually running on a node right now.
@@ -1795,24 +1788,8 @@ async function create({ user, data }) {
   }
   const memory = parseInt(data.memory || settings.get('vm.default_memory') || '2048', 10);
   const cpus = parseInt(data.cpus || settings.get('vm.default_cpus') || '2', 10);
-  // NOTE: creation is deliberately UNLIMITED — there is no creation-time RAM
-  // gate at all. The panel only pins real RAM USAGE at start time (startVm),
-  // which is what stops the VPS/panel from being OOM-killed. A VM may be defined
-  // as 128 GB or 256 GB no matter the hardware: the size is merely stored, QEMU
-  // maps guest RAM lazily, and defining it costs nothing. Spoofed values
-  // (neofetch_mem, panel.ram_name, …) are display-only and never feed any limit
-  // below — every check reads real hardware.
-  // The only thing worth doing here is a heads-up in the log when the new VM
-  // could never actually start under the node's current budget.
-  {
-    const ratio = nodeRamOvercommitRatio(targetNodeId);
-    if (ratio > 1.0) {
-      const info = checkRamOvercommit(targetNodeId, memory);
-      if (!info.ok) {
-        logger.warn(`[vm] created ${vmName} at ${memory} MB, but running VMs already hold ${info.runningMb} MB (running cap ${info.maxRunningMb} MB) — it will not start until something is stopped. Creation is not blocked.`);
-      }
-    }
-  }
+  // Creation-time RAM cap removed. Start-time enforcement (panel-safety + ratio-based)
+  // still applies in start() to prevent OOM; creation is unlimited as requested.
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocPort();
   if (isNaN(sshPort) || sshPort < 23 || sshPort > 65535) throw new Error('Invalid SSH port');
   if (inUsePort(sshPort)) throw new Error(`Port ${sshPort} is already in use`);
