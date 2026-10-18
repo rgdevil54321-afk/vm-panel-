@@ -145,21 +145,13 @@ function hostReserveMb(nodeId) {
   return Math.max(2048, Math.round(total * 0.10));
 }
 
-// Pinned ceiling (MB) on the total RAM VMs may use at once on a node. An explicit
-// per-node value set by the admin wins; otherwise it is physical RAM minus the
-// panel reserve. Returns null when the node's physical RAM is unknown (a remote
-// node that has never reported stats) so we never block on a guess — the agent
-// enforces its own limits there.
+// Pinned ceiling (MB) on the total RAM VMs may use at once on a node is DISABLED:
+// creating a VM is never capped by it, and start() skips this ceiling too
+// (vmRamCapMb always returns null) so only the ratio-based / free-RAM checks
+// decide whether a VM may start. Kept as a function so admin UIs and the node
+// agent that read it keep working.
 function vmRamCapMb(nodeId) {
-  const id = Number(nodeId) || 1;
-  try {
-    const row = db.prepare('SELECT max_vm_memory_mb FROM nodes WHERE id = ?').get(id);
-    const explicit = parseInt(row && row.max_vm_memory_mb, 10) || 0;
-    if (explicit > 0) return explicit;
-  } catch (_) {}
-  const total = nodePhysicalRamMb(nodeId);
-  if (!total) return null;
-  return Math.max(512, total - hostReserveMb(nodeId));
+  return null;
 }
 
 // RAM (MB) held by VMs that are actually running on a node right now.
