@@ -2034,41 +2034,23 @@ async function start(vm, { user = null } = {}) {
   // The instance-id carries a content hash, so cloud-init only re-runs its
   // per-instance modules when the seed actually changed.
   writeSeed(vm);
-  // Pre-flight: enough free RAM for the guest (+64MB QEMU overhead)?
-  // When a node has a RAM overcommit ratio > 1.0, the check is relaxed to
-  // ratio-based usage (running RAM <= total * ratio) instead of the strict
-  // free-RAM check. This lets admins intentionally oversubscribe RAM without
-  // the panel blocking every VM past the physical total. It measures RAM held
-  // by RUNNING VMs, never allocation totals — creation is unlimited. Swap is NOT
-  // counted toward the cap — it is disk-backed and cannot be treated as usable RAM.
+  // RAM pre-flight is WARN-ONLY now. QEMU maps guest RAM lazily and this panel
+  // already forces vm.overcommit_memory=1, so a VM whose allocation is bigger
+  // than free RAM usually starts fine and only consumes what it actually
+  // touches. The panel no longer refuses the start: it logs the risk and, if
+  // the kernel truly cannot map the memory, QEMU's own error (with the sysctl
+  // hint further below) is what the user sees.
   const wantBytes = (parseInt(vm.memory, 10) || 512) * 1024 * 1024;
   const wantMb = Math.round(wantBytes / 1024 / 1024);
-
-  // Hard panel-safety ceiling first: never let running guests consume the RAM
-  // reserved for the panel. This applies at every ratio so guests can never
-  // starve the panel process and get it OOM-killed.
   {
-    const cap = checkVmRamCap(vm.node_id || 1, wantMb, vm.id);
-    if (!cap.ok) throw new Error(vmRamCapError(cap));
-  }
-
-  const ramRatio = nodeRamOvercommitRatio(vm.node_id || 1);
-  const budget = memoryBudget();
-  if (ramRatio <= 1.0) {
-    // Strict behavior (default): block unless free RAM fits the guest.
+    const budget = memoryBudget();
+    const freeMb = Math.max(0, Math.round(budget.bytes / 1024 / 1024));
     if (budget.bytes < wantBytes + 64 * 1024 * 1024) {
-      throw new Error(`Not enough free memory to start this VM: it needs ${wantMb} MB (+64 MB QEMU overhead) but only ${Math.max(0, Math.round(budget.bytes / 1024 / 1024))} MB is available — limited by the ${budget.limitedBy}. The physical host may have much more RAM, but this process runs inside a container/cgroup cap. Fix: raise the container memory limit (Proxmox LXC: Options > Memory; Docker: --memory), set the VM's RAM lower, or set a node RAM overcommit ratio above 1.0 if you intend to oversubscribe.`);
+      logger.warn(`[vm] ${vm.name} wants ${wantMb} MB (+64 MB overhead) but only ${freeMb} MB is free (${budget.limitedBy}); starting anyway because guest RAM is mapped lazily.`);
     }
-  } else {
-    // Overcommit-aware: allow if within the ratio cap, unless the container
-    // cgroup is the hard limit (overcommit cannot bypass a container cap).
-    if (budget.limitedBy.startsWith('container/cgroup')) {
-      if (budget.bytes < wantBytes + 64 * 1024 * 1024) {
-        throw new Error(`Not enough memory to start this VM inside this container: it needs ${wantMb} MB (+64 MB overhead) but only ${Math.max(0, Math.round(budget.bytes / 1024 / 1024))} MB is available — limited by the ${budget.limitedBy}. Overcommit cannot bypass a container/cgroup cap. Fix: raise the container memory limit, or set the VM's RAM lower.`);
-      }
-    } else {
-      const info = checkRamOvercommit(vm.node_id || 1, wantMb, vm.id);
-      if (!info.ok) throw new Error(ramOvercommitError(info));
+    const info = checkRamOvercommit(vm.node_id || 1, wantMb, vm.id);
+    if (!info.ok) {
+      logger.warn(`[vm] ${vm.name} starts past the node's RAM budget: running VMs hold ${info.runningMb} MB of ${info.maxRunningMb} MB and this VM wants ${wantMb} MB.`);
     }
   }
   ensureVncPort(vm);
