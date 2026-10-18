@@ -1,0 +1,395 @@
+<%- include('../partials/head', { title: 'Billing Management' }) %>
+<%- include('../partials/ambient') %>
+<%- include('../partials/topbar') %>
+<%- include('../partials/sidebar') %>
+<div class="main">
+  <div class="flex-between mb-3">
+    <h2 style="font-size:22px">Billing Management</h2>
+    <a class="btn btn-sm" href="/admin/settings?tab=general">Billing Settings</a>
+  </div>
+
+  <!-- Plans -->
+  <div class="card">
+    <div class="card-title">Plans</div>
+    <p class="muted text-sm mb-2">Define preset quota tiers. Assign a plan to a user from their detail page — it sets their VM/CPU/RAM/disk limits.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Name</th><th>Description</th><th>Price</th><th>VMs</th><th>CPU</th><th>RAM (MB)</th><th>Disk (GB)</th><th>VPS Type</th><th>Status</th><th class="right">Actions</th></tr></thead>
+        <tbody id="planRows"><tr><td colspan="10" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>Name</label><input id="pl_name" class="input" placeholder="Starter" /></div>
+      <div class="form-group" style="margin:0"><label>Price (credits)</label><input id="pl_price" class="input" type="number" step="0.01" value="0" /></div>
+      <div class="form-group" style="margin:0"><label>VMs (-1 = unlimited)</label><input id="pl_vms" class="input" type="number" value="-1" /></div>
+      <div class="form-group" style="margin:0"><label>CPU cores</label><input id="pl_cpu" class="input" type="number" value="-1" /></div>
+      <div class="form-group" style="margin:0"><label>RAM (MB)</label><input id="pl_mem" class="input" type="number" value="-1" /></div>
+      <div class="form-group" style="margin:0"><label>Disk (GB)</label><input id="pl_disk" class="input" type="number" value="-1" /></div>
+      <div class="form-group" style="margin:0"><label>VPS Type</label>
+        <select id="pl_vps_type" class="input">
+          <option value="kvm">KVM</option><option value="nat">NAT</option><option value="storage">Storage</option>
+          <option value="highcpu">High CPU</option><option value="gaming">Gaming</option><option value="backup">Backup</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0"><label>Plan Type</label>
+        <select id="pl_kind" class="input" onchange="syncKindFields()">
+          <option value="paid">Paid (recurring, expires)</option>
+          <option value="paid_once">Paid Once (never expires)</option>
+          <option value="invite">Invite (Discord invite uses)</option>
+          <option value="booster">Booster (Discord server boost)</option>
+          <option value="free">Free (no requirement)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0"><label>Invites Required</label><input id="pl_invites" class="input" type="number" min="0" value="0" /></div>
+      <div class="form-group" style="margin:0"><label>Requires Discord Boost</label><label class="flex" style="gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="pl_boosts" /><span class="text-sm">User must be boosting the server</span></label></div>
+      <div class="form-group" style="margin:0"><label>Duration (days)</label><input id="pl_duration" class="input" type="number" min="0" value="30" /></div>
+      <div class="form-group" style="margin:0"><label>Grace (days)</label><input id="pl_grace" class="input" type="number" min="0" value="3" /></div>
+      <div class="form-group" style="margin:0"><label>Description</label><input id="pl_desc" class="input" placeholder="For testing" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createPlan()">Add Plan</button></div>
+    </div>
+  </div>
+
+  <!-- Plan assignments (sectors) -->
+  <div class="card mt-3">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div class="card-title" style="margin:0">Plan Assignments</div>
+      <div class="flex" style="gap:6px">
+        <button class="btn btn-sm" id="tabInvite" onclick="setSector('invite')">Invite</button>
+        <button class="btn btn-sm" id="tabBooster" onclick="setSector('booster')">Booster</button>
+        <button class="btn btn-sm" id="tabPaid" onclick="setSector('paid')">Paid</button>
+        <button class="btn btn-sm" id="tabPaidOnce" onclick="setSector('paid_once')">Paid Once</button>
+      </div>
+    </div>
+    <p class="muted text-sm mb-2">PlanGuard sweeps these every <code class="mono">bot.check_interval_min</code> min: unmet invite/boost requirements warn first, then suspend after the plan's grace period. Paid plans suspend once past expiry + grace. <strong>Paid Once</strong> plans never expire and are never auto-suspended. Assigning a paid plan sets its expiry; invite/booster plans rely on the linked Discord account.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Invite Code</th><th>Renewals</th><th>Last Check</th><th class="right">Actions</th></tr></thead>
+        <tbody id="sectorRows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>User</label><select id="s_user" class="input"><% for (const u of (users || [])) { %><option value="<%= u.id %>"><%= u.username %></option><% } %></select></div>
+      <div class="form-group" style="margin:0"><label>Plan</label><select id="s_plan" class="input"><% for (const p of (plans || [])) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.kind %>)</option><% } %></select></div>
+      <div class="form-group" style="margin:0"><label>Days (paid only)</label><input id="s_days" class="input" type="number" value="30" /></div>
+      <div class="form-group" style="margin:0"><label>Invite code (discord)</label><input id="s_code" class="input" placeholder="e.g. venlix" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="assignPlan()">Assign Plan</button></div>
+    </div>
+  </div>
+
+  <!-- Coupons -->
+  <div class="card mt-3">
+    <div class="card-title">Coupons</div>
+    <p class="muted text-sm mb-2">Coupon code types: <code class="mono">credits</code> adds a fixed credit amount; <code class="mono">percent</code> adds % of the user's current balance. Each user can redeem a coupon once.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Valid Until</th><th>Uses</th><th>Status</th><th class="right">Actions</th></tr></thead>
+        <tbody id="couponRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>Code</label><input id="cp_code" class="input" placeholder="WELCOME25" /></div>
+      <div class="form-group" style="margin:0"><label>Type</label>
+        <select id="cp_type" class="input"><option value="credits">Credits (fixed)</option><option value="percent">Percent of balance</option></select>
+      </div>
+      <div class="form-group" style="margin:0"><label>Value</label><input id="cp_value" class="input" type="number" step="0.01" value="5" /></div>
+      <div class="form-group" style="margin:0"><label>Max uses (0 = unlimited)</label><input id="cp_max" class="input" type="number" value="0" /></div>
+      <div class="form-group" style="margin:0"><label>Valid until (optional)</label><input id="cp_until" class="input" type="date" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createCoupon()">Create Coupon</button></div>
+    </div>
+  </div>
+
+  <!-- Invoices -->
+  <div class="card mt-3">
+    <div class="card-title">Invoices</div>
+    <p class="muted text-sm mb-2">Manually bill a user. Marking an invoice as paid credits their balance.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>#</th><th>User</th><th>Amount</th><th>Description</th><th>Status</th><th>Created</th><th class="right">Actions</th></tr></thead>
+        <tbody id="invoiceRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="grid grid-4" style="gap:12px;margin-top:14px">
+      <div class="form-group" style="margin:0"><label>User ID</label><input id="inv_user" class="input" type="number" placeholder="1" /></div>
+      <div class="form-group" style="margin:0"><label>Amount</label><input id="inv_amount" class="input" type="number" step="0.01" value="0" /></div>
+      <div class="form-group" style="margin:0"><label>Description</label><input id="inv_desc" class="input" placeholder="Manual top-up" /></div>
+      <div class="flex" style="align-items:flex-end"><button class="btn btn-primary" onclick="createInvoice()">Create Invoice</button></div>
+    </div>
+  </div>
+</div>
+<div class="vp-modal vp-modal--md" id="checkModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="padding:22px">
+    <div class="flex" style="align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="card-title" style="margin:0">Plan check history</div>
+      <button class="btn btn-sm" data-vp-dismiss>Close</button>
+    </div>
+    <div id="checkLog"></div>
+  </div>
+</div>
+<%- include('../partials/music') %>
+<%- include('../partials/foot') %>
+<script>
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const lim = (v) => (v === -1 || v === '-1' ? 'Unlimited' : v);
+
+async function loadPlans() {
+  const rows = document.getElementById('planRows');
+  try {
+    const res = await VP.api('/admin/billing/plans');
+    const plans = res.plans || [];
+    if (!plans.length) { rows.innerHTML = '<tr><td colspan="10" class="muted">No plans yet.</td></tr>'; return; }
+    rows.innerHTML = plans.map((p) => {
+      const on = p.active === 1 || p.active === true;
+      return '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(p.name) + '</td>'
+        + '<td class="text-sm muted">' + esc(p.description || '-') + '</td>'
+        + '<td class="mono text-sm">' + p.price + ' ' + esc(p.currency) + '</td>'
+        + '<td class="text-sm">' + lim(p.max_vms) + '</td>'
+        + '<td class="text-sm">' + lim(p.max_cpu) + '</td>'
+        + '<td class="text-sm">' + lim(p.max_mem_mb) + '</td>'
+        + '<td class="text-sm">' + lim(p.max_disk_gb) + '</td>'
+        + '<td class="text-sm"><span class="pill pill-blue">' + esc(p.vps_type || 'kvm') + '</span></td>'
+        + '<td>' + (on ? '<span class="pill pill-green">active</span>' : '<span class="pill pill-gray">inactive</span>') + '</td>'
+        + '<td class="right"><button class="btn btn-sm" onclick="togglePlan(' + p.id + ',' + (on ? 0 : 1) + ')">' + (on ? 'Disable' : 'Enable') + '</button> <button class="btn btn-sm btn-danger" onclick="deletePlan(' + p.id + ')">Delete</button></td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="10" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+function syncKindFields() {
+  const k = document.getElementById('pl_kind').value;
+  const map = {
+    pl_invites: k === 'invite',
+    pl_boosts: k === 'booster',
+    pl_duration: k === 'paid',
+    pl_grace: k === 'paid',
+  };
+  for (const [id, on] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.disabled = !on;
+    el.parentElement.style.opacity = on ? '1' : '0.4';
+  }
+}
+async function createPlan() {
+  const body = {
+    name: document.getElementById('pl_name').value.trim(),
+    price: document.getElementById('pl_price').value,
+    max_vms: document.getElementById('pl_vms').value,
+    max_cpu: document.getElementById('pl_cpu').value,
+    max_mem_mb: document.getElementById('pl_mem').value,
+    max_disk_gb: document.getElementById('pl_disk').value,
+    vps_type: document.getElementById('pl_vps_type').value,
+    kind: document.getElementById('pl_kind').value,
+    invites_required: document.getElementById('pl_invites').value,
+    boost_required: document.getElementById('pl_boosts').checked ? 1 : 0,
+    duration_days: document.getElementById('pl_duration').value,
+    grace_days: document.getElementById('pl_grace').value,
+    description: document.getElementById('pl_desc').value.trim(),
+  };
+  if (!body.name) { VP.toast('Enter a plan name', 'warning'); return; }
+  try {
+    await VP.api('/admin/billing/plans', { method: 'POST', body });
+    VP.toast('Plan created', 'success');
+    loadPlans();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function togglePlan(id, active) {
+  try {
+    await VP.api('/admin/billing/plans/' + id, { method: 'PUT', body: { active } });
+    loadPlans();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deletePlan(id) {
+  const ok = await VP.confirmDialog('Delete this plan?', { title: 'Delete Plan' });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/plans/' + id, { method: 'DELETE' }); loadPlans(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function loadCoupons() {
+  const rows = document.getElementById('couponRows');
+  try {
+    const res = await VP.api('/admin/billing/coupons');
+    const coupons = res.coupons || [];
+    if (!coupons.length) { rows.innerHTML = '<tr><td colspan="7" class="muted">No coupons yet.</td></tr>'; return; }
+    rows.innerHTML = coupons.map((c) => {
+      const on = c.active === 1 || c.active === true;
+      const limUses = c.max_uses > 0 ? (c.uses + ' / ' + c.max_uses) : String(c.uses);
+      return '<tr>'
+        + '<td class="mono text-sm" style="font-weight:700">' + esc(c.code) + '</td>'
+        + '<td class="text-sm"><span class="pill pill-blue">' + esc(c.type) + '</span></td>'
+        + '<td class="mono text-sm">' + c.value + (c.type === 'percent' ? '%' : '') + '</td>'
+        + '<td class="text-sm">' + (c.valid_until ? new Date(c.valid_until).toLocaleDateString() : 'never') + '</td>'
+        + '<td class="text-sm">' + limUses + '</td>'
+        + '<td>' + (on ? '<span class="pill pill-green">active</span>' : '<span class="pill pill-gray">inactive</span>') + '</td>'
+        + '<td class="right"><button class="btn btn-sm btn-danger" onclick="deleteCoupon(' + c.id + ')">Delete</button></td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="7" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+async function createCoupon() {
+  const body = {
+    code: document.getElementById('cp_code').value.trim(),
+    type: document.getElementById('cp_type').value,
+    value: document.getElementById('cp_value').value,
+    max_uses: document.getElementById('cp_max').value,
+    valid_until: document.getElementById('cp_until').value ? document.getElementById('cp_until').value + 'T23:59:59' : null,
+  };
+  if (!body.code) { VP.toast('Enter a coupon code', 'warning'); return; }
+  try {
+    await VP.api('/admin/billing/coupons', { method: 'POST', body });
+    VP.toast('Coupon created', 'success');
+    loadCoupons();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deleteCoupon(id) {
+  const ok = await VP.confirmDialog('Delete this coupon?', { title: 'Delete Coupon' });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/coupons/' + id, { method: 'DELETE' }); loadCoupons(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+async function loadInvoices() {
+  const rows = document.getElementById('invoiceRows');
+  try {
+    const res = await VP.api('/admin/billing/invoices');
+    const inv = res.invoices || [];
+    if (!inv.length) { rows.innerHTML = '<tr><td colspan="7" class="muted">No invoices yet.</td></tr>'; return; }
+    rows.innerHTML = inv.map((i) => {
+      const paid = i.status === 'paid';
+      return '<tr>'
+        + '<td class="mono text-sm">#' + i.id + '</td>'
+        + '<td class="text-sm">' + esc(i.username || ('#' + i.user_id)) + '</td>'
+        + '<td class="mono text-sm" style="font-weight:600">' + i.amount + ' ' + esc(i.currency) + '</td>'
+        + '<td class="text-sm muted">' + esc(i.description || '-') + '</td>'
+        + '<td>' + (paid ? '<span class="pill pill-green">paid</span>' : '<span class="pill pill-gray">pending</span>') + '</td>'
+        + '<td class="text-sm muted">' + new Date(i.created_at).toLocaleString() + '</td>'
+        + '<td class="right">'
+        + (paid ? '' : '<button class="btn btn-sm btn-primary" onclick="payInvoice(' + i.id + ')">Mark Paid</button> ')
+        + '<button class="btn btn-sm btn-danger" onclick="deleteInvoice(' + i.id + ')">Delete</button></td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="7" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+async function createInvoice() {
+  const body = {
+    user_id: document.getElementById('inv_user').value.trim(),
+    amount: document.getElementById('inv_amount').value,
+    description: document.getElementById('inv_desc').value.trim(),
+  };
+  if (!body.user_id) { VP.toast('Enter a user ID', 'warning'); return; }
+  try {
+    await VP.api('/admin/billing/invoices', { method: 'POST', body });
+    VP.toast('Invoice created', 'success');
+    loadInvoices();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function payInvoice(id) {
+  const ok = await VP.confirmDialog('Mark this invoice as paid and credit the user\'s balance?', { title: 'Mark Paid' });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/invoices/' + id + '/pay', { method: 'POST' }); loadInvoices(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function deleteInvoice(id) {
+  const ok = await VP.confirmDialog('Delete this invoice?', { title: 'Delete Invoice' });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/invoices/' + id, { method: 'DELETE' }); loadInvoices(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+let sector = 'invite';
+function setSector(k) {
+  sector = k;
+  document.getElementById('tabInvite').classList.toggle('btn-primary', k === 'invite');
+  document.getElementById('tabBooster').classList.toggle('btn-primary', k === 'booster');
+  document.getElementById('tabPaid').classList.toggle('btn-primary', k === 'paid');
+  document.getElementById('tabPaidOnce').classList.toggle('btn-primary', k === 'paid_once');
+  loadSectors();
+}
+function sectorOf(p) {
+  if (p.plan_kind === 'invite') return 'invite';
+  if (p.plan_kind === 'booster') return 'booster';
+  if (p.plan_kind === 'paid_once') return 'paid_once';
+  return 'paid';
+}
+async function loadSectors() {
+  const rows = document.getElementById('sectorRows');
+  try {
+    const res = await VP.api('/admin/billing/user-plans');
+    const all = (res.plans || []).filter((p) => sectorOf(p) === sector);
+    if (!all.length) { rows.innerHTML = '<tr><td colspan="8" class="muted">No assignments in this sector.</td></tr>'; return; }
+    rows.innerHTML = all.map((p) => {
+      const st = p.status;
+      const pill = st === 'active' ? 'pill-green' : st === 'warned' ? 'pill-yellow' : st === 'suspended' ? 'pill-red' : 'pill-gray';
+      const need = sector === 'invite' ? p.invites_required : (sector === 'booster' ? 'boost' : (sector === 'paid_once' ? 'one-time' : p.duration_days + 'd'));
+      const once = sector === 'paid_once';
+      return '<tr>'
+        + '<td class="text-sm" style="font-weight:600">' + esc(p.username || ('#' + p.user_id)) + ' <span class="muted" style="font-weight:400">' + (p.discord_name ? '@' + esc(p.discord_name) : '') + '</span></td>'
+        + '<td class="text-sm muted">' + esc(p.plan_name) + ' <span class="muted text-sm">/' + esc(p.plan_kind) + '</span></td>'
+        + '<td><span class="pill ' + pill + '">' + esc(st) + '</span></td>'
+        + '<td class="text-sm muted">' + (once ? '<span title="Paid once - never expires">never</span>' : (p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '-')) + '</td>'
+        + '<td class="mono text-sm">' + esc(p.invite_code || '-') + (sector === 'invite' ? ' <span class="muted">/ ' + esc(need) + '</span>' : '') + '</td>'
+        + '<td class="text-sm">' + p.renewals + '</td>'
+        + '<td class="text-sm muted">' + (p.last_check_at ? new Date(p.last_check_at).toLocaleString() : 'never') + '<br/><span class="muted text-sm">' + esc(p.last_check_detail || '') + '</span></td>'
+        + '<td class="right">'
+        + '<button class="btn btn-sm" onclick="viewChecks(' + p.id + ')">Log</button> '
+        + (sector === 'paid' && p.expires_at ? '<button class="btn btn-sm" onclick="renewPlan(' + p.id + ')">Renew</button> ' : '')
+        + (st === 'suspended' ? '<button class="btn btn-sm" onclick="setPlanStatus(' + p.id + ',\'active\')">Reactivate</button> ' : (st === 'active' ? '<button class="btn btn-sm btn-warning" onclick="setPlanStatus(' + p.id + ',\'suspended\')">Suspend</button> ' : ''))
+        + (st !== 'cancelled' ? '<button class="btn btn-sm btn-danger" onclick="cancelPlan(' + p.id + ')">Cancel</button>' : '')
+        + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) { rows.innerHTML = '<tr><td colspan="8" class="muted">Failed: ' + esc(e.message) + '</td></tr>'; }
+}
+async function assignPlan() {
+  const body = {
+    user_id: document.getElementById('s_user').value,
+    plan_id: document.getElementById('s_plan').value,
+    days: document.getElementById('s_days').value,
+    invite_code: document.getElementById('s_code').value.trim(),
+  };
+  if (!body.user_id || !body.plan_id) { VP.toast('Pick a user and a plan', 'warning'); return; }
+  try {
+    await VP.api('/admin/billing/user-plans', { method: 'POST', body });
+    VP.toast('Plan assigned', 'success');
+    loadSectors();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function viewChecks(id) {
+  const body = document.getElementById('checkLog');
+  body.innerHTML = '<div class="muted text-sm">Loading…</div>';
+  const md = document.getElementById('checkModal');
+  if (md && window.VP && VP.modal) VP.modal.open(md);
+  try {
+    const res = await VP.api('/admin/billing/user-plans/' + id + '/checks?limit=50');
+    const list = res.checks || [];
+    if (!list.length) { body.innerHTML = '<div class="muted text-sm">No checks recorded yet. PlanGuard logs a row on every sweep.</div>'; return; }
+    body.innerHTML = '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Detail</th></tr></thead><tbody>'
+      + list.map((c) => '<tr>'
+        + '<td class="text-sm muted" style="white-space:nowrap">' + new Date(c.created_at).toLocaleString() + '</td>'
+        + '<td><span class="pill ' + (c.ok ? 'pill-green' : 'pill-red') + '">' + (c.ok ? 'ok' : 'fail') + '</span></td>'
+        + '<td class="text-sm">' + esc(c.detail || '') + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>';
+  } catch (e) {
+    body.innerHTML = '<div class="muted text-sm">Failed: ' + esc(e.message) + '</div>';
+  }
+}
+async function renewPlan(id) {
+  const ok = await VP.confirmDialog('Renew this assignment now (extends from today) and clear any suspension?', { title: 'Renew Plan', okText: 'Renew', danger: false });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/user-plans/' + id + '/renew', { method: 'POST', body: {} }); VP.toast('Plan renewed', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function setPlanStatus(id, status) {
+  const label = status === 'active' ? 'Reactivate' : 'Suspend';
+  const ok = await VP.confirmDialog(label + ' this assignment? ' + (status === 'active' ? 'Its VMs will be unlocked.' : 'Its VMs will be stopped and locked.'), { title: label, okText: label });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/user-plans/' + id + '/status', { method: 'POST', body: { status } }); VP.toast(label + 'd', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function cancelPlan(id) {
+  const ok = await VP.confirmDialog('Cancel this assignment entirely? VMs keep their quotas until reassigned; the row will be marked cancelled.', { title: 'Cancel Plan' });
+  if (!ok) return;
+  try { await VP.api('/admin/billing/user-plans/' + id + '/cancel', { method: 'POST' }); VP.toast('Plan cancelled', 'success'); loadSectors(); } catch (e) { VP.toast(e.message, 'error'); }
+}
+
+syncKindFields();
+setSector('invite');
+loadPlans();
+loadCoupons();
+loadInvoices();
+</script>

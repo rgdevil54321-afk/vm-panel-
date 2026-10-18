@@ -1,0 +1,1644 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  ⚡ Venlix Nodes - Next-Gen QEMU Virtual Machine Management Web Panel
+#  Full Support Installer for Debian (11, 12, 13) & Ubuntu (20.04, 22.04, 24.04)
+# =============================================================================
+
+set -e
+
+# ANSI Colors ($'...' quoting stores the REAL escape char, so plain `echo`
+# renders colors too — not just printf.)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+CYAN=$'\033[0;36m'
+MAGENTA=$'\033[0;35m'
+BOLD=$'\033[1m'
+NC=$'\033[0m'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -d "$SCRIPT_DIR/vpanel-pro" ]; then
+  APP_DIR="$SCRIPT_DIR/vpanel-pro"
+else
+  APP_DIR="$SCRIPT_DIR"
+fi
+
+cd "$APP_DIR"
+
+safe_clear() {
+  clear 2>/dev/null || true
+}
+
+log_info()  { printf "${CYAN}${BOLD}[vPanel]${NC} %b\n" "$*"; }
+log_ok()    { printf "${GREEN}${BOLD}[✔ SUCCESS]${NC} %b\n" "$*"; }
+log_warn()  { printf "${YELLOW}${BOLD}[⚠ WARN]${NC} %b\n" "$*"; }
+log_err()   { printf "${RED}${BOLD}[✖ ERROR]${NC} %b\n" "$*" >&2; }
+
+# --- License & install auth ------------------------------------------------
+# Installing requires the auth key. 5 wrong attempts blacklist this server;
+# the unlock password (menu 14 / --unlock) clears the blacklist.
+# The hashes below are SHA-256 of the NORMALIZED defaults defined in
+# src/lib/license.js (uppercase, no dashes/spaces). If you override
+# VNLX_AUTH_KEY / VNLX_UNLOCK_PASSWORD in .env, update them together.
+AUTH_KEY_SHA256="b0ecc60bd0b15c9f39942e28020ad604753e0fb9f85ab1c85d16b33db2775a56"
+UNLOCK_PASS_SHA256="517a45ef8d449e269e112e61ad6dd3aa8c2b58f7d29c162fe7d081cc3c28a8b7"
+LICENSE_STATE_FILE="$APP_DIR/data/licensing.json"
+
+license_state_blacklisted() {
+  if [ -f "$LICENSE_STATE_FILE" ] && grep -q '"blacklisted": *true' "$LICENSE_STATE_FILE" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+license_auth_gate() {
+  local attempts=0 key norm hash
+  if license_state_blacklisted; then
+    log_err "This server is blacklisted. Use menu option 14 (or: sudo bash install.sh --unlock) with the unlock password to continue."
+    exit 1
+  fi
+  while :; do
+    read -r -s -p "  Enter Venlix Installation Auth Key: " key
+    echo ""
+    if [ -z "$key" ]; then
+      log_err "Authorization key is required to install the panel."
+      exit 1
+    fi
+    norm=$(printf '%s' "$key" | tr -d ' -' | tr '[:lower:]' '[:upper:]')
+    hash=$(printf '%s' "$norm" | sha256sum | awk '{print $1}')
+    if [ "$hash" = "$AUTH_KEY_SHA256" ]; then
+      log_ok "Authorization accepted."
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 5 ]; then
+      mkdir -p "$APP_DIR/data" 2>/dev/null || true
+      printf '{\n  "authAttempts": %d,\n  "blacklisted": true\n}\n' 5 > "$LICENSE_STATE_FILE"
+      log_err "Too many wrong attempts. This server is now BLACKLISTED. Use --unlock with the unlock password to continue."
+      exit 1
+    fi
+    log_err "Invalid authorization key ($attempts/5)."
+  done
+}
+
+do_unlock_license() {
+  local pass norm hash
+  read -r -s -p "  Enter Venlix Unlock Password: " pass
+  echo ""
+  if [ -z "$pass" ]; then
+    log_err "Password required."
+    return 1
+  fi
+  norm=$(printf '%s' "$pass" | tr -d ' -' | tr '[:lower:]' '[:upper:]')
+  hash=$(printf '%s' "$norm" | sha256sum | awk '{print $1}')
+  if [ "$hash" != "$UNLOCK_PASS_SHA256" ]; then
+    log_err "Incorrect unlock password."
+    return 1
+  fi
+  if [ -f "$LICENSE_STATE_FILE" ]; then
+    sed -i 's/"blacklisted": *true/"blacklisted": false/; s/"authAttempts": *[0-9]*/"authAttempts": 0/' "$LICENSE_STATE_FILE" 2>/dev/null || true
+  fi
+  log_ok "Server unblocked. You can install the panel again."
+}
+
+check_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    log_err "This script must be run as root. Please run with: sudo bash install.sh"
+    exit 1
+  fi
+}
+
+detect_os() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS_ID="$ID"
+    OS_VER="${VERSION_ID:-}"
+    OS_NAME="${PRETTY_NAME:-$ID}"
+  else
+    log_err "Cannot detect Linux distribution (/etc/os-release missing)."
+    exit 1
+  fi
+
+  case "$OS_ID" in
+    debian|ubuntu)
+      log_info "Detected Supported OS: ${GREEN}${OS_NAME}${NC}"
+      ;;
+    *)
+      log_warn "Detected OS: ${OS_NAME}. Recommended distributions: Debian 11/12/13, Ubuntu 20.04/22.04/24.04."
+      ;;
+  esac
+}
+
+get_server_ip() {
+  local ip
+  ip=$(curl -s -4 https://api.ipify.org 2>/dev/null || curl -s -4 https://ifconfig.me 2>/dev/null || ip route get 1.1.1.1 2>/dev/null | awk '{print $7}' || echo "localhost")
+  echo "$ip"
+}
+
+# =============================================================================
+# 1. INSTALL VPANEL PRO
+# =============================================================================
+do_install() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "             🚀 Installing Venlix Nodes on $OS_NAME                "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  # Auth gate: refuses install without a valid auth key (blacklists after 5 tries)
+  license_auth_gate
+
+  # Step 1: System Packages
+  log_info "Step 1/7: Updating APT package repositories..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y || true
+
+  log_info "Step 2/7: Installing core system dependencies & QEMU packages..."
+  apt-get install -y --no-install-recommends \
+    git curl wget openssl ca-certificates tar gzip iproute2 procps \
+    build-essential python3 make g++ \
+    qemu-system-x86 qemu-utils cloud-image-utils || true
+
+  # Step 2: Node.js 20 LTS Check
+  log_info "Step 3/7: Verifying Node.js 20 LTS environment..."
+  local install_node=0
+  if ! command -v node >/dev/null 2>&1; then
+    install_node=1
+  else
+    local cur_ver
+    cur_ver=$(node -v | sed 's/^v//; s/\..*$//')
+    if [ "${cur_ver:-0}" -lt 18 ]; then
+      install_node=1
+    fi
+  fi
+
+  if [ "$install_node" -eq 1 ]; then
+    log_info "Installing Node.js 20.x LTS repository via NodeSource..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+  fi
+  log_ok "Node.js $(node -v) & NPM $(npm -v) ready"
+
+  # Step 3: KVM / No-KVM check
+  log_info "Step 4/7: Checking hardware virtualization (/dev/kvm)..."
+  if [ -e "/dev/kvm" ]; then
+    chmod 666 /dev/kvm || true
+    log_ok "KVM Hardware Acceleration detected (/dev/kvm)"
+  else
+    log_warn "/dev/kvm not found or disabled. Enabling automatic No-KVM Mode (QEMU TCG Software Emulation)."
+    export NO_KVM=1
+  fi
+
+  # Step 3b: Host memory overcommit for KVM guests.
+  # QEMU maps guest RAM lazily via mmap. The default kernel heuristic
+  # (vm.overcommit_memory=0) refuses any single mapping larger than the RAM
+  # that is free at that moment, so starting a guest whose RAM is bigger than
+  # what is free fails with "cannot set up guest memory 'pc.ram': Cannot
+  # allocate memory". Always-overcommit lets the node's RAM overcommit ratio
+  # actually take effect.
+  log_info "Configuring host memory overcommit for KVM guests..."
+  cat > /etc/sysctl.d/99-venlix-vm.conf <<'SYSCTL_EOF' 2>/dev/null || true
+# Venlix VM panel: permit KVM guests to map more guest RAM than is free at
+# start time (guest RAM is allocated lazily by QEMU).
+vm.overcommit_memory=1
+SYSCTL_EOF
+  sysctl --system >/dev/null 2>&1 || sysctl -w vm.overcommit_memory=1 >/dev/null 2>&1 || true
+  if [ "$(cat /proc/sys/vm/overcommit_memory 2>/dev/null)" = "1" ]; then
+    log_ok "vm.overcommit_memory=1 set (KVM RAM overcommit enabled)"
+  else
+    log_warn "Could not enable memory overcommit. Run: sudo sysctl -w vm.overcommit_memory=1"
+  fi
+
+  # Step 4: NPM Dependencies
+  log_info "Step 5/7: Installing NPM packages & building native binaries..."
+  npm install --no-audit --no-fund
+
+  # Step 5: Initialize Application & Directories
+  log_info "Step 6/7: Initializing storage directories & database..."
+  mkdir -p data vms public/uploads/logo public/uploads/favicon public/uploads/background public/uploads/music public/uploads/avatar storage/backups storage/logs data/tmp
+  node scripts/build.js
+
+  # Setup .env
+  if [ ! -f .env ]; then
+    log_info "Generating secure .env configuration..."
+    if [ -f .env.example ]; then
+      cp .env.example .env
+    else
+      cat << 'EOF' > .env
+PANEL_PORT=3001
+API_PORT=3002
+PANEL_URL=http://localhost:3001
+JWT_SECRET=
+JWT_EXPIRES=7d
+AUTO_PORT_MIN=25501
+AUTO_PORT_MAX=25600
+AUTO_VNC_PORT_MIN=25901
+AUTO_VNC_PORT_MAX=26000
+AUTO_AGENT_PORT_MIN=26101
+AUTO_AGENT_PORT_MAX=26200
+ALLOW_REGISTER=1
+EOF
+    fi
+    local secret
+    secret="$(openssl rand -hex 32)"
+    sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${secret}|" .env
+  fi
+
+  # Step 6: Create Admin User
+  log_info "Step 7/7: Creating Administrator Account..."
+  echo ""
+  read -r -p "Enter Admin Username [default: admin]: " IN_USER
+  IN_USER="${IN_USER:-admin}"
+
+  read -r -p "Enter Admin Email [default: admin@vpanel.local]: " IN_EMAIL
+  IN_EMAIL="${IN_EMAIL:-admin@vpanel.local}"
+
+  read -r -s -p "Enter Admin Password [default: generate secure]: " IN_PASS
+  echo ""
+  if [ -z "$IN_PASS" ]; then
+    IN_PASS="$(openssl rand -hex 6)"
+    log_warn "Generated secure admin password: ${IN_PASS}"
+  fi
+
+  CREATEUSER_USERNAME="$IN_USER" \
+  CREATEUSER_EMAIL="$IN_EMAIL" \
+  CREATEUSER_PASSWORD="$IN_PASS" \
+  CREATEUSER_ROLE=admin \
+  node scripts/createuser.js >/dev/null 2>&1 || true
+
+  # Customise system identity (host name / CPU / GPU shown in neofetch + UI)
+  echo ""
+  read -r -p "Display Host Name [default: Venlix Nodes]: " IN_HOST
+  IN_HOST="${IN_HOST:-Venlix Nodes}"
+  read -r -p "Custom CPU name (blank = auto-detect, e.g. AMD Ryzen 9 7950X): " IN_CPU
+  read -r -p "Custom GPU name (blank = auto-detect, e.g. RTX 4090 24GB): " IN_GPU
+  log_info "Setting host identity to '${IN_HOST}'..."
+  BRAND_HOST="$IN_HOST" BRAND_CPU="$IN_CPU" BRAND_GPU="$IN_GPU" node -e "
+    const { settings } = require('./src/lib/db');
+    settings.set('panel.hostname', process.env.BRAND_HOST || 'Venlix Nodes');
+    if (process.env.BRAND_CPU) settings.set('panel.cpu_name', process.env.BRAND_CPU);
+    if (process.env.BRAND_GPU) settings.set('panel.gpu_name', process.env.BRAND_GPU);
+    console.log('[✔] Host Identity applied: ' + (settings.get('panel.hostname')));
+  " || log_warn "Could not apply host identity (you can set it later from Panel > Settings > General)."
+
+  # Export the VN neofetch banner for this host (neofetch / fastfetch / screenfetch)
+  install_vn_fetch_banner
+
+  # Step 7: Setup PM2 Daemon
+  if ! command -v pm2 >/dev/null 2>&1; then
+    log_info "Installing PM2 Process Manager globally..."
+    npm install -g pm2 --no-audit --no-fund
+  fi
+
+  log_info "Starting Venlix Nodes cluster with PM2..."
+  pm2 delete vpanel >/dev/null 2>&1 || true
+  pm2 start ecosystem.config.js || pm2 start src/server.js --name vpanel
+  pm2 save
+  pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
+
+  local s_ip
+  s_ip=$(get_server_ip)
+
+  echo ""
+  printf "${GREEN}${BOLD}"
+  echo "================================================================="
+  echo "           🎉 Venlix Nodes Successfully Installed & Online!        "
+  echo "================================================================="
+  printf "${NC}\n"
+  echo "  🌐 Web Panel URL:    http://${s_ip}:3001"
+  echo "  ⚡ REST API URL:     http://${s_ip}:3002/api"
+  echo "  👤 Admin Username:   ${IN_USER}"
+  echo "  🔑 Admin Password:   ${IN_PASS}"
+  echo "  📧 Admin Email:      ${IN_EMAIL}"
+  echo ""
+  echo "  ⚙️  PM2 Process:      pm2 status | pm2 logs vpanel"
+  echo "================================================================="
+  echo ""
+
+  # --- Node agent prompt (like Pterodactyl Wings) ---
+  printf "${CYAN}${BOLD}  Do you want to install the Node Agent on this VPS as well?${NC}\n"
+  echo "  This allows this machine to also host VMs (act as a hypervisor node)."
+  echo "  You can always install it later via option [6] in the main menu."
+  echo ""
+  read -r -p "  Install Node Agent on this VPS? [Y/n]: " INSTALL_NODE
+  INSTALL_NODE="${INSTALL_NODE:-Y}"
+  if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+    echo ""
+    log_info "Installing Local Node Agent (same VPS, started via PM2)..."
+    if [ -f "$APP_DIR/node-agent/install-local-node.sh" ]; then
+      cd "$APP_DIR"
+      bash node-agent/install-local-node.sh
+    else
+      log_warn "node-agent/install-local-node.sh not found. Skipping node agent install."
+      log_info "You can install it later via the main menu option [6]."
+    fi
+  else
+    echo ""
+    log_info "Skipping Node Agent install. You can install it later via the main menu option [6]."
+  fi
+
+  # --- Tailscale mesh ------------------------------------------------------
+  # VMs reach the network through port forwards on this host's own address, so
+  # joining a tailnet is what lets them be reached without a public IP. Offer
+  # it here so a fresh install ends up mesh-ready, but never make it mandatory:
+  # `tailscale up` needs a browser or an auth key, and a headless box that has
+  # neither would otherwise be stuck mid-install.
+  echo ""
+  printf "${CYAN}${BOLD}  Set up a Tailscale mesh for this host now?${NC}\n"
+  echo "  Gives shared-IPv4 VMs a private 100.64/10 address reachable from your"
+  echo "  devices, instead of a public IP. Needs an auth key or a browser login."
+  echo "  You can also do this later via the main menu option [15]."
+  echo ""
+  read -r -p "  Install Tailscale? [y/N]: " INSTALL_TS
+  if [[ "$INSTALL_TS" =~ ^[Yy]$ ]]; then
+    # do_install has its own pause on the way back out to the menu, and a
+    # `VAR=1 func` prefix would leak the flag into the menu's later call.
+    TS_NO_PAUSE=1
+    do_tailscale
+    TS_NO_PAUSE=0
+  else
+    log_info "Skipping Tailscale. Re-run option [15] whenever you want the mesh."
+  fi
+  echo ""
+}
+
+# =============================================================================
+# EXPORT VN NEOFETCH BANNER (neofetch / fastfetch / screenfetch) - host + nodes
+# =============================================================================
+install_vn_fetch_banner() {
+  log_info "Exporting VN neofetch banner (neofetch / fastfetch / screenfetch)..."
+  mkdir -p /etc/venlix 2>/dev/null || true
+
+  # ASCII logo (generated by neofetchService when the panel is present)
+  if [ -f "$APP_DIR/src/services/neofetchService.js" ] && command -v node >/dev/null 2>&1; then
+    ( cd "$APP_DIR" && node -e "process.stdout.write(require('./src/services/neofetchService').logoPlain())" > /etc/venlix/vn-ascii.txt 2>/dev/null ) || true
+  fi
+  if [ ! -s /etc/venlix/vn-ascii.txt ]; then
+    cat > /etc/venlix/vn-ascii.txt << 'EOF'
+█████      █████  █████    ███
+███████   ██████  ███ ██   ███
+  ███████ ██████  ███  ██  ███
+   ████████████   ███   ██ ███
+    ██████████    ███    █████
+     ████████     ███    █████
+      ██████      ███     ████
+       ████       ███     ████
+EOF
+  fi
+
+  # venlix-fetch wrapper (fastfetch -> neofetch -> screenfetch -> plain banner).
+  # When the panel is installed this is generated by neofetchService so it picks
+  # up the configured brand hostname / CPU / GPU automatically.
+  if [ -f "$APP_DIR/src/services/neofetchService.js" ] && command -v node >/dev/null 2>&1; then
+    ( cd "$APP_DIR" && node -e "process.stdout.write(require('./src/services/neofetchService').fetchShellScript())" > /usr/local/bin/venlix-fetch 2>/dev/null ) || true
+  fi
+  if [ ! -s /usr/local/bin/venlix-fetch ]; then
+    cat > /usr/local/bin/venlix-fetch << 'EOF'
+#!/bin/bash
+# Venlix VN banner - shown via fastfetch / neofetch / screenfetch or as-is.
+VN_LOGO="${VN_LOGO:-${HOME}/.config/venlix/vn-ascii.txt}"
+if command -v fastfetch >/dev/null 2>&1; then
+  exec fastfetch --logo "$VN_LOGO" --logo-type file-raw "$@"
+fi
+if command -v neofetch >/dev/null 2>&1; then
+  exec neofetch --ascii "$VN_LOGO" --ascii_colors 4 6 "$@"
+fi
+if command -v screenfetch >/dev/null 2>&1; then
+  exec screenfetch "AsciiFile=$VN_LOGO" "$@"
+fi
+cat "$VN_LOGO" 2>/dev/null
+EOF
+  fi
+  chmod 755 /usr/local/bin/venlix-fetch 2>/dev/null || true
+
+  # Route neofetch / fastfetch / screenfetch through the VN banner for every login shell
+  cat > /etc/profile.d/venlix-fetch.sh << 'EOF'
+#!/bin/bash
+# Venlix VN banner: route neofetch / fastfetch / screenfetch through venlix-fetch.
+export VN_LOGO="${VN_LOGO:-/etc/venlix/vn-ascii.txt}"
+if [ ! -f "${HOME}/.config/venlix/vn-ascii.txt" ] && [ -f "$VN_LOGO" ]; then
+  mkdir -p "${HOME}/.config/venlix" 2>/dev/null
+  cp -f "$VN_LOGO" "${HOME}/.config/venlix/vn-ascii.txt" 2>/dev/null || true
+fi
+neofetch()    { command venlix-fetch "$@"; }
+fastfetch()   { command venlix-fetch "$@"; }
+screenfetch() { command venlix-fetch "$@"; }
+EOF
+  chmod 644 /etc/profile.d/venlix-fetch.sh 2>/dev/null || true
+
+  if command -v venlix-fetch >/dev/null 2>&1; then
+    log_ok "VN neofetch banner exported (venlix-fetch + /etc/venlix/vn-ascii.txt)"
+  else
+    log_warn "VN banner files written, but /usr/local/bin/venlix-fetch is not on PATH."
+  fi
+}
+
+# =============================================================================
+# 2. CREATE / RESET ADMIN USER (usercrate admin)
+# =============================================================================
+do_create_user() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "               👤 Create / Reset Administrator User               "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  read -r -p "Enter Username [default: admin]: " A_USER
+  A_USER="${A_USER:-admin}"
+
+  read -r -p "Enter Email [default: ${A_USER}@vpanel.local]: " A_EMAIL
+  A_EMAIL="${A_EMAIL:-${A_USER}@vpanel.local}"
+
+  read -r -p "Enter Display Name [default: Administrator]: " A_NAME
+  A_NAME="${A_NAME:-Administrator}"
+
+  read -r -s -p "Enter Password: " A_PASS
+  echo ""
+  while [ -z "$A_PASS" ]; do
+    read -r -s -p "Password cannot be empty. Please enter password: " A_PASS
+    echo ""
+  done
+
+  log_info "Provisioning Administrator account '${A_USER}' in database..."
+
+  CREATEUSER_USERNAME="$A_USER" \
+  CREATEUSER_EMAIL="$A_EMAIL" \
+  CREATEUSER_PASSWORD="$A_PASS" \
+  CREATEUSER_NAME="$A_NAME" \
+  CREATEUSER_ROLE=admin \
+  node -e "
+    const auth = require('./src/services/authService');
+    const { db } = require('./src/lib/db');
+    const username = process.env.CREATEUSER_USERNAME;
+    const email = process.env.CREATEUSER_EMAIL;
+    const password = process.env.CREATEUSER_PASSWORD;
+    const name = process.env.CREATEUSER_NAME || username;
+
+    const existing = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(username, email);
+    if (existing) {
+      auth.updateUser(existing.id, { password, role: 'admin', root_admin: 1, suspended: 0, verified: 1 });
+      console.log('[✔] Administrator user ' + username + ' password updated and promoted to Root Admin.');
+    } else {
+      auth.createUser({ username, email, password, name, role: 'admin', root_admin: 1, verified: 1 });
+      console.log('[✔] Administrator user ' + username + ' created successfully.');
+    }
+  "
+
+  log_ok "Administrator account '${A_USER}' is ready for login."
+  echo ""
+}
+
+# =============================================================================
+# 2.5 INSTALL NODE AGENT (connect this machine to the panel as a node)
+# =============================================================================
+do_install_node() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "         🖥️  Install Node Agent (Connect This Machine to Panel)      "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  if [ ! -f "node-agent/install-node.sh" ]; then
+    log_warn "node-agent/install-node.sh not found in the current directory."
+    read -r -p "Clone the venlix-nodes repo here to get the node installer? [y/N]: " C
+    if [[ "$C" =~ ^[Yy]$ ]]; then
+      rm -rf /tmp/venlix-node-install
+      git clone --depth 1 https://github.com/rgdevil54321-afk/vm-panel-.git /tmp/venlix-node-install || { log_err "Git clone failed — check internet/SSH access to GitHub."; return 1; }
+      ( cd /tmp/venlix-node-install && bash node-agent/install-node.sh )
+      return_node_install_result
+      return
+    else
+      log_err "Cannot install node agent without the repo. Aborting."
+      return 1
+    fi
+  fi
+
+  log_info "Launching the node-agent installer..."
+  echo ""
+  if [ -f "data/vpanel.db" ] && [ -f "node-agent/install-local-node.sh" ]; then
+    log_info "A local panel database was detected — installing node agent via PM2 (same-host)."
+    bash node-agent/install-local-node.sh
+  else
+    bash node-agent/install-node.sh
+  fi
+  return_node_install_result
+
+  # Export the VN neofetch banner for this node too
+  install_vn_fetch_banner
+  echo ""
+}
+
+# Verify the agent actually got installed and tell the user what to do next.
+return_node_install_result() {
+  echo ""
+  if systemctl is-active --quiet venlix-node 2>/dev/null; then
+    log_ok "Node agent service is running (systemd: venlix-node)."
+    AGENT_INSTALLED=1
+  elif pm2 jlist 2>/dev/null | grep -q '"venlix-node"'; then
+    log_ok "Node agent is running under PM2 (venlix-node)."
+    AGENT_INSTALLED=1
+  elif [ -f /opt/venlix-node/agent.js ]; then
+    log_warn "Agent files exist but the service is NOT running. Try: systemctl restart venlix-node   (or: pm2 restart venlix-node)"
+  else
+    log_err "Node agent was NOT installed. Scroll up for the precheck failure that stopped it."
+  fi
+  if [ "${AGENT_INSTALLED:-0}" = "1" ] && [ -f /opt/venlix-node/connect-key.txt ]; then
+    echo ""
+    printf "${GREEN}${BOLD}  ┌─────────────────────────────────────────────────────┐${NC}\n"
+    printf "${GREEN}${BOLD}  │  CONNECT KEY (paste in Panel → Nodes → Connect):   │${NC}\n"
+    printf "${GREEN}${BOLD}  │                                                     │${NC}\n"
+    printf "${GREEN}${BOLD}  │  %s${NC}\n" "$(cat /opt/venlix-node/connect-key.txt)"
+    printf "${GREEN}${BOLD}  └─────────────────────────────────────────────────────┘${NC}\n"
+  fi
+}
+
+# =============================================================================
+# 3. UPDATE VPANEL PRO
+# =============================================================================
+do_update() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "                   🔄 Updating Venlix Nodes                        "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  if [ -d ".git" ]; then
+    log_info "Fetching latest updates from git repository..."
+    git pull || log_warn "Git pull reported conflicts or already up to date."
+  else
+    log_info "Preserving current source directory..."
+  fi
+
+  log_info "Updating npm packages..."
+  npm install --no-audit --no-fund
+
+  log_info "Running build & database migrations..."
+  node scripts/build.js
+
+  if command -v pm2 >/dev/null 2>&1; then
+    log_info "Reloading PM2 cluster with zero downtime..."
+    pm2 restart all || pm2 start ecosystem.config.js
+    pm2 save
+  fi
+
+  log_ok "Venlix Nodes has been updated successfully!"
+  echo ""
+}
+
+# =============================================================================
+# 4. PM2 MANAGEMENT (pm2 mang)
+# =============================================================================
+do_pm2_menu() {
+  while true; do
+    safe_clear
+    printf "${MAGENTA}${BOLD}"
+    echo "================================================================="
+    echo "                   ⚙️  PM2 Process Manager                       "
+    echo "================================================================="
+    printf "${NC}\n"
+    echo "  [1] 📊 View Status (pm2 status)"
+    echo "  [2] 🔄 Restart vPanel (pm2 restart vpanel)"
+    echo "  [3] ⏹️  Stop vPanel (pm2 stop vpanel)"
+    echo "  [4] ▶️  Start vPanel (pm2 start vpanel)"
+    echo "  [5] 📜 View Live Logs (pm2 logs vpanel)"
+    echo "  [6] ⚡ Enable Auto-start on System Boot"
+    echo "  [7] 🚫 Disable Auto-start on System Boot"
+    echo "  [0] 🔙 Back to Main Menu"
+    echo ""
+    read -r -p "Select PM2 Option [0-7]: " PM2_OPT
+
+    case "$PM2_OPT" in
+      1)
+        echo ""
+        pm2 status
+        echo ""
+        read -r -p "Press Enter to continue..." _
+        ;;
+      2)
+        log_info "Restarting vPanel cluster..."
+        pm2 restart all
+        log_ok "vPanel restarted."
+        read -r -p "Press Enter to continue..." _
+        ;;
+      3)
+        log_info "Stopping vPanel cluster..."
+        pm2 stop all
+        log_ok "vPanel stopped."
+        read -r -p "Press Enter to continue..." _
+        ;;
+      4)
+        log_info "Starting vPanel cluster..."
+        pm2 start ecosystem.config.js || pm2 start all
+        log_ok "vPanel started."
+        read -r -p "Press Enter to continue..." _
+        ;;
+      5)
+        log_info "Streaming live PM2 logs (Ctrl+C to exit)..."
+        pm2 logs vpanel --lines 50
+        ;;
+      6)
+        log_info "Configuring PM2 startup systemd service..."
+        pm2 save
+        pm2 startup systemd -u root --hp /root || true
+        log_ok "Auto-start on boot enabled."
+        read -r -p "Press Enter to continue..." _
+        ;;
+      7)
+        log_info "Disabling PM2 startup service..."
+        pm2 unstartup systemd || true
+        log_ok "Auto-start on boot disabled."
+        read -r -p "Press Enter to continue..." _
+        ;;
+      0)
+        break
+        ;;
+      *)
+        log_warn "Invalid option. Please choose between 0 and 7."
+        sleep 1
+        ;;
+    esac
+  done
+}
+
+# =============================================================================
+# 5. UNINSTALL VPANEL PRO
+# =============================================================================
+do_uninstall() {
+  safe_clear
+  printf "${RED}${BOLD}"
+  echo "================================================================="
+  echo "                 🗑️  Uninstall Venlix Nodes                        "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  read -r -p "Are you sure you want to completely uninstall Venlix Nodes? (y/N): " CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    log_info "Uninstall aborted."
+    return
+  fi
+
+  read -r -p "Do you want to KEEP your VM disks and database data? [Y/n]: " KEEP_DATA
+  KEEP_DATA="${KEEP_DATA:-Y}"
+
+  log_info "Stopping and removing PM2 daemon process..."
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete vpanel >/dev/null 2>&1 || true
+    pm2 save >/dev/null 2>&1 || true
+    pm2 unstartup systemd >/dev/null 2>&1 || true
+  fi
+
+  if [[ "$KEEP_DATA" == "n" || "$KEEP_DATA" == "N" ]]; then
+    log_info "Removing all data, VMs, and uploads..."
+    rm -rf data/vpanel.db data/tmp vms/* public/uploads/logo/* public/uploads/favicon/* public/uploads/background/*
+  else
+    log_info "Preserving database and VM disks."
+  fi
+
+  # Remove the VN banner shims. Without this the host keeps hijacking
+  # neofetch/fastfetch/screenfetch through a venlix-fetch binary that is gone,
+  # so every login shell breaks on those three commands.
+  log_info "Removing VN neofetch banner..."
+  rm -f /etc/profile.d/venlix-fetch.sh 2>/dev/null || true
+  rm -f /usr/local/bin/venlix-fetch 2>/dev/null || true
+  rm -rf "${HOME}/.config/venlix" 2>/dev/null || true
+
+  # Tailscale is only removed when this installer added it. A pre-existing
+  # Tailscale install is the operator's own machine-level networking and is
+  # none of our business to tear down. This has to run BEFORE /etc/venlix is
+  # deleted, because the marker that records "we installed it" lives there.
+  if [ -f "$TS_MARKER_FILE" ]; then
+    log_info "Removing Tailscale (installed by this installer)..."
+    if command -v tailscale >/dev/null 2>&1; then
+      tailscale logout >/dev/null 2>&1 || true
+    fi
+    systemctl disable --now tailscaled >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y tailscale >/dev/null 2>&1 \
+      || DEBIAN_FRONTEND=noninteractive apt-get purge -y tailscale >/dev/null 2>&1 || true
+    log_ok "Tailscale removed."
+  elif command -v tailscale >/dev/null 2>&1; then
+    log_info "Leaving Tailscale installed (it was already here, not added by us)."
+  fi
+
+  # /etc/venlix holds the neofetch banner and the Tailscale marker; last to go.
+  rm -rf /etc/venlix 2>/dev/null || true
+
+  log_ok "Venlix Nodes has been uninstalled successfully."
+  echo ""
+}
+
+# =============================================================================
+# 6. SYSTEM STATUS OVERVIEW
+# =============================================================================
+do_status() {
+  safe_clear
+  printf "${MAGENTA}${BOLD}"
+  echo "================================================================="
+  echo "               📊 Venlix Nodes - System Status                   "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  uptime -p 2>/dev/null | sed 's/^/  Uptime         : /'
+  echo "  CPU cores      : $(nproc 2>/dev/null)"
+  echo "  RAM            : $(free -h 2>/dev/null | awk 'NR==2{print $3"/"$2}')"
+  echo "  Disk           : $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2" ("$5") used"}')"
+
+  echo ""
+  echo "  --- Local services (via PM2) ---"
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 ls | grep -E "vpanel|venlix-node|venlix-tunnel|online|errored|stopped" || pm2 ls
+  else
+    echo "  PM2 not installed."
+  fi
+
+  echo ""
+  echo "  --- Agent reachability ---"
+  curl -s -m 3 -o /dev/null -w "  Local agent (127.0.0.1:3005/health) : %{http_code}\n" http://127.0.0.1:3005/health 2>/dev/null || echo "  Local agent : 000"
+  local PANEL_PORT
+  PANEL_PORT="${PANEL_PORT:-3001}"
+  curl -s -m 3 -o /dev/null -w "  Web panel  (127.0.0.1:${PANEL_PORT}/login)  : %{http_code}\n" "http://127.0.0.1:${PANEL_PORT}/login" 2>/dev/null || echo "  Web panel  : 000"
+
+  echo ""
+  echo "  --- Neofetch (host identity) ---"
+  if [ -f "$APP_DIR/src/services/neofetchService.js" ] && command -v node >/dev/null 2>&1; then
+    (cd "$APP_DIR" && node -e "process.stdout.write(require('./src/services/neofetchService').renderPlain())" 2>/dev/null || echo "  (unavailable)")
+  else
+    echo "  (panel not installed yet — run option 1 first)"
+  fi
+  echo ""
+  read -r -p "  Press Enter to return..." _
+}
+
+# =============================================================================
+# 7. BACKUP / RESTORE
+# =============================================================================
+do_backup_menu() {
+  while true; do
+    safe_clear
+    printf "${MAGENTA}${BOLD}"
+    echo "================================================================="
+    echo "                 💾 Backup / Restore                              "
+    echo "================================================================="
+    printf "${NC}\n"
+    echo "  [1] 💾 Create a full backup (DB + .env + uploads + VM disks)"
+    echo "  [2] 📂 List existing backups"
+    echo "  [3] ↩️  Restore from a backup"
+    echo "  [0] 🔙 Back"
+    echo ""
+    read -r -p "  Select option [0-3]: " BK_OPT
+    case "$BK_OPT" in
+      1)
+        do_backup_create
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      2)
+        do_backup_list
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      3)
+        do_backup_restore
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      0) break ;;
+      *) log_warn "Invalid option." ;;
+    esac
+  done
+}
+
+do_backup_create() {
+  local STAMP now
+  STAMP="$(date +%Y%m%d-%H%M%S)"
+  local BKROOT="${BKROOT:-$APP_DIR/../backups}"
+  mkdir -p "$BKROOT"
+  local OUT="$BKROOT/venlix-backup-$STAMP.tar.gz"
+  log_info "Creating full backup -> $OUT"
+  rm -rf "$APP_DIR/data/tmp"
+  tar -czf "$OUT" \
+    -C "$(dirname "$APP_DIR")" "$(basename "$APP_DIR")/data" \
+    "$(basename "$APP_DIR")/vms" \
+    "$(basename "$APP_DIR")/uploads" \
+    --exclude="*/tmp/*" 2>/dev/null
+  if [ -f "$OUT" ]; then
+    log_ok "Backup created: $OUT ($(du -h "$OUT" | awk '{print $1}'))"
+  else
+    log_warn "Backup tool finished with no file — check permissions/disk space."
+  fi
+}
+
+do_backup_list() {
+  local BKROOT="${BKROOT:-$APP_DIR/../backups}"
+  if [ ! -d "$BKROOT" ] || [ -z "$(ls -A "$BKROOT" 2>/dev/null)" ]; then
+    log_warn "No backups found in $BKROOT"
+    return 0
+  fi
+  echo ""
+  log_info "Backups in $BKROOT:"
+  ls -lh "$BKROOT" | grep -v '^total' | awk '{print "  "$5"\t"$9}'
+  echo ""
+}
+
+do_backup_restore() {
+  local BKROOT="${BKROOT:-$APP_DIR/../backups}"
+  do_backup_list
+  read -r -p "  Enter backup filename to restore (or Enter to cancel): " BFILE
+  if [ -z "$BFILE" ]; then log_info "Cancelled."; return 0; fi
+  local SRC="$BKROOT/$BFILE"
+  if [ ! -f "$SRC" ]; then log_err "Backup not found: $SRC"; return 1; fi
+  read -r -p "  WARNING: This overwrites current DB/VMs. Continue? (y/N): " CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then log_info "Cancelled."; return 0; fi
+
+  log_info "Stopping services before restore..."
+  pm2 stop all >/dev/null 2>&1 || true
+  log_info "Restoring backup..."
+  mkdir -p "$APP_DIR"
+  tar -xzf "$SRC" -C "$(dirname "$APP_DIR")"
+  log_info "Restarting services..."
+  pm2 start all >/dev/null 2>&1 || true
+  log_ok "Restore complete. Restarting panel to apply..."
+  pm2 restart vpanel >/dev/null 2>&1 || pm2 start ecosystem.config.js >/dev/null 2>&1 || true
+}
+
+# =============================================================================
+# 8. FIREWALL WIZARD
+# =============================================================================
+do_firewall() {
+  safe_clear
+  printf "${MAGENTA}${BOLD}"
+  echo "================================================================="
+  echo "                 🔥 Firewall (UFW) Wizard                        "
+  echo "================================================================="
+  printf "${NC}\n"
+  echo "  Opens:"
+  echo "    3001/tcp (panel web)"
+  echo "    3002/tcp (panel API)"
+  echo "    3005/tcp (node agent)"
+  echo "    SSH (22/tcp, if closed)"
+  echo "    VM port range 25501-25600 (SSH/port-forward)"
+  echo "    VNC range 5900-6000"
+  echo ""
+  read -r -p "  Proceed with these rules? [Y/n]: " FW_GO
+  FW_GO="${FW_GO:-Y}"
+  if [[ "$FW_GO" =~ ^[Nn]$ ]]; then log_info "Cancelled."; return 0; fi
+
+  if ! command -v ufw >/dev/null 2>&1; then
+    log_info "Installing UFW..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ufw >/dev/null 2>&1 || true
+  fi
+  if ! command -v ufw >/dev/null 2>&1; then
+    log_err "UFW not available on this system. Open the ports in your cloud/provider firewall instead."
+    return 1
+  fi
+  ufw allow 22/tcp >/dev/null 2>&1
+  ufw allow 3001/tcp >/dev/null 2>&1
+  ufw allow 3002/tcp >/dev/null 2>&1
+  ufw allow 3005/tcp >/dev/null 2>&1
+  ufw allow 25501:25600/tcp >/dev/null 2>&1
+  ufw allow 5900:6000/tcp >/dev/null 2>&1
+  ufw allow 80/tcp >/dev/null 2>&1
+  ufw allow 443/tcp >/dev/null 2>&1
+  if [ "$(ufw status 2>/dev/null | grep -c 'Status: active')" -eq 0 ]; then
+    echo "n" | ufw enable >/dev/null 2>&1 || true
+  fi
+  log_ok "Firewall rules applied. Current status:"
+  ufw status | grep -E "3001|3002|3005|25501|5900|22|80|443|Status" | sed 's/^/    /'
+  echo ""
+  read -r -p "  Press Enter to continue..." _
+}
+
+# =============================================================================
+# 9. NODE AGENT MANAGEMENT SUBMENU
+# =============================================================================
+do_node_menu() {
+  while true; do
+    safe_clear
+    printf "${MAGENTA}${BOLD}"
+    echo "================================================================="
+    echo "               🖥️  Node Agent Management                        "
+    echo "================================================================="
+    printf "${NC}\n"
+    echo "  [1] 📊 Node status (pm2 + health)"
+    echo "  [2] 🚀 Install / reinstall node agent (this machine)"
+    echo "  [3] 🔗 Show node connect key (for the panel UI)"
+    echo "  [4] 🌐 Tunnel status / install Cloudflare tunnel"
+    echo "  [5] 📜 Node logs"
+    echo "  [6] 🔄 Restart node agent"
+    echo "  [0] 🔙 Back"
+    echo ""
+    read -r -p "  Select option [0-6]: " ND_OPT
+    case "$ND_OPT" in
+      1)
+        do_node_status
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      2)
+        read -r -p "  This installs the node agent on THIS machine. Continue? [Y/n]: " ND_INST
+        if [[ "$ND_INST" =~ ^[Yy]$ ]] || [ -z "$ND_INST" ]; then
+          log_info "Launching node-agent installer..."
+          if [ -f "data/vpanel.db" ] && [ -f "node-agent/install-local-node.sh" ]; then
+            bash node-agent/install-local-node.sh
+          elif [ -f "node-agent/install-node.sh" ]; then
+            bash node-agent/install-node.sh
+          else
+            log_err "node-agent installer not found. Fetch the repo first."
+          fi
+        fi
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      3)
+        do_show_connect_key
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      4)
+        do_node_tunnel
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      5)
+        log_info "Streaming node logs (Ctrl+C to exit)..."
+        pm2 logs venlix-node --lines 50 || journalctl -u venlix-node -n 50 --no-pager 2>/dev/null || log_warn "No logs found."
+        ;;
+      6)
+        log_info "Restarting node agent..."
+        pm2 restart venlix-node 2>/dev/null || systemctl restart venlix-node 2>/dev/null || true
+        log_ok "Node agent restart requested."
+        read -r -p "  Press Enter to continue..." _
+        ;;
+      0) break ;;
+      *) log_warn "Invalid option." ;;
+    esac
+  done
+}
+
+do_node_status() {
+  echo ""
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 status venlix-node 2>/dev/null || true
+  fi
+  curl -s -m 3 -o /dev/null -w "  Agent health (127.0.0.1:3005/health): %{http_code}\n" http://127.0.0.1:3005/health 2>/dev/null || echo "  Agent health: 000 (not reachable)"
+  echo ""
+}
+
+do_show_connect_key() {
+  echo ""
+  if [ -f "/opt/venlix-node/.env" ]; then
+    local CK JP
+    JP="$(grep 'AGENT_JOIN_CODE=' /opt/venlix-node/.env 2>/dev/null | cut -d= -f2-)"
+    local PUB
+    PUB="$(curl -s -m 4 -4 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
+    echo "  Connect key (paste in panel -> Connect With Node Key):"
+    echo "      ${JP}@${PUB}:3005"
+    echo ""
+  else
+    log_warn "No node agent installed at /opt/venlix-node."
+  fi
+}
+
+do_node_tunnel() {
+  echo ""
+  if [ -f "/opt/venlix-node/cloudflared-tunnel.log" ]; then
+    echo "  Cloudflare tunnel log tail:"
+    tail -n 15 /opt/venlix-node/cloudflared-tunnel.log 2>/dev/null | sed 's/^/    /'
+  fi
+  if systemctl list-unit-files 2>/dev/null | grep -q venlix-tunnel; then
+    echo "  Tunnel service: $(systemctl is-active venlix-tunnel 2>/dev/null)"
+  fi
+  if command -v pm2 >/dev/null 2>&1 && pm2 ls 2>/dev/null | grep -q venlix-tunnel; then
+    echo "  Tunnel service: $(pm2 ls 2>/dev/null | grep venlix-tunnel | grep -oE 'online|errored|stopped')"
+  fi
+  read -r -p "  Install/refresh a Cloudflare tunnel now? [Y/n]: " TRY
+  if [[ "$TRY" =~ ^[Yy]$ ]] || [ -z "$TRY" ]; then
+    bash node-agent/install-node.sh 2>/dev/null; log_warn "For tunnel-only setup, run: bash node-agent/install-node.sh and choose the tunnel option."
+  fi
+  echo ""
+}
+
+# =============================================================================
+# 10. SSL / HTTPS VIA CADDY
+# =============================================================================
+do_ssl() {
+  safe_clear
+  printf "${MAGENTA}${BOLD}"
+  echo "================================================================="
+  echo "                🔐 HTTPS via Caddy (auto SSL)                    "
+  echo "================================================================="
+  printf "${NC}\n"
+  if ! command -v apt-get >/dev/null 2>&1; then
+    log_err "Caddy setup requires apt. This box may not support it."
+    read -r -p "Press Enter..." _
+    return 0
+  fi
+  echo "  Caddy terminates HTTPS and proxies to the panel (3001) + API (3002)."
+  echo ""
+  read -r -p "  Your domain (e.g. panel.example.com): " CDOMAIN
+  if [ -z "$CDOMAIN" ]; then log_warn "No domain given."; return 0; fi
+  read -r -p "  Must the subdomain resolve to this server's public IP. Continue? [Y/n]: " CG
+  if [[ "$CG" =~ ^[Nn]$ ]]; then log_warn "Cancelled."; return 0; fi
+
+  DNSPROVIDER=""
+  read -r -p "  DNS provider for wildcard/turnstile? (cloudflare, or blank for DNS verify): " DNS_ANS
+  case "$DNS_ANS" in
+    cloudflare|Cloudflare)
+      read -r -p "  Cloudflare API Token: " CFTOK
+      DNSPROVIDER="cloudflare"
+      ;;
+  esac
+
+  log_info "Installing Caddy..."
+  apt-get install -y debian-keyring debian-archive-keyring apt-transport-https >/dev/null 2>&1
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || true
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null 2>&1 || true
+  apt-get update >/dev/null 2>&1
+  DEBIAN_FRONTEND=noninteractive apt-get install -y caddy >/dev/null 2>&1 || true
+
+  cat > /etc/caddy/Caddyfile <<EOF
+$CDOMAIN {
+    reverse_proxy 127.0.0.1:3001
+    reverse_proxy /api/* 127.0.0.1:3002
+    encode gzip
+}
+EOF
+  log_info "Make sure the SECURE_BEARER or cookie auth works over the new host, then:"
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true
+  if curl -s -o /dev/null -w "%{http_code}" "https://${CDOMAIN}/login" -m 15 2>/dev/null | grep -qE "200|30[0-9]"; then
+    log_ok "HTTPS is live: https://${CDOMAIN}"
+  else
+    log_warn "Caddy installed. Verify DNS points here and reload: systemctl reload caddy"
+  fi
+  read -r -p "  Press Enter to continue..." _
+}
+
+# =============================================================================
+# 11. CHANGE PORTS
+# =============================================================================
+do_change_ports() {
+  safe_clear
+  printf "${MAGENTA}${BOLD}"
+  echo "================================================================="
+  echo "                 🔧 Change Panel / API / Agent Ports             "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  local CURP CURAPI
+  CURP="$(grep -E '^PANEL_PORT=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2-)"
+  CURAPI="$(grep -E '^API_PORT=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2-)"
+  CURP="${CURP:-3001}"
+  CURAPI="${CURAPI:-3002}"
+  echo "  Current: panel=$CURP  api=$CURAPI  agent=3005"
+  echo ""
+  read -r -p "  New panel web port (Enter to keep $CURP): " NPANEL
+  NPANEL="${NPANEL:-$CURP}"
+  read -r -p "  New API port (Enter to keep $CURAPI): " NAPI
+  NAPI="${NAPI:-$CURAPI}"
+  read -r -p "  New agent port (Enter to keep 3005): " NAGENT
+  NAGENT="${NAGENT:-3005}"
+
+  if [ -f "$APP_DIR/.env" ]; then
+    sed -i "s|^PANEL_PORT=.*|PANEL_PORT=${NPANEL}|" "$APP_DIR/.env"
+    sed -i "s|^API_PORT=.*|API_PORT=${NAPI}|" "$APP_DIR/.env"
+    grep -qE '^PANEL_PORT=' "$APP_DIR/.env" || echo "PANEL_PORT=${NPANEL}" >> "$APP_DIR/.env"
+    grep -qE '^API_PORT=' "$APP_DIR/.env" || echo "API_PORT=${NAPI}" >> "$APP_DIR/.env"
+  fi
+
+  if [ -f "/opt/venlix-node/.env" ]; then
+    sed -i "s|^AGENT_PORT=.*|AGENT_PORT=${NAGENT}|" /opt/venlix-node/.env
+    grep -qE '^AGENT_PORT=' /opt/venlix-node/.env || echo "AGENT_PORT=${NAGENT}" >> /opt/venlix-node/.env
+    log_info "Agent port updated (restart node agent to apply)."
+  fi
+
+  log_info "Restarting services to apply port changes..."
+  pm2 restart all >/dev/null 2>&1 || true
+  log_ok "Ports updated: panel=${NPANEL} api=${NAPI} agent=${NAGENT}"
+  log_warn "Open the new ports in the firewall (menu option Firewall)."
+  echo ""
+  read -r -p "  Press Enter to continue..." _
+}
+
+# =============================================================================
+# 12. CHANGE HOST IDENTITY (hostname / CPU / GPU for neofetch + UI)
+# =============================================================================
+do_identity() {
+  safe_clear
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "                🎭  Host Identity (Neofetch)                      "
+  echo "================================================================="
+  printf "${NC}\n"
+  echo "  Customise the display host name, CPU and GPU shown in the panel's"
+  echo "  neofetch banner, admin dashboard and node telemetry. Values are"
+  echo "  cosmetic — they never have to match the real hardware."
+  echo ""
+
+  if [ ! -f "$APP_DIR/data/vpanel.db" ]; then
+    log_err "Panel database not found. Install the panel first (menu option 1)."
+    read -r -p "Press Enter to continue..." _
+    return 1
+  fi
+
+  local CUR_HOST CUR_CPU CUR_GPU
+  CUR_HOST="$(cd "$APP_DIR" && node -e "const {settings}=require('./src/lib/db'); process.stdout.write(settings.get('panel.hostname')||'Venlix Nodes')" 2>/dev/null || echo 'Venlix Nodes')"
+  CUR_CPU="$(cd "$APP_DIR" && node -e "const {settings}=require('./src/lib/db'); process.stdout.write(settings.get('panel.cpu_name')||'(auto-detect)')" 2>/dev/null || echo '(auto-detect)')"
+  CUR_GPU="$(cd "$APP_DIR" && node -e "const {settings}=require('./src/lib/db'); process.stdout.write(settings.get('panel.gpu_name')||'(auto-detect)')" 2>/dev/null || echo '(auto-detect)')"
+
+  echo "  Current:"
+  echo "    Host name : ${CUR_HOST}"
+  echo "    CPU       : ${CUR_CPU}"
+  echo "    GPU       : ${CUR_GPU}"
+  echo ""
+
+  read -r -p "  New display host name (Enter to keep '${CUR_HOST}'): " N_HOST
+  N_HOST="${N_HOST:-${CUR_HOST:-Venlix Nodes}}"
+  read -r -p "  New CPU name (blank = auto-detect, Enter to keep): " N_CPU
+  [ -z "$N_CPU" ] && N_CPU="$CUR_CPU"
+  read -r -p "  New GPU name (blank = auto-detect, Enter to keep): " N_GPU
+  [ -z "$N_GPU" ] && N_GPU="$CUR_GPU"
+
+  (cd "$APP_DIR" && BRAND_HOST="$N_HOST" BRAND_CPU="$N_CPU" BRAND_GPU="$N_GPU" node -e "
+    const { settings } = require('./src/lib/db');
+    settings.set('panel.hostname', process.env.BRAND_HOST || 'Venlix Nodes');
+    if (process.env.BRAND_CPU && process.env.BRAND_CPU !== '(auto-detect)') settings.set('panel.cpu_name', process.env.BRAND_CPU);
+    if (process.env.BRAND_GPU && process.env.BRAND_GPU !== '(auto-detect)') settings.set('panel.gpu_name', process.env.BRAND_GPU);
+    console.log('OK');
+  ") && log_ok "Host identity updated to '${N_HOST}'." || log_err "Failed to update host identity."
+
+  echo ""
+  log_info "Preview it at: Panel > Admin > Neofetch"
+  read -r -p "Press Enter to continue..." _
+}
+
+# =============================================================================
+# 13. TAILSCALE MESH (shared private IPv4 for shared-IP VMs)
+# =============================================================================
+# Every VM runs on QEMU user-mode (slirp) networking with `hostfwd` port
+# forwards, so a guest's own address is never routable — vmService.serializeVm
+# says so explicitly and always hands out "node address + forwarded port".
+# Tailscale does not change that, and it does not give guests their own IP.
+# What it DOES do is put the *node's* 100.64/10 address on a tailnet, and
+# hostfwd binds every host address, so the forwarded VM ports become reachable
+# from any device on the tailnet with no public IP and no open firewall.
+#
+# That is exactly the `ipv4_shared` story: many VMs share the node's one
+# reachable address. The panel already prefers a 100.x address when it builds
+# the guest connect hint (src/services/vmService.js, isTailscaleV4 in
+# src/services/hostDetect.js), so nothing in the panel needed changing — only
+# something had to actually give the host a 100.x address.
+TS_MARKER_FILE="/etc/venlix/tailscale-installed-by-venlix"
+
+# Pause at the end of do_tailscale, unless it was called from do_install (which
+# has its own pause) or from the arg dispatch, where nothing is waiting.
+TS_NO_PAUSE=0
+ts_pause() {
+  [ "$TS_NO_PAUSE" = "1" ] && return 0
+  read -r -p "  Press Enter to continue..." _
+}
+
+# Print the node's tailnet IPv4, or empty if it has not joined a tailnet.
+ts_mesh_ip() {
+  command -v tailscale >/dev/null 2>&1 || return 0
+  tailscale ip -4 2>/dev/null | head -n1 | tr -d '[:space:]'
+}
+
+ts_status() {
+  local ip state
+  ip="$(ts_mesh_ip)"
+  state="$(tailscale status --json 2>/dev/null | grep -o '"BackendState":"[^"]*"' | head -n1 | cut -d'"' -f4)"
+  [ -z "$state" ] && state="unknown"
+  echo "    Backend state : ${state}"
+  echo "    Mesh IPv4     : ${ip:-none (not joined to a tailnet)}"
+}
+
+do_tailscale() {
+  safe_clear
+  printf "${MAGENTA}${BOLD}"
+  echo "================================================================="
+  echo "              🕸️   Tailscale Mesh (shared IPv4)                  "
+  echo "================================================================="
+  printf "${NC}\n"
+  cat <<'EOF'
+  Gives this node a private 100.64/10 address on your tailnet, so VMs
+  sharing this host's IP (network mode "shared IPv4") stay reachable from
+  any of your devices — no public IP, no open inbound ports.
+
+  Your VMs keep their port-forward ports; only the address you reach them
+  on changes, from a public IP to this mesh IP.
+EOF
+  echo ""
+
+  # --- 1. install ---------------------------------------------------------
+  if command -v tailscale >/dev/null 2>&1; then
+    log_ok "Tailscale already installed: $(tailscale version 2>/dev/null | head -n1)"
+  else
+    read -r -p "  Install Tailscale now? [Y/n]: " TS_GO
+    TS_GO="${TS_GO:-Y}"
+    if [[ "$TS_GO" =~ ^[Nn]$ ]]; then
+      log_info "Cancelled."
+      return 0
+    fi
+    log_info "Installing Tailscale from tailscale.com..."
+    if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+      log_err "Tailscale install script failed."
+      log_info "Manual alternative for Debian/Ubuntu:"
+      log_info "  curl -fsSL https://pkgs.tailscale.com/stable/tailscale.repo | tee /etc/apt/sources.list.d/tailscale.list"
+      log_info "  curl -fsSL https://pkgs.tailscale.com/stable/tailscale.key.asc | tee /usr/share/keyrings/tailscale-archive-keyring.gpg"
+      log_info "  apt-get update && apt-get install -y tailscale"
+      ts_pause
+      return 1
+    fi
+    # Only ever remove Tailscale on uninstall if *we* were the ones to add it.
+    mkdir -p /etc/venlix 2>/dev/null || true
+    echo "installed by Venlix Nodes installer" > "$TS_MARKER_FILE"
+    log_ok "Tailscale installed."
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    log_warn "systemd not found — start tailscaled manually, cannot enable on boot."
+  else
+    systemctl enable tailscaled >/dev/null 2>&1 || true
+    systemctl restart tailscaled >/dev/null 2>&1 || systemctl start tailscaled >/dev/null 2>&1 || true
+  fi
+  sleep 1
+
+  # --- 2. join a tailnet --------------------------------------------------
+  local ts_ip
+  ts_ip="$(ts_mesh_ip)"
+  if [ -n "$ts_ip" ]; then
+    log_ok "This node is already on a tailnet."
+    ts_status
+  else
+    echo ""
+    echo "  How do you want to join?"
+    echo "    [1] Auth key    — non-interactive, best for scripted installs"
+    echo "    [2] Interactive — prints a login URL you open in a browser"
+    echo ""
+    read -r -p "  Choose [1/2, default 1]: " TS_MODE
+    TS_MODE="${TS_MODE:-1}"
+    local TS_HOSTNAME_ARG=""
+    read -r -p "  Node name in the tailnet [default: $(hostname -s 2>/dev/null || echo venlix)]: " TS_NAME
+    TS_NAME="${TS_NAME:-$(hostname -s 2>/dev/null || echo venlix)}"
+    TS_HOSTNAME_ARG="--hostname=${TS_NAME}"
+
+    if [ "$TS_MODE" = "2" ]; then
+      # accept-dns=false so the tailnet resolver can never take the panel's
+      # DNS offline; accept-routes=false so this host never starts routing
+      # someone else's subnet through itself.
+      log_info "Opening a login URL — finish in your browser, then re-run this option."
+      tailscale up --accept-dns=false --accept-routes=false "$TS_HOSTNAME_ARG" || true
+    else
+      read -r -s -p "  Tailscale auth key (tskey-auth-...): " TS_KEY
+      echo ""
+      if [ -z "$TS_KEY" ]; then
+        log_warn "No auth key given. Run 'sudo tailscale up' later to finish joining."
+        ts_pause
+        return 0
+      fi
+      log_info "Joining tailnet with auth key..."
+      if tailscale up --authkey="$TS_KEY" --accept-dns=false --accept-routes=false "$TS_HOSTNAME_ARG"; then
+        log_ok "Joined the tailnet."
+      else
+        log_err "tailscale up failed. Check the auth key is reusable/valid for this tag."
+        ts_pause
+        return 1
+      fi
+    fi
+  fi
+
+  # --- 3. make sure the firewall lets tailnet traffic in -------------------
+  # UFW's default deny would otherwise drop everything arriving on tailscale0,
+  # which silently makes the whole mesh look like it is down.
+  if command -v ufw >/dev/null 2>&1 && [ "$(ufw status 2>/dev/null | grep -c 'Status: active')" -gt 0 ]; then
+    if ufw status 2>/dev/null | grep -q "tailscale0"; then
+      log_ok "UFW already allows the tailscale0 interface."
+    else
+      ufw allow in on tailscale0 >/dev/null 2>&1 \
+        && log_ok "Added UFW rule: allow inbound on tailscale0." \
+        || log_warn "Could not add the UFW tailscale0 rule. Add it manually: ufw allow in on tailscale0"
+    fi
+  else
+    log_info "UFW not active — no firewall rule needed for the mesh."
+  fi
+
+  # --- 4. report ----------------------------------------------------------
+  echo ""
+  ts_status
+  local final_ip
+  final_ip="$(ts_mesh_ip)"
+  if [ -n "$final_ip" ]; then
+    echo ""
+    printf "${GREEN}${BOLD}"
+    echo "  ✅  Shared IPv4 for VMs on this node: ${final_ip}"
+    echo ""
+    echo "      Create VMs with network mode \"shared IPv4\" and reach them at:"
+    echo "        ssh -p <forwarded-port> root@${final_ip}"
+    echo ""
+    echo "      The panel picks this address up on its own (it already prefers a"
+    echo "      100.64/10 address when it builds the guest connect hint), so no"
+    echo "      panel configuration is needed."
+    printf "${NC}\n"
+    log_warn "Keep this host on the tailnet. If Tailscale stops, VMs stop answering on the mesh IP."
+  else
+    log_warn "No mesh address yet. Finish with: sudo tailscale up"
+  fi
+  echo ""
+  ts_pause
+}
+
+# =============================================================================
+# MAIN INTERACTIVE MENU
+# =============================================================================
+# ---------------------------------------------------------------------------
+# Status probes for the menu.
+#
+# Each returns one of: installed / connected / running / missing / stopped /
+# not installed, so the menu can answer "is this thing actually up?" without the
+# operator opening five submenus. Everything is best-effort: a probe never
+# aborts the menu, it just reports unknown. Deliberately cheap - no node -e, no
+# reading the DB - because this runs on every redraw.
+# ---------------------------------------------------------------------------
+st_online()   { printf "${GREEN}online${NC}"; }
+st_offline()  { printf "${RED}offline${NC}"; }
+st_stopped()  { printf "${YELLOW}stopped${NC}"; }
+st_none()     { printf "${RED}not installed${NC}"; }
+st_yes()      { printf "${GREEN}yes${NC}"; }
+st_no()       { printf "${DIM}no${NC}"; }
+
+# Panel: pm2 process vpanel.
+st_panel() {
+  if ! command -v pm2 >/dev/null 2>&1; then st_none; return; fi
+  local s
+  s=$(pm2 jlist 2>/dev/null | node -e '
+    let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
+      try{const p=JSON.parse(d).find(x=>x.name==="vpanel");
+      if(!p){process.stdout.write("missing");return;}
+      const st=(p.pm2_env&&p.pm2_env.status)||"unknown";
+      process.stdout.write(st);}catch(e){process.stdout.write("unknown");}
+    });' 2>/dev/null)
+  [ -z "$s" ] && s=$(pm2 ls 2>/dev/null | awk '$4=="vpanel"{print $18; exit}')
+  case "$s" in
+    online)  st_online ;;
+    stopped) st_stopped ;;
+    errored) printf "${RED}errored${NC}" ;;
+    missing) st_none ;;
+    *)       st_no ;;
+  esac
+}
+
+# Node agent: pm2 process venlix-node, or the agent binary present.
+st_agent() {
+  if command -v pm2 >/dev/null 2>&1; then
+    local s
+    s=$(pm2 jlist 2>/dev/null | node -e '
+      let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
+        try{const p=JSON.parse(d).find(x=>/venlix[-_]?node/.test(x.name));
+        if(!p){process.stdout.write("missing");return;}
+        process.stdout.write((p.pm2_env&&p.pm2_env.status)||"unknown");}catch(e){process.stdout.write("unknown");}
+      });' 2>/dev/null)
+    case "$s" in
+      online)  st_online; return ;;
+      stopped) st_stopped; return ;;
+      errored) printf "${RED}errored${NC}"; return ;;
+    esac
+  fi
+  if [ -f /opt/venlix-node/agent.js ]; then st_stopped; else st_none; fi
+}
+
+# Cloudflare tunnel: venlix-tunnel under systemd or pm2.
+st_tunnel() {
+  # Any unit name the tunnel may live under. `cloudflared.service` is what
+  # `cloudflared service install` writes; `venlix-tunnel.service` is what this
+  # repo's installer writes. Checking only the second reported "installed, not
+  # running" on a box whose connector was crash-looping under the first.
+  local units
+  units=$(systemctl list-unit-files 2>/dev/null | awk '/venlix-tunnel\.service|cloudflared\.service/ {print $1}')
+  if [ -n "$units" ]; then
+    local u s
+    for u in $units; do
+      s=$(systemctl is-active "$u" 2>/dev/null)
+      [ "$s" = "active" ] && { st_connected; return; }
+    done
+    # Not active anywhere: distinguish a crash loop from a plain stop, because
+    # they need different fixes and "offline" hides which one this is.
+    for u in $units; do
+      s=$(systemctl is-active "$u" 2>/dev/null)
+      [ "$s" = "activating" ] && { printf "${YELLOW}connecting${NC}"; return; }
+    done
+    local fails
+    fails=$(systemctl show "$units" -p NRestarts --value 2>/dev/null | head -1)
+    if [ -n "$fails" ] && [ "$fails" -gt 20 ] 2>/dev/null; then
+      printf "${RED}crash-looping${NC} ${DIM}(%s restarts)${NC}" "$fails"; return
+    fi
+    st_offline; return
+  fi
+  if command -v pm2 >/dev/null 2>&1 && pm2 ls 2>/dev/null | grep -q venlix-tunnel; then
+    pm2 ls 2>/dev/null | grep venlix-tunnel | grep -q online && { st_connected; return; }
+    st_stopped; return
+  fi
+  if command -v cloudflared >/dev/null 2>&1 || [ -x /usr/local/bin/cloudflared ]; then
+    printf "${YELLOW}installed, not running${NC}"; return
+  fi
+  st_none
+}
+st_connected() { printf "${GREEN}connected${NC}"; }
+
+# Tailscale mesh.
+st_tailscale() {
+  if ! command -v tailscale >/dev/null 2>&1; then st_none; return; fi
+  # Distinguish "installed but not connected" from "broken": a binary that is
+  # present but logged out is a normal state, not a fault.
+  local s
+  s=$(tailscale status 2>/dev/null | head -1)
+  case "$s" in
+    *"Logged out"*|*"Tailscale is stopped"*)
+      printf "${YELLOW}installed, not connected${NC}"; return ;;
+  esac
+  if tailscale status >/dev/null 2>&1; then
+    local ip
+    ip=$(tailscale ip -4 2>/dev/null | head -1)
+    if [ -n "$ip" ]; then printf "${GREEN}connected${NC} ${DIM}%s${NC}" "$ip"; return; fi
+    st_connected; return
+  fi
+  printf "${YELLOW}installed, not connected${NC}"
+}
+
+# Caddy for SSL.
+st_caddy() {
+  if ! command -v caddy >/dev/null 2>&1; then st_none; return; fi
+  if systemctl is-active --quiet caddy 2>/dev/null; then st_online; return; fi
+  st_stopped
+}
+
+# Firewall: ufw or firewalld.
+st_firewall() {
+  if command -v ufw >/dev/null 2>&1; then
+    local s; s=$(ufw status 2>/dev/null | head -1 | grep -o "Status: .*")
+    case "$s" in *active*) st_online ;; *) st_stopped ;; esac
+    return
+  fi
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    firewall-cmd --state >/dev/null 2>&1 && st_online || st_stopped
+    return
+  fi
+  st_none
+}
+
+# Database file + admin count.
+st_db() {
+  local db=""
+  for c in data/vpanel.db /root/vm-panel-/data/vpanel.db "$PWD/data/vpanel.db"; do
+    [ -f "$c" ] && { db="$c"; break; }
+  done
+  if [ -z "$db" ]; then st_none; return; fi
+  printf "${GREEN}present${NC} ${DIM}%s${NC}" "$(du -h "$db" 2>/dev/null | cut -f1)"
+}
+
+# Last backup.
+st_backup() {
+  local d="storage/backups"
+  [ -d "$d" ] || d="/root/vm-panel-/storage/backups"
+  if [ ! -d "$d" ]; then st_none; return; fi
+  local last
+  last=$(ls -1t "$d" 2>/dev/null | head -1)
+  [ -z "$last" ] && { printf "${DIM}none yet${NC}"; return; }
+  printf "${GREEN}%s${NC} ${DIM}ago${NC}" "$(date -r "$d/$last" +%d\ %b 2>/dev/null)"
+}
+
+show_menu() {
+  while true; do
+    safe_clear
+    printf "${CYAN}${BOLD}"
+    echo "  ╭───────────────────────────────────────────────────────────╮"
+    echo "  │          ⚡  Venlix Nodes Management Suite  ⚡            │"
+    echo "  │      Debian 11/12/13 & Ubuntu 20.04/22.04/24.04         │"
+    echo "  ╰───────────────────────────────────────────────────────────╯"
+    printf "${NC}"
+    echo ""
+    echo "  ${BOLD}DEPLOY${NC}"
+    echo "   ${CYAN}[1]${NC} 🚀 Install Panel         Full automated install"
+    echo "   ${CYAN}[2]${NC} 👤 Create Admin         New administrator account"
+    echo "   ${CYAN}[3]${NC} 🔄 Update Panel         Pull + rebuild + reload"
+    echo ""
+    echo "  ${BOLD}MANAGE${NC}"
+    echo "   ${CYAN}[4]${NC} ⚙️  PM2 Manager         Status · restart · logs · boot"
+    echo "   ${CYAN}[5]${NC} 🗑️  Uninstall            Safe removal wizard"
+    echo "   ${CYAN}[6]${NC} 🖥️  Install Node Agent   Connect machine → panel"
+    echo ""
+    echo "  ${BOLD}TOOLS${NC}"
+    echo "   ${CYAN}[7]${NC} 📊 System Status       Health · nodes · resources"
+    echo "   ${CYAN}[8]${NC} 💾 Backup / Restore    DB · VMs · uploads"
+    echo "   ${CYAN}[9]${NC} 🔥 Firewall Wizard     Open panel/node/VM ports"
+    echo "   ${CYAN}[10]${NC} 🖥️ Node Management    Status · tunnel · key"
+    echo "   ${CYAN}[11]${NC} 🔐 SSL / HTTPS        Free auto-SSL via Caddy"
+    echo "   ${CYAN}[12]${NC} 🔧 Change Ports       Panel / API / agent"
+    echo "   ${CYAN}[13]${NC} 🎭 Host Identity      Hostname / CPU / GPU (neofetch)"
+    echo "   ${CYAN}[14]${NC} 🔓 Unlock Install      Clear install blacklist (unlock password)"
+    echo "   ${CYAN}[15]${NC} 🕸️  Tailscale Mesh       Private shared IPv4 for VMs"
+    echo ""
+    echo "  ${BOLD}STATUS${NC}"
+    printf "   ${CYAN}Panel${NC}         %b\n"     "$(st_panel)"
+    printf "   ${CYAN}Node agent${NC}    %b\n"     "$(st_agent)"
+    printf "   ${CYAN}Tunnel${NC}        %b\n"     "$(st_tunnel)"
+    printf "   ${CYAN}Tailscale${NC}     %b\n"     "$(st_tailscale)"
+    printf "   ${CYAN}SSL / Caddy${NC}   %b\n"     "$(st_caddy)"
+    printf "   ${CYAN}Firewall${NC}      %b\n"     "$(st_firewall)"
+    printf "   ${CYAN}Database${NC}      %b\n"     "$(st_db)"
+    printf "   ${CYAN}Last backup${NC}   %b\n"     "$(st_backup)"
+    echo ""
+    echo "   ${RED}[0]${NC} 🚪 Exit"
+    echo ""
+    printf "${CYAN}─────────────────────────────────────────────────────────────${NC}\n"
+    read -r -p "  Select option ${BOLD}[0-15]${NC} › " CHOICE
+
+    case "$CHOICE" in
+      1)
+        do_install
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      2)
+        do_create_user
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      3)
+        do_update
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      4)
+        do_pm2_menu
+        ;;
+      5)
+        do_uninstall
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      6)
+        do_install_node
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      7)
+        do_status
+        ;;
+      8)
+        do_backup_menu
+        ;;
+      9)
+        do_firewall
+        ;;
+      10)
+        do_node_menu
+        ;;
+      11)
+        do_ssl
+        ;;
+      12)
+        do_change_ports
+        ;;
+      13)
+        do_identity
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      14)
+        do_unlock_license
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      15)
+        do_tailscale
+        read -r -p "Press Enter to return to menu..." _
+        ;;
+      0)
+        log_info "Exiting Venlix Nodes Installer. Goodbye!"
+        exit 0
+        ;;
+      *)
+        log_warn "Invalid option '$CHOICE'. Please choose 0-15."
+        sleep 1.2
+        ;;
+    esac
+  done
+}
+
+# Entrypoint
+check_root
+detect_os
+
+# If arguments were passed directly (e.g. --install or --create-admin)
+if [ $# -gt 0 ]; then
+  case "$1" in
+    1|--install|install) do_install ;;
+    2|--usercrate|--create-admin|createuser) do_create_user ;;
+    3|--update|update) do_update ;;
+    4|--pm2|pm2) do_pm2_menu ;;
+    5|--uninstall|uninstall) do_uninstall ;;
+    6|--node|--install-node|node) do_install_node ;;
+    7|--status|status) do_status ;;
+    8|--backup|backup) do_backup_menu ;;
+    9|--firewall|firewall) do_firewall ;;
+    10|--nodes|node-mgmt) do_node_menu ;;
+    11|--ssl|--https|caddy) do_ssl ;;
+    12|--ports|change-ports) do_change_ports ;;
+    13|--identity|identity) do_identity ;;
+    14|--unlock|unlock) do_unlock_license ;;
+    15|--tailscale|--ts|mesh) do_tailscale ;;
+    *) show_menu ;;
+  esac
+else
+  show_menu
+fi

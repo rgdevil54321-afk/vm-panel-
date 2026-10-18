@@ -1,174 +1,245 @@
-# TIRED AI
+<div align="center">
 
-A specialized AI coding and infrastructure assistant that exposes an OpenAI-compatible API, with an admin dashboard, knowledge base, session memory, sandboxed agent tools, and project context storage.
+# ⚡ Venlix Nodes
+### Multi-Node QEMU/KVM Virtual Machine Management Web Panel
 
-## Architecture
+[![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Express](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com)
+[![QEMU](https://img.shields.io/badge/QEMU-Virtualization-FF6600?style=for-the-badge&logo=qemu&logoColor=white)](https://www.qemu.org/)
+[![SQLite](https://img.shields.io/badge/better--sqlite3-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://github.com/WiseLibs/better-sqlite3)
+[![License](https://img.shields.io/badge/License-MIT-6366F1?style=for-the-badge)](LICENSE)
 
+*A high-performance, dark glassmorphic, multi-node control panel for hosting, managing, and automating QEMU virtual servers across a cluster of hypervisor nodes.*
+
+---
+
+</div>
+
+## 🌟 Highlights & Key Features
+
+### 🎨 1. Cosmic Glassmorphism UI & Studio
+- **Deep Slate Dark Design**: Modern translucent glass cards with glowing accent halo borders (`--panel-blur`, `--panel-transparency`).
+- **Integrated 4K Wallpaper Browser**: Browse, search, preview, favorite, and 1-click apply high-res 4K wallpapers directly from [4kwallpapers.com](https://4kwallpapers.com/) across 15+ categories (*Anime, Space, Dark/AMOLED, Nature, Supercars, Gaming, Abstract, etc.*).
+- **Interactive Sliders**: Real-time CSS Backdrop Blur (0px – 40px) and UI Transparency (0% – 100%) controls without page reloads.
+- **Custom Media Backgrounds**: Upload local images or looping video backgrounds (`.mp4`, `.webm`).
+
+### ⚡ 2. Intuitive VM Creation Wizard
+- **⚡ Hardware Sizing Presets**: 1-click quick presets (*Starter, Standard, Compute/Dev, Powerhouse*).
+- **Dual-Control Resource Sliders**: Real-time synchronized range sliders and inputs for vCPUs and RAM.
+- **Filterable Distro Grid**: Cloud-image support for **Ubuntu** (22.04, 24.04), **Debian** (11, 12, 13), **Fedora** (40), **CentOS Stream**, **AlmaLinux**, and **Rocky Linux**.
+- **Live Deployment Blueprint**: Real-time sticky summary card updating specifications and cost calculations as you configure.
+
+### 💻 3. Next-Gen SSH Terminal & Serial Boot Logs
+- **Integrated Xterm.js Console**: Responsive web terminal connecting directly to guest instances over SSH.
+- **Kernel Boot & Startup Logs**: Dual-tab interface streaming live QEMU serial output, kernel messages, and cloud-init progress in real time.
+- **Toolbar Utilities**: Auto-refresh toggle (3s polling), auto-scroll, and 1-click clipboard copy.
+
+### 📁 4. High-Performance File Manager
+- **Guest Agent & SSH Dual-Engine**: Ultra-fast file operations with automatic graceful fallback.
+- **Accurate File Size Sizing**: Monospace human-readable formatting (`Bytes, KB, MB, GB`).
+- **Large Code Editor Modal**: Fullscreen multi-line editor (`width: min(1000px, 96vw)`) with monospace fonts and UTF-8 support.
+- **Multi-File Uploads**: Drag-and-drop or select multi-file uploads with payload support up to 200MB+.
+
+### 🛡️ 5. Multi-User & Enterprise Security
+- **Role-Based Access Control**: Root Administrators and Standard Users.
+- **Subuser Delegation**: Assign granular per-server permissions (*Console, File Manager, Backups, Power Controls*).
+- **Two-Factor Authentication (2FA)**: TOTP authenticator app support (Google Authenticator, Authy).
+- **Comprehensive Audit Logs**: Real-time event timeline logging all VM power actions, logins, and permission changes.
+
+### 💾 6. Snapshots & Cron Automation
+- **Instant Disk Backups**: 1-click snapshot creation, restoration, and raw disk download.
+- **Automated Scheduling**: Standard 5-field Cron automation for automatic backups, restarts, and routine maintenance.
+
+---
+
+## 🏗️ Architecture & Tech Stack
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                       vPanel Pro UI                         │
+│   (Glassmorphism CSS • EJS Templates • Socket.IO • Xterm)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ HTTP / WebSocket (Port 3001)
+┌──────────────────────────────▼──────────────────────────────┐
+│                    Node.js + Express Core                   │
+│  (Auth Middleware • SQLite/better-sqlite3 • VM Orchestrator)│
+└──────────────┬──────────────────────────────┬───────────────┘
+               │                              │
+┌──────────────▼──────────────┐┌──────────────▼───────────────┐
+│     QEMU Hypervisor Engine  ││     vPanel Guest Agent       │
+│  (-drive, -smp, -m, -netdev)││  (Python HTTP Daemon / SSH)  │
+└─────────────────────────────┘└──────────────────────────────┘
 ```
-            TIRED AI
-                |
-      +---------+---------+
-      |                   |
-   Frontend            Backend
-  (Next.js 14)       (FastAPI)
-                           |
-              +------------+------------+-------------+
-              |            |            |             |
-           Providers   Knowledge    Memory        Tools /
-           (Groq,      Base         (sessions +   Context
-            Ollama)    (keyword     summaries)    (sandboxed
-                       search)                    workspace)
-                           |
-                    SQLite (api_keys, knowledge, memories, contexts, request_logs)
-```
 
-## Implemented Phases
+---
 
-- Phase 1: OpenAI-compatible API (`/health`, `/ready`, `/v1/models`, `/v1/chat/completions`), Groq + Ollama providers, API key auth, rate limiting, request IDs, Docker.
-- Phase 2: Admin API (key management + usage stats), knowledge base with keyword search, session memory with summaries, sandboxed file tools, project context store, real SSE streaming, request logging, CORS.
-- Phase 3: Next.js chat UI and admin dashboard (keys, knowledge, stats).
+## 📋 System Requirements
 
-## Quick Start
+- **Operating System**: Linux (Ubuntu 20.04+, Debian 11+, RHEL/CentOS 9+, Fedora, Arch Linux)
+- **Node.js**: v18.0.0 or higher (Node 20+ recommended)
+- **Hypervisor**: QEMU (`qemu-system-x86_64`, `qemu-img`)
+- **Utilities**: `cloud-image-utils` (`cloud-localds`), `wget`, `openssl`, `python3`
 
-### Backend
+---
 
-1. Copy environment variables:
+## 🚀 Quick Start & Installation
+
+### Option 1: Automated Setup (Recommended)
+
 ```bash
-cp backend/.env.example backend/.env
+# Clone the repository
+git clone https://github.com/rgdevil54321-afk/vm-panel-.git
+cd vm-panel-
+
+# Run the automated installer (interactive menu)
+sudo bash install.sh
 ```
 
-2. Set your API keys in `backend/.env`:
-```
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=openai/gpt-oss-120b
-```
+The installer is menu-driven. Pick **1** (Install Panel), then **2** (Create Admin),
+then **4** (PM2 Manager) so it survives a reboot.
 
-3. Install dependencies and run:
+Non-interactive, if you prefer driving each step yourself:
+
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+sudo bash install.sh --install       # dependencies (option 1)
+sudo bash install.sh --create-admin  # admin account  (option 2)
+sudo bash install.sh --pm2            # pm2 + boot     (option 4)
 ```
 
-4. Run the tests:
+> There is no `--admin-pass` flag. Admin credentials are always prompted for
+> interactively; `install.sh` takes no credential arguments.
+
+### Shared IPv4 via Tailscale (option 15)
+
+Every VM runs on QEMU user-mode (slirp) networking with port forwards, so a
+guest's own address is never routable from outside the node — panel and
+tmate aside, you reach a VM at `node address + forwarded port`. Tailscale does
+not change that, and it does not give each VM its own IP.
+
+What it does is put the **node's** private `100.64/10` address on your tailnet.
+Because port forwards bind every host address, your `shared IPv4` VMs then become
+reachable from any device on the tailnet — no public IP, no inbound firewall
+holes. The panel already prefers a `100.64/10` address when it builds a guest's
+connect hint, so nothing needs configuring on the panel side.
+
 ```bash
-python -m pytest tests
+sudo bash install.sh --tailscale   # or menu option 15
 ```
 
-### Frontend
+It installs Tailscale, joins a tailnet (auth key for scripted installs, or a
+browser login URL), adds a `ufw allow in on tailscale0` rule if UFW is active,
+and prints the resulting mesh address. DNS and subnet routes are left alone
+(`--accept-dns=false --accept-routes=false`) so the mesh can never take the
+panel's DNS offline or start routing someone else's subnet through the host.
 
-1. Copy environment variables:
-```bash
-cp frontend/.env.example frontend/.env.local
-```
+Install option 1 also offers this at the end of a fresh install. It is never
+mandatory, because joining a tailnet needs an auth key or a browser.
 
-2. Install dependencies and run:
+Uninstall removes Tailscale only if the installer was what installed it; a
+pre-existing Tailscale is left alone.
+
+### Option 2: Manual Installation
+
 ```bash
-cd frontend
+# 1. Clone repository and install dependencies
+git clone https://github.com/rgdevil54321-afk/vm-panel-.git
+cd vm-panel-
 npm install
-npm run dev
+
+# 2. Build assets
+npm run build
+
+# 3. Create administrator account
+npm run createuser
+
+# 4. Start vPanel Pro
+npm start
 ```
 
-- Chat UI: http://localhost:3000
-- Admin dashboard: http://localhost:3000/admin
-
-## Environment Variables (backend)
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `GROQ_API_KEY` | - | Groq provider credential |
-| `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model id |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama endpoint |
-| `OLLAMA_MODEL` | - | Ollama model (enables Ollama provider) |
-| `ADMIN_TOKEN` | `vlix-admin-token` | Token for `/admin/*` via `X-Admin-Token` header |
-| `REQUIRE_API_KEY` | `false` | When `true`, `/v1/*` data endpoints need a valid API key |
-| `RATE_LIMIT_ENABLED` / `_REQUESTS` / `_WINDOW` | `true` / `30` / `60` | Per-key rate limiting |
-| `API_KEY_FILE` | `api_keys.db` | SQLite database path |
-| `TOOL_WORKSPACE` | `data/workspace` | Root of sandboxed file tools (path traversal blocked) |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
-
-## API Endpoints
-
-### Health & Meta
-```
-GET  /health            -> {"status": "healthy"}
-GET  /ready             -> {"status": "ready", "model": ...}
-```
-
-### Chat (OpenAI-compatible)
-```
-POST /v1/chat/completions
-Authorization: Bearer <api_key>            (optional)
-{
-  "model": "tired-ai",
-  "messages": [{"role": "user", "content": "Hello"}],
-  "temperature": 0.7,
-  "max_tokens": null,
-  "stream": false,
-  "stop": [],
-  "session_id": "my-session"               (optional, stores memory)
-}
-```
-- `stream: true` proxies Groq SSE chunks as `text/event-stream`.
-
-### Models
-```
-GET  /v1/models
-Authorization: Bearer <api_key>            (validates if provided)
-```
-
-### Admin (header: `X-Admin-Token: <ADMIN_TOKEN>`)
-```
-POST   /admin/keys          {"name": "ci", "expires_days": 7}  -> full key shown once, prefix `vlix-`
-GET    /admin/keys          -> all keys with active/revoked status
-DELETE /admin/keys/{key_id} -> revokes key (sets is_active = 0)
-GET    /admin/stats         -> keys, docs, sessions, contexts, requests, token usage
-```
-
-### Knowledge Base
-```
-POST   /v1/knowledge         {"title": "...", "content": "..."}
-GET    /v1/knowledge         -> document index (id, title, size, timestamps)
-GET    /v1/knowledge/{id}    -> full document
-DELETE /v1/knowledge/{id}
-POST   /v1/knowledge/search  {"query": "...", "top_k": 5} -> scored keyword search with snippets
-```
-
-### Memory
-```
-GET    /v1/memory/sessions      -> all sessions with message counts
-POST   /v1/memory/{session_id}  {"messages": [{"role": "user", "content": "..."}]}
-GET    /v1/memory/{session_id}  -> messages + generated summary
-DELETE /v1/memory/{session_id}
-```
-
-### Tools (sandboxed to `TOOL_WORKSPACE`)
-```
-POST /v1/tools/read   {"path": "notes/x.txt"}
-POST /v1/tools/write  {"path": "notes/x.txt", "content": "..."}
-POST /v1/tools/list   {"path": ""}
-POST /v1/tools/delete {"path": "notes/x.txt"}
-```
-Paths resolving outside the workspace return `400`.
-
-### Project Context
-```
-PUT    /v1/context/{project}  {"files": {"README.md": "..."}, "instructions": "..."}
-GET    /v1/context            -> project index
-GET    /v1/context/{project}
-DELETE /v1/context/{project}
-```
-
-## Default Auth Behavior
-
-With `REQUIRE_API_KEY=false`, `/v1/*` endpoints work without a key (bootstrap mode). Create keys in the admin dashboard, set `REQUIRE_API_KEY=true` to lock access. Invalid but provided keys are always rejected with `401`.
-
-## Docker
+### Production Deployment with PM2
 
 ```bash
-docker-compose up --build
+# Start cluster process
+pm2 start ecosystem.config.js
+
+# Save process list for system reboot
+pm2 save
+pm2 startup
 ```
 
-## License
+---
 
-MIT
+## 🌐 Default Ports & Access
+
+| Service | Default URL | Description |
+| :--- | :--- | :--- |
+| **Web Panel** | `http://<host_ip>:3001` | Main user dashboard and management interface |
+| **REST API** | `http://<host_ip>:3001/api` | RESTful API for automation & integrations |
+| **VM Port Range** | `25501 - 25600` | Dynamic host-forwarded SSH ports |
+| **Agent Port Range**| `26101 - 26200` | Internal guest-daemon communication |
+
+---
+
+## ⚙️ Configuration Environment (`.env`)
+
+```ini
+# Panel Ports & Server
+PANEL_PORT=3001
+API_PORT=3002
+NODE_ENV=production
+
+# Security & Secrets
+JWT_SECRET=your_super_secret_jwt_key_here
+ALLOW_REGISTER=1
+FORCE_TFA=0
+
+# Storage Locations
+VM_DIR=./vms
+DB_PATH=./data/vpanel.db
+
+# Automatic Port Forwarding Ranges
+AUTO_PORT_MIN=25501
+AUTO_PORT_MAX=25600
+AUTO_AGENT_PORT_MIN=26101
+AUTO_AGENT_PORT_MAX=26200
+```
+
+---
+
+## 🔌 API Reference Overview
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/login` | Authenticate and obtain JWT bearer token |
+| `GET` | `/api/vms` | List all accessible virtual machines |
+| `POST` | `/api/vms/:id/action` | Trigger power action (`start`, `stop`, `restart`, `kill`) |
+| `GET` | `/api/vms/:id/bootlog` | Stream kernel boot & serial output logs |
+| `GET` | `/api/vms/:id/files?path=/` | List files and directories in guest filesystem |
+| `GET` | `/api/vms/:id/files/download` | Download file from guest |
+| `POST` | `/api/vms/:id/files/upload` | Upload binary/text file to guest |
+| `GET` | `/api/wallpapers?category=all` | Browse 4K wallpaper library with search & pagination |
+| `POST` | `/api/wallpapers/apply` | 1-click apply wallpaper and glassmorphism styles *(admin only)* |
+
+### API key scopes
+
+`vp_live_` API keys carry a `scopes` list, and it is enforced:
+
+| Scope | Grants |
+|---|---|
+| `*` or `all` | Everything, including `/admin/*` routes |
+| `r_*` | Read-only — `GET` and `HEAD` only |
+| `w_*` | Required (any one of them) to call `POST`, `PUT`, `PATCH` or `DELETE` |
+
+A key without a `w_` scope cannot reach `/admin/*` at all, regardless of the
+owning account's role — use the panel key for admin automation. The new-key
+form defaults to `r_servers`, which is read-only.
+
+---
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+<div align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/nobita329">Nobita</a> for developers and sysadmins worldwide.</sub>
+</div>

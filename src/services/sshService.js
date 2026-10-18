@@ -1,0 +1,331 @@
+const { Client } = require('ssh2');
+const path = require('path');
+const logger = require('../lib/logger');
+
+// Where the panel must dial to reach a guest. Every guest runs on QEMU user-mode
+// networking, so inbound SSH only arrives through a hostfwd port:
+//   - Local VMs: the forward lives on THIS box and binds 0.0.0.0, so 127.0.0.1 is
+//     always the correct (and fastest) target. serializeVm's connect_host is the
+//     node's reachable address for the USER's ssh client, which for a local VM is
+//     auto-detected as the Tailscale or public IP; dialling that from here just
+//     adds a 5s timeout whenever the mesh/public address is slow or blocked.
+//   - Remote VMs: the forward is on the node, so dial the node's own address.
+function sshTarget(vm) {
+  const remote = (Number(vm && vm.node_id) || 1) !== 1;
+  let host = '127.0.0.1';
+  let port = Number(vm && vm.ssh_port) || 22;
+  if (remote) {
+    try {
+      const s = require('./vmService').serializeVm(vm);
+      if (s && s.connect_host) host = String(s.connect_host);
+      const p = Number(s && s.connect_port);
+      if (p) port = p;
+    } catch (_) {}
+  }
+  return { host, port };
+}
+
+function attempt(vm, host, port, readyTimeout) {
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; try { conn.end(); } catch (_) {} reject(new Error('SSH connection timed out')); }
+    }, readyTimeout);
+    conn.on('ready', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(conn);
+    });
+    conn.on('error', (err) => {
+      clearTimeout(timer);
+      if (!settled) { settled = true; reject(err); }
+    });
+    conn.connect({
+      host,
+      port,
+      username: vm.username,
+      password: vm.password,
+      readyTimeout,
+      keepaliveInterval: 3000,
+      keepaliveCountMax: 5,
+    });
+  });
+}
+
+// A VM on a remote node is reached through that node's own address; loopback is
+// only ever correct for VMs this panel is hosting itself.
+function isRemoteNode(vm) {
+  return (Number(vm && vm.node_id) || 1) !== 1;
+}
+
+async function connect(vm, { readyTimeout = 5000 } = {}) {
+  if (!vm || !vm.ssh_port || !vm.username) {
+    const err = new Error('VM has no SSH configuration');
+    // Retrying cannot invent a missing port or username, and the caller retries
+    // for three minutes -- so the user waited three minutes for a message that
+    // was already known. Flagged so the retry loop gives up immediately.
+    err.permanent = true;
+    throw err;
+  }
+  const { host, port } = sshTarget(vm);
+  try {
+    return await attempt(vm, host, port, readyTimeout);
+  } catch (err) {
+    // The guest answered and then refused the credentials. A VM that is merely
+    // still booting refuses the TCP connection instead, so this cannot be a
+    // transient boot state -- retrying just burns the whole budget.
+    if (err && /authentication method|permission denied|too many authentication/i.test(String(err.message))) {
+      err.permanent = true;
+    }
+    // Retrying against loopback only makes sense for a VM on this box. For a
+    // remote node the forward lives on the node, so 127.0.0.1 is guaranteed to
+    // fail: it doubled the wait before the user saw anything and replaced the
+    // real error with a misleading loopback one, so a rejected password or a
+    // wrong host surfaced as a plain "connection problem".
+    if (host === '127.0.0.1' || isRemoteNode(vm)) throw err;
+    try {
+      return await attempt(vm, '127.0.0.1', port, readyTimeout);
+    } catch (_) {
+      // Report the original failure; the loopback attempt is a diagnostic aid,
+      // not a better answer.
+      throw err;
+    }
+  }
+}
+
+function exec(conn, cmd, { timeout = 30000 } = {}) {
+  return new Promise((resolve, reject) => {
+    conn.exec(cmd, (err, stream) => {
+      if (err) return reject(err);
+      let out = '';
+      let errOut = '';
+      let settled = false;
+      // timeout used to be destructured and then ignored, so a guest that
+      // accepted the channel and wedged left this promise pending forever and
+      // held the SSH connection open via withExec's finally.
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { stream.destroy(); } catch (_) {}
+        reject(new Error('exec timed out after ' + timeout + 'ms'));
+      }, timeout);
+      const done = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(arg);
+      };
+      stream.on('data', (d) => { out += d.toString(); });
+      stream.stderr.on('data', (d) => { errOut += d.toString(); });
+      stream.on('close', (code) => {
+        done(resolve, { code, stdout: out, stderr: errOut });
+      });
+      stream.on('error', (e) => done(reject, e));
+    });
+  });
+}
+
+async function withExec(vm, cmd, opts) {
+  let conn;
+  try {
+    conn = await connect(vm);
+    return await exec(conn, cmd, opts);
+  } finally {
+    if (conn) conn.end();
+  }
+}
+
+function shellStream(vm, { shellTimeout = 10000, readyTimeout = 5000 } = {}) {
+  return connect(vm, { readyTimeout }).then((conn) => {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer = null;
+      // Everything here settles the promise. It used not to: once attempt()
+      // had resolved, its `error` handler was inert (`if (!settled)`), and
+      // nothing at all listened for `close`. So a connection that dropped
+      // between `ready` and the shell channel opening left this promise pending
+      // forever -- shellStreamWithRetry sat in `await` with no timeout, no
+      // error and no retry, and the terminal stayed on "connecting..." until
+      // the page was reloaded. Once the shell is up, `settled` makes every
+      // listener below a no-op, leaving the live session to app.js.
+      const done = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try { conn.end(); } catch (_) {}
+        fn(arg);
+      };
+      timer = setTimeout(() => done(reject, new Error('SSH shell request timed out')), shellTimeout);
+      conn.on('error', (e) => done(reject, e));
+      conn.on('close', () => done(reject, new Error('SSH connection closed before the shell opened')));
+      conn.shell({ term: 'xterm-256color' }, (err, stream) => {
+        if (err) return done(reject, err);
+        if (settled) { try { stream.end(); } catch (_) {} return; }
+        settled = true;
+        clearTimeout(timer);
+        resolve({ conn, stream });
+      });
+    });
+  });
+}
+
+async function shellStreamWithRetry(vm, { maxRetries = 30, retryDelay = 1500, readyTimeout = 5000, shellTimeout = 10000, shouldContinue = () => true, onError = null, deadline = 0 } = {}) {
+  let lastErr;
+  let attempt = 0;
+  for (;;) {
+    if (!shouldContinue()) {
+      throw new Error('Connection cancelled');
+    }
+    if (deadline && Date.now() >= deadline) {
+      throw lastErr || new Error('SSH connection timed out');
+    }
+    try {
+      return await shellStream(vm, { readyTimeout, shellTimeout });
+    } catch (err) {
+      lastErr = err;
+      if (onError) { try { onError(err, attempt); } catch (_) {} }
+      // Nothing a retry can change: no SSH port/username, or the guest
+      // answered and rejected the credentials. Looping for the full three
+      // minutes only delays telling the user something already known.
+      if (err && err.permanent) throw err;
+      // maxRetries = 0 (or falsy) keeps retrying until shouldContinue() is false or the deadline passes
+      if (maxRetries && attempt + 1 >= maxRetries) throw lastErr;
+      attempt += 1;
+      const remaining = deadline ? deadline - Date.now() : retryDelay;
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(retryDelay, remaining))));
+    }
+  }
+}
+
+function statLineToFile(line, base) {
+  const trimmed = String(line || '').trim();
+  if (!trimmed || trimmed.startsWith('total ')) return null;
+  const parts = trimmed.split(/\s+/);
+  if (parts.length < 8) return null;
+
+  const perms = parts[0];
+  if (!/^[-dclbsp][rwxstST-]{9}/.test(perms)) return null;
+
+  const isDir = perms.startsWith('d');
+  const isLink = perms.startsWith('l');
+
+  const owner = parts[2] || 'root';
+  const group = parts[3] || 'root';
+  const size = isDir ? 0 : (parseInt(parts[4], 10) || 0);
+
+  let date = '';
+  let name = '';
+
+  if (parts.length >= 9 && !parts[5].includes('-') && !parts[5].includes(':')) {
+    // Traditional format: Mon Day Time/Year Name (e.g. Aug 25 04:30 my_file.txt)
+    date = `${parts[5]} ${parts[6]} ${parts[7]}`;
+    name = parts.slice(8).join(' ');
+  } else {
+    // ISO format: YYYY-MM-DD HH:MM Name (e.g. 2026-08-25 04:30 my_file.txt)
+    date = `${parts[5]} ${parts[6]}`;
+    name = parts.slice(7).join(' ');
+  }
+
+  name = name.replace(/^"|"$/g, '').trim();
+  if (!name || name === '.' || name === '..') return null;
+
+  if (isLink && name.includes(' -> ')) {
+    name = name.split(' -> ')[0].trim();
+  }
+
+  return {
+    name,
+    path: path.posix.join(base || '/', name),
+    type: isDir ? 'dir' : isLink ? 'link' : 'file',
+    size,
+    perms,
+    owner,
+    group,
+    date: date || '-',
+  };
+}
+
+async function listDir(vm, p = '/') {
+  const target = p && p !== '/' ? p : '/';
+  const r = await withExec(vm, `ls -la --time-style=long-iso "${target}" 2>/dev/null || ls -la "${target}"`);
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to list directory');
+  const lines = r.stdout.split('\n').filter((l) => l && !l.startsWith('total '));
+  const files = [];
+  for (const line of lines) {
+    const f = statLineToFile(line, target);
+    if (f) files.push(f);
+  }
+  files.sort((a, b) => (a.type === 'dir' ? -1 : 1) - (b.type === 'dir' ? -1 : 1) || a.name.localeCompare(b.name));
+  return files;
+}
+
+async function readFile(vm, p) {
+  const r = await withExec(vm, `cat "${p}"`, { timeout: 15000 });
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to read file');
+  return r.stdout;
+}
+
+async function writeFile(vm, p, content) {
+  const escaped = Buffer.from(content, 'utf8').toString('base64');
+  const cmd = `mkdir -p "$(dirname '${p}')" && echo '${escaped}' | base64 -d > '${p}'`;
+  const r = await withExec(vm, cmd, { timeout: 20000 });
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to write file');
+  return true;
+}
+
+async function mkdir(vm, p) {
+  const r = await withExec(vm, `mkdir -p "${p}"`);
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to create directory');
+  return true;
+}
+
+async function rm(vm, p, { recursive = true } = {}) {
+  const cmd = recursive ? `rm -rf "${p}"` : `rm -f "${p}"`;
+  const r = await withExec(vm, cmd);
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to delete');
+  return true;
+}
+
+async function rename(vm, from, to) {
+  const r = await withExec(vm, `mv "${from}" "${to}"`);
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to rename');
+  return true;
+}
+
+async function chmod(vm, p, mode) {
+  const r = await withExec(vm, `chmod ${mode} "${p}"`);
+  if (r.code !== 0) throw new Error(r.stderr || 'Failed to chmod');
+  return true;
+}
+
+function uploadBuffer(conn, remotePath, buffer, { mode = 0o644 } = {}) {
+  return new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => {
+      if (err) return reject(err);
+      sftp.writeFile(remotePath, buffer, { mode }, (e) => {
+        if (e) return reject(e);
+        resolve(true);
+      });
+    });
+  });
+}
+
+function downloadBuffer(conn, remotePath) {
+  return new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => {
+      if (err) return reject(err);
+      sftp.readFile(remotePath, (e, data) => {
+        if (e) return reject(e);
+        resolve(data);
+      });
+    });
+  });
+}
+
+module.exports = {
+  connect, exec, withExec, shellStream, shellStreamWithRetry, listDir, readFile, writeFile,
+  mkdir, rm, rename, chmod, uploadBuffer, downloadBuffer,
+  sshTarget,
+};
