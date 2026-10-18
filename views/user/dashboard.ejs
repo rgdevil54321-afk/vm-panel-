@@ -2,6 +2,7 @@
 <%- include('../partials/ambient') %>
 <%- include('../partials/topbar') %>
 <%- include('../partials/sidebar') %>
+<% const myServers = [...vms, ...(typeof subVms !== 'undefined' && Array.isArray(subVms) ? subVms : [])]; %>
 <div class="main">
   <div class="flex-between mb-4">
     <div>
@@ -23,7 +24,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
       </div>
       <div>
-        <div class="stat-value" id="heroTotal"><%= vms.length %></div>
+        <div class="stat-value" id="heroTotal"><%= myServers.length %></div>
         <div class="stat-label">Total Servers</div>
       </div>
     </div>
@@ -43,7 +44,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       </div>
       <div>
-        <div class="stat-value" id="heroCpu"><%= vms.reduce((a,v)=>a+v.cpus,0) %></div>
+        <div class="stat-value" id="heroCpu"><%= myServers.reduce((a,v)=>a+(parseInt(v.cpus,10)||0),0) %></div>
         <div class="stat-label">vCPU Cores</div>
       </div>
     </div>
@@ -53,7 +54,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
       </div>
       <div>
-        <div class="stat-value" id="heroRam"><%= (vms.reduce((a,v)=>a+v.memory,0)/1024).toFixed(1) %> GB</div>
+        <div class="stat-value" id="heroRam"><%= (myServers.reduce((a,v)=>a+(parseInt(v.memory,10)||0),0)/1024).toFixed(1) %> GB</div>
         <div class="stat-label">RAM Allocated</div>
       </div>
     </div>
@@ -73,11 +74,11 @@
             <button type="button" class="btn btn-sm vmf" data-vmf="all" onclick="setFilter('all', this)">All Servers</button>
           </div>
         <% } %>
-        <span class="muted text-sm" id="vmCount"><%= vms.length %> instance<%= vms.length === 1 ? '' : 's' %> configured</span>
+        <span class="muted text-sm" id="vmCount"><%= myServers.length %> instance<%= myServers.length === 1 ? '' : 's' %> configured</span>
       </div>
     </div>
 
-    <% if (vms.length === 0 && !allVms.length) { %>
+    <% if (myServers.length === 0 && !allVms.length) { %>
       <div class="empty-state">
         <svg class="empty-state__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="34" height="34"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
         <p class="empty-state__title">No servers deployed yet</p>
@@ -101,7 +102,7 @@
             </tr>
           </thead>
           <tbody>
-          <% for (const v of (canSeeAll && allVms.length ? allVms : vms)) { %>
+          <% for (const v of (canSeeAll && allVms.length ? allVms : myServers)) { %>
             <tr id="vm-row-<%= v.id %>" data-mine="<%= v.mine ? 1 : 0 %>" data-vcpu="<%= v.cpus || 0 %>" data-ram="<%= v.memory || 0 %>" data-status="<%= v.status %>">
               <td>
                 <div class="flex" style="gap:10px">
