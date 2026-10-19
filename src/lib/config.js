@@ -1,14 +1,42 @@
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const root = path.resolve(__dirname, '..', '..');
 
+// NaN-safe port parsing: a garbage PANEL_PORT/API_PORT must not reach listen().
+function intPort(name, def) {
+  const n = parseInt(process.env[name], 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+// The old hardcoded fallback secret let anyone with the source forge panel
+// tokens. When JWT_SECRET is unset we generate one and persist it under data/
+// so sessions survive restarts.
+function loadJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const file = path.join(root, 'data', '.jwt-secret');
+  try {
+    const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : '';
+    if (existing) return existing;
+    const generated = crypto.randomBytes(32).toString('hex');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, generated, { mode: 0o600 });
+    return generated;
+  } catch (e) {
+    throw new Error('JWT_SECRET is not set and ' + file + ' could not be written; set JWT_SECRET in .env');
+  }
+}
+
+const panelPort = intPort('PANEL_PORT', 3001);
+
 const config = {
   root,
-  panelPort: parseInt(process.env.PANEL_PORT || '3001', 10),
-  apiPort: parseInt(process.env.API_PORT || '3002', 10),
-  panelUrl: process.env.PANEL_URL || `http://localhost:${parseInt(process.env.PANEL_PORT || '3001', 10)}`,
-  jwtSecret: process.env.JWT_SECRET || 'vpanel-insecure-secret-change-me',
+  panelPort,
+  apiPort: intPort('API_PORT', 3002),
+  panelUrl: process.env.PANEL_URL || `http://localhost:${panelPort}`,
+  jwtSecret: loadJwtSecret(),
   jwtExpires: process.env.JWT_EXPIRES || '7d',
   dbPath: path.resolve(root, process.env.DB_PATH || 'data/vpanel.db'),
   vmDir: path.resolve(root, process.env.VM_DIR || 'vms'),

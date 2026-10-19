@@ -29,14 +29,16 @@ function rotateIfNeeded(file) {
 }
 
 function log(level, ...args) {
-  const cfg = require('./config');
-  const lvl = levels[cfg.logLevel] ?? levels.info;
+  // Logging must never throw: if config cannot load, still emit to console.
+  let cfg = null;
+  try { cfg = require('./config'); } catch (_) { cfg = null; }
+  const lvl = levels[(cfg && cfg.logLevel)] ?? levels.info;
   if (levels[level] > lvl) return;
   const ts = new Date().toISOString();
   const line = `[${ts}] [${level.toUpperCase()}] ${args.join(' ')}`;
   console.log(line);
   try {
-    const dir = path.resolve(cfg.root, 'storage/logs');
+    const dir = path.resolve((cfg && cfg.root) || process.cwd(), 'storage/logs');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'panel.log');
     const now = Date.now();

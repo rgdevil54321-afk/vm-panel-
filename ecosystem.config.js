@@ -7,6 +7,9 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_memory_restart: '1G',
+      // server.js needs up to 8s to write the recovery code on stop; pm2's
+      // default kill_timeout (1600ms) SIGKILLed it mid-export every time.
+      kill_timeout: 12000,
       env: {
         NODE_ENV: 'production',
       },

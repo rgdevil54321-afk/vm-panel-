@@ -45,7 +45,7 @@ function createNode({ name, host, port, agent_token, location }) {
     now()
   );
   const id = Number(info.lastInsertRowid);
-  probeNode(id);
+  probeNode(id, { force: true });
   return getNode(id);
 }
 
@@ -84,7 +84,7 @@ function updateNode(id, data) {
     vals.updated_at = now();
     db.prepare(`UPDATE nodes SET ${set.join(', ')} WHERE id = @id`).run({ ...vals, id });
   }
-  probeNode(id);
+  probeNode(id, { force: true });
   return getNode(id);
 }
 
@@ -105,7 +105,7 @@ function nodeVmCount(nodeId) {
 }
 
 // ---------- Agent HTTP client ----------
-function agentRequest(node, { method = 'GET', path = '/', headers = {}, body } = {}) {
+function agentRequest(node, { method = 'GET', path = '/', headers = {}, body, timeout = 8000 } = {}) {
   return new Promise((resolve, reject) => {
     const isHttps = String(node.host).startsWith('https://');
     let hostname = String(node.host).replace(/^https?:\/\//, '');
@@ -123,20 +123,26 @@ function agentRequest(node, { method = 'GET', path = '/', headers = {}, body } =
     if (body && !outHeaders['Content-Type']) {
       outHeaders['Content-Type'] = 'application/json';
     }
+    // Settle exactly once: a response that dies mid-stream never emits 'end',
+    // which previously left the promise — and its caller — hanging forever.
+    let settled = false;
+    const settle = (fn, v) => { if (!settled) { settled = true; fn(v); } };
     const req = mod.request({
       hostname,
       port,
       method,
       path,
-      timeout: 8000,
+      timeout,
       headers: outHeaders,
     }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      res.on('end', () => settle(resolve, { status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      res.on('error', (e) => settle(reject, e));
+      res.on('close', () => settle(reject, new Error('Agent connection closed before response completed')));
     });
     req.on('timeout', () => req.destroy(new Error('Agent request timed out')));
-    req.on('error', reject);
+    req.on('error', (e) => settle(reject, e));
     if (body) req.write(body);
     req.end();
   });
@@ -156,9 +162,18 @@ async function agentJson(node, opts) {
 }
 
 // ---------- Capacity / probe ----------
+const PROBING = new Set();     // probes currently in flight
+const PROBE_FAILS = new Map(); // nodeId -> consecutive failures
+const PROBE_UNTIL = new Map(); // nodeId -> earliest next attempt (backoff while down)
+
 function markNode(id, status) {
-  db.prepare('UPDATE nodes SET status = ?, last_seen_at = ?, updated_at = ? WHERE id = ?')
-    .run(status, status === 'online' ? now() : null, now(), id);
+  if (status === 'online') {
+    db.prepare('UPDATE nodes SET status = ?, last_seen_at = ?, updated_at = ? WHERE id = ?')
+      .run(status, now(), now(), id);
+  } else {
+    // last_seen_at is the last successful contact — never blank it on offline.
+    db.prepare('UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);
+  }
 }
 
 async function fetchNodeStats(node) {
@@ -188,18 +203,30 @@ async function fetchNodeStats(node) {
   return stats;
 }
 
-function probeNode(nodeId) {
+function probeNode(nodeId, { force = false } = {}) {
+  // Heartbeat interval equals the request timeout, so probes can overlap and
+  // race each other's status writes — only one at a time per node.
+  if (PROBING.has(nodeId)) return;
+  if (!force && Date.now() < (PROBE_UNTIL.get(nodeId) || 0)) return; // backoff for down nodes
   const node = getNode(nodeId);
   if (!node) return;
+  PROBING.add(nodeId);
   fetchNodeStats(node)
     .then((stats) => {
       STATS_CACHE.set(nodeId, stats);
+      CONN_CACHE.delete(nodeId); // clear the stale error so the UI stops showing it
+      PROBE_FAILS.delete(nodeId);
+      PROBE_UNTIL.delete(nodeId);
       markNode(nodeId, 'online');
     })
     .catch((e) => {
       CONN_CACHE.set(nodeId, e.message);
+      const fails = (PROBE_FAILS.get(nodeId) || 0) + 1;
+      PROBE_FAILS.set(nodeId, fails);
+      PROBE_UNTIL.set(nodeId, Date.now() + Math.min(60000, 8000 * 2 ** (fails - 1)));
       markNode(nodeId, 'offline');
-    });
+    })
+    .finally(() => PROBING.delete(nodeId));
 }
 
 function startHeartbeat(intervalMs = 8000) {
@@ -243,32 +270,35 @@ async function createVmOnNode(node, payload) {
     method: 'POST',
     path: '/vms',
     body: JSON.stringify(payload),
+    timeout: 300000, // the agent downloads the base image synchronously; can take minutes
   });
 }
 
 async function startVmOnNode(node, vm) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/start` });
+  // Agent-side start/stop block on pidfile and port-release waits, so the 8s
+  // default aborted mid-work and reported false "start/stop failed" errors.
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/start`, timeout: 60000 });
 }
 async function stopVmOnNode(node, vm, force) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/stop`, body: JSON.stringify({ force: !!force }) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/stop`, body: JSON.stringify({ force: !!force }), timeout: 60000 });
 }
 async function restartVmOnNode(node, vm) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/restart` });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/restart`, timeout: 60000 });
 }
 async function deleteVmOnNode(node, vm) {
-  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}` });
+  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}`, timeout: 60000 });
 }
 async function patchVmOnNode(node, vm, data) {
   return agentJson(node, { method: 'PATCH', path: `/vms/${vm.uuid}`, body: JSON.stringify(data || {}) });
 }
 async function resizeVmOnNode(node, vm, newSize) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/resize`, body: JSON.stringify({ disk_size: newSize }) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/resize`, body: JSON.stringify({ disk_size: newSize }), timeout: 120000 });
 }
 async function addDiskOnNode(node, vm, data) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/disks`, body: JSON.stringify(data) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/disks`, body: JSON.stringify(data || {}), timeout: 120000 });
 }
 async function growDiskOnNode(node, vm, name, size) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/disks/${encodeURIComponent(name)}/resize`, body: JSON.stringify({ size }) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/disks/${encodeURIComponent(name)}/resize`, body: JSON.stringify({ size }), timeout: 120000 });
 }
 async function vmStatsOnNode(node, vm) {
   return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/stats` });
@@ -281,22 +311,22 @@ async function vmBootLogOnNode(node, vm) {
   return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/bootlog` });
 }
 async function reinstallVmOnNode(node, vm, data) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/reinstall`, body: JSON.stringify(data || {}) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/reinstall`, body: JSON.stringify(data || {}), timeout: 300000 });
 }
 async function tmateVmOnNode(node, vm, regen) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/tmate${regen ? '/regen' : ''}`, body: '{}' });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/tmate${regen ? '/regen' : ''}`, body: '{}', timeout: 300000 });
 }
 async function listSnapshotsOnNode(node, vm) {
   return agentJson(node, { method: 'GET', path: `/vms/${vm.uuid}/snapshots` });
 }
 async function createSnapshotOnNode(node, vm, name) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/snapshots`, body: JSON.stringify({ name }) });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/snapshots`, body: JSON.stringify({ name }), timeout: 120000 });
 }
 async function revertSnapshotOnNode(node, vm, name) {
-  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/snapshots/${encodeURIComponent(name)}/revert` });
+  return agentJson(node, { method: 'POST', path: `/vms/${vm.uuid}/snapshots/${encodeURIComponent(name)}/revert`, timeout: 120000 });
 }
 async function deleteSnapshotOnNode(node, vm, name) {
-  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}/snapshots/${encodeURIComponent(name)}` });
+  return agentJson(node, { method: 'DELETE', path: `/vms/${vm.uuid}/snapshots/${encodeURIComponent(name)}`, timeout: 60000 });
 }
 async function listVmsOnNode(node) {
   const d = await agentJson(node, { method: 'GET', path: '/vms' });
@@ -314,7 +344,7 @@ async function pushUpdateToNode(node) {
   if (node.id === 1 && node.agent_token === 'local-primary-no-agent') {
     throw new Error('Primary node is the panel itself and is updated in place (git pull + npm install + restart).');
   }
-  const data = await agentJson(node, { method: 'POST', path: '/update', body: JSON.stringify({}) });
+  const data = await agentJson(node, { method: 'POST', path: '/update', body: JSON.stringify({}), timeout: 300000 }); // git clone + npm install on the node
   return data;
 }
 
@@ -396,7 +426,7 @@ async function onboardNodeByKey(key, { location } = {}) {
     agent_token: token,
     location: location || meta.location || '',
   });
-  probeNode(node.id);
+  probeNode(node.id, { force: true });
   return node;
 }
 

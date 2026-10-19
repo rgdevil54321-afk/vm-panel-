@@ -32,6 +32,26 @@ function authenticate(vmId, req) {
   return { user, vm };
 }
 
+// ws has no 'drain' event, so while the browser socket is backed up we pause
+// the source and poll bufferedAmount until it drains; without this a stalled
+// VNC viewer buffers the whole server->browser stream in memory.
+const BACKPRESSURE_HIGH = 8 * 1024 * 1024;
+const BACKPRESSURE_LOW = 512 * 1024;
+
+function wsSend(ws, data, source) {
+  if (ws.readyState !== ws.OPEN) return;
+  ws.send(data, { binary: true });
+  if (ws.bufferedAmount <= BACKPRESSURE_HIGH) return;
+  source.pause();
+  const poll = setInterval(() => {
+    if (ws.readyState !== ws.OPEN || ws.bufferedAmount <= BACKPRESSURE_LOW) {
+      clearInterval(poll);
+      if (ws.readyState === ws.OPEN) source.resume();
+    }
+  }, 25);
+  if (poll.unref) poll.unref();
+}
+
 // Local VMs: raw TCP to the loopback VNC port.
 function attachLocal(ws, vm) {
   const tcp = net.connect({ host: '127.0.0.1', port: vm.vnc_port });
@@ -40,7 +60,7 @@ function attachLocal(ws, vm) {
 
   ws.on('message', (data) => {
     if (tcpReady) tcp.write(data);
-    else pending.push(data);
+    else if (pending.length < 65536) pending.push(data);
   });
 
   tcp.on('connect', () => {
@@ -49,7 +69,7 @@ function attachLocal(ws, vm) {
   });
 
   tcp.on('data', (data) => {
-    if (ws.readyState === ws.OPEN) ws.send(data, { binary: true });
+    wsSend(ws, data, tcp);
   });
 
   const cleanup = () => {
@@ -78,6 +98,13 @@ function attachRemote(ws, vm, node) {
   let agentReady = false;
   const pending = [];
 
+  // ws WebSockets expose no pause()/resume(), so backpressure reaches the
+  // underlying socket directly.
+  const agentSource = {
+    pause: () => { try { if (agentWs._socket) agentWs._socket.pause(); } catch (_) {} },
+    resume: () => { try { if (agentWs._socket) agentWs._socket.resume(); } catch (_) {} },
+  };
+
   ws.on('message', (data) => {
     if (agentReady && agentWs.readyState === WebSocket.OPEN) agentWs.send(data, { binary: true });
     else if (pending.length < 65536) pending.push(data);
@@ -92,7 +119,7 @@ function attachRemote(ws, vm, node) {
   });
 
   agentWs.on('message', (data, isBinary) => {
-    if (ws.readyState === ws.OPEN) ws.send(data, { binary: isBinary || true });
+    wsSend(ws, data, agentSource);
   });
 
   agentWs.on('error', () => {
@@ -133,18 +160,26 @@ function attachVncProxy(server) {
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const vm = ctx.vm;
-      const nodeId = vm.node_id || 1;
-      let node = null;
-      if (nodeId !== 1) {
-        try { node = nodeRegistry.getNode(nodeId); } catch (_) {}
-      }
-      if (!node || !node.agent_token || node.agent_token === 'local-primary-no-agent') {
-        attachLocal(ws, vm);
-        logger.debug(`[vnc] ${ctx.user.username} -> vm ${vm.id} (local, port ${vm.vnc_port})`);
-      } else {
-        attachRemote(ws, vm, node);
-        logger.debug(`[vnc] ${ctx.user.username} -> vm ${vm.id} via node ${node.name} (${node.host}:${node.port})`);
+      try {
+        const vm = ctx.vm;
+        const nodeId = vm.node_id || 1;
+        let node = null;
+        if (nodeId !== 1) {
+          try { node = nodeRegistry.getNode(nodeId); } catch (_) {}
+        }
+        if (!node || !node.agent_token || node.agent_token === 'local-primary-no-agent') {
+          attachLocal(ws, vm);
+          logger.debug(`[vnc] ${ctx.user.username} -> vm ${vm.id} (local, port ${vm.vnc_port})`);
+        } else {
+          attachRemote(ws, vm, node);
+          logger.debug(`[vnc] ${ctx.user.username} -> vm ${vm.id} via node ${node.name} (${node.host}:${node.port})`);
+        }
+      } catch (e) {
+        // A sync throw here (malformed node host -> new WebSocket, bad vnc_port
+        // -> net.connect, db error in getVm) would leave the browser's upgrade
+        // hanging forever and escape into ws internals; close it instead.
+        logger.warn(`[vnc] proxy setup failed for vm ${m[1]}: ${e.message}`);
+        try { ws.close(1011, 'Proxy setup failed'); } catch (_) {}
       }
     });
   });

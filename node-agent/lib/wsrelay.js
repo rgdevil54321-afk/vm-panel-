@@ -148,6 +148,11 @@ function safeDestroy(s) {
 
 // Handle an HTTP upgrade request for /vncws/:vmId
 function handleUpgrade(req, socket, head, { auth, getVncPort }) {
+  // The upgraded socket can emit 'error' (client reset) on the next tick,
+  // before relay() attaches its handlers — and on the early-return paths below
+  // it never attaches at all. Without a listener that is an uncaughtException.
+  socket.on('error', () => {});
+
   const m = req.url.match(/^\/vncws\/([^/?#]+)/);
   if (!m) return safeDestroy(socket);
 
@@ -182,6 +187,12 @@ function handleUpgrade(req, socket, head, { auth, getVncPort }) {
   if (head && head.length) socket.unshift(head);
 
   const tcp = net.connect({ host: '127.0.0.1', port });
+  tcp.setKeepAlive(true, 30000);
+  // If the local VNC port never accepts, drop the relay instead of leaving a
+  // half-open session the panel waits on forever.
+  const connectTimer = setTimeout(() => tcp.destroy(new Error('VNC connect timeout')), 10000);
+  tcp.once('connect', () => clearTimeout(connectTimer));
+  tcp.once('close', () => clearTimeout(connectTimer));
   relay(socket, tcp, () => {});
 }
 

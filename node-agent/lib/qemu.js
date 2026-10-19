@@ -1,4 +1,5 @@
 'use strict';
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -610,7 +611,11 @@ function deriveGateway(addr, prefix) {
 
 function writeSeed(vm) {
   const dir = vmDir(vm);
-  const passHash = spawnSync('openssl', ['passwd', '-6', vm.password], { encoding: 'utf8' }).stdout.trim();
+  // spawnSync returns stdout:null when openssl is missing — without this guard
+  // .trim() threw and the seed was never written.
+  const hashed = spawnSync('openssl', ['passwd', '-6', String(vm.password || '')], { encoding: 'utf8' });
+  const passHash = (hashed && hashed.stdout ? hashed.stdout : '').trim();
+  if (!passHash) throw new Error('openssl could not hash the VM password — install openssl on this node (apt-get install openssl)');
 
   const blocks = [];
   const tz = String(vm.timezone || '').trim();
@@ -1605,6 +1610,8 @@ function updateAgent({ repo, branch, log }) {
   }
   // 4. Restart the service in background.
   const child = spawn('systemctl', ['restart', 'venlix-node'], { detached: true, stdio: 'ignore' });
+  // No 'error' listener = uncaughtException when systemctl is absent (containers).
+  child.on('error', (e) => log('service restart failed: ' + e.message));
   child.unref();
   log('update complete; restarting venlix-node service');
   return { ok: true, message: 'Agent updated and restarting' };
@@ -1699,8 +1706,11 @@ async function getTmateSsh(vm) {
 }
 
 async function regenerateTmate(vm) {
-  await stopVm(vm, true).catch(() => {});
-  await startVm(vm);
+  // stopVm/startVm are synchronous and return an object — the old `await
+  // stopVm(...).catch(...)` threw a TypeError and made every tmate regen fail.
+  stopVm(vm, true);
+  const started = startVm(vm);
+  if (started && started.ok === false) throw new Error(started.error || 'VM failed to start for tmate regeneration');
   await new Promise((r) => setTimeout(r, 30000));
   return getTmateSsh(vm);
 }
@@ -1719,7 +1729,7 @@ async function reinstallVm(vm, { os } = {}) {
   } else {
     entry = osList.find((o) => o[0] === vm.os_name) || osList[0] || [];
   }
-  await stopVm(vm, true).catch(() => {});
+  stopVm(vm, true);
 
   if (vm.img_file && fs.existsSync(vm.img_file)) {
     try { fs.unlinkSync(vm.img_file); } catch (e) {}
@@ -1738,7 +1748,10 @@ async function reinstallVm(vm, { os } = {}) {
   state.upsertVm(vm);
 
   prepareImage(vm);
-  await startVm(vm);
+  const started = startVm(vm);
+  // Report a failed boot instead of answering ok:true — the panel would show
+  // "reinstalled" for a VM that never came up.
+  if (started && started.ok === false) throw new Error(started.error || 'VM failed to start after reinstall');
   return { ok: true, vm };
 }
 

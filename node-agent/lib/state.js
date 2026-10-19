@@ -32,6 +32,9 @@ function load() {
     try {
       state = Object.assign(defaultState(), JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')));
     } catch (e) {
+      // Keep the unreadable file for manual recovery — the next save() would
+      // otherwise overwrite it and permanently wipe every VM record.
+      try { fs.renameSync(STATE_FILE, STATE_FILE + '.corrupt'); } catch (_) {}
       state = defaultState();
     }
   } else {

@@ -245,7 +245,10 @@ function attachConsoleSocket(io) {
       try { session.stream.setWindow(session.rows || 24, session.cols || 80); } catch (_) {}
     }
 
-    socket.on('console:join', ({ vmId, terminalId, reattach }) => {
+    // All payload handlers default to {} : a client emit with no payload would
+    // otherwise throw in the destructure, and that sync throw escapes into the
+    // ws message path (uncaughtException + a broken connection).
+    socket.on('console:join', ({ vmId, terminalId, reattach } = {}) => {
       const vid = parseInt(vmId, 10);
       const vm = vmService.getVm(vid);
       if (!vm || !vmService.canAccess(socket.data.user, vm, 'console')) {
@@ -352,6 +355,11 @@ function attachConsoleSocket(io) {
             lastActivity: Date.now(),
             closed: false,
           };
+          // A racing join with the same terminal id may have created this
+          // session already; set() would orphan the old one -- still streaming
+          // but unreachable by findSession/GC/closeSession.
+          const prev = sessionsFor(vid).get(sid);
+          if (prev && prev !== session) closeSession(prev, 'replaced');
           sessionsFor(vid).set(sid, session);
           stream.on('data', (d) => {
             if (session.closed) return;
@@ -405,12 +413,18 @@ function attachConsoleSocket(io) {
       }
     });
 
-    socket.on('console:kill', ({ sessionId }) => {
+    socket.on('console:kill', ({ sessionId } = {}) => {
       const s = sessionId && findSession(sessionId);
-      if (s) closeSession(s, 'killed');
+      if (!s) return;
+      // Session ids are client-chosen and findSession searches every VM, so
+      // without this gate any authenticated user could kill another user's
+      // terminal by guessing its id.
+      const vm = vmService.getVm(s.vmId);
+      if (!vm || !vmService.canAccess(socket.data.user, vm, 'console')) return;
+      closeSession(s, 'killed');
     });
 
-    socket.on('console:input', ({ sessionId, data }) => {
+    socket.on('console:input', ({ sessionId, data } = {}) => {
       if (!sessionId || typeof data !== 'string' || !data) return;
       const s = findSession(sessionId);
       if (s && !s.closed && s.clients.has(socket)) {
@@ -419,7 +433,7 @@ function attachConsoleSocket(io) {
       }
     });
 
-    socket.on('console:resize', ({ sessionId, cols, rows }) => {
+    socket.on('console:resize', ({ sessionId, cols, rows } = {}) => {
       cols = Math.max(20, Math.min(500, parseInt(cols, 10) || 80));
       rows = Math.max(5, Math.min(300, parseInt(rows, 10) || 24));
       socket.data.cols = cols;
@@ -432,7 +446,7 @@ function attachConsoleSocket(io) {
       }
     });
 
-    socket.on('bootlog:join', ({ vmId }) => {
+    socket.on('bootlog:join', ({ vmId } = {}) => {
       const vm = vmService.getVm(parseInt(vmId, 10));
       if (!vm || !vmService.canAccess(socket.data.user, vm, 'console')) {
         socket.emit('bootlog:error', 'Access denied or server not found');
@@ -468,7 +482,7 @@ function attachConsoleSocket(io) {
       }
     });
 
-    socket.on('bootlog:clear', ({ vmId }) => {
+    socket.on('bootlog:clear', ({ vmId } = {}) => {
       const vm = vmService.getVm(parseInt(vmId, 10));
       if (!vm || !vmService.canAccess(socket.data.user, vm, 'console')) {
         socket.emit('bootlog:error', 'Access denied or server not found');

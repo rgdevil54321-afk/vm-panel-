@@ -51,7 +51,7 @@ function serializeVm(vm) {
   return out;
 }
 
-function readBody(req, limit = 300 * 1024 * 1024) {
+function readBody(req, limit = 64 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -80,7 +80,13 @@ function auth(req) {
   const h = req.headers['authorization'] || '';
   const provided = h.startsWith('Bearer ') ? h.slice(7) : (req.headers['x-agent-token'] || '');
   if (!provided) return false;
-  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(TOKEN));
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(String(TOKEN));
+  // timingSafeEqual throws on length mismatch; inside the async request handler
+  // that becomes an unhandledRejection and kills the agent on any wrong-length
+  // token, so reject it here instead.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -118,7 +124,11 @@ const server = http.createServer(async (req, res) => {
       env = env.split('\n').filter((l) => !/^AGENT_TOKEN=/.test(l)).join('\n');
       if (env && !env.endsWith('\n')) env += '\n';
       env += 'AGENT_TOKEN=' + tokenToStore + '\n';
-      fs.writeFileSync(envPath, env, 'utf8');
+      // Atomic replace: a crash mid-write would corrupt .env and lose every
+      // AGENT_* setting the node needs to boot and rejoin.
+      const tmpPath = envPath + '.tmp';
+      fs.writeFileSync(tmpPath, env, 'utf8');
+      fs.renameSync(tmpPath, envPath);
       // Consume the join code so it cannot be used again.
       state.setJoinCode('');
       const s = state.get();
@@ -311,6 +321,7 @@ const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { ok: false, error: 'Not found' });
   } catch (e) {
+    if (e && e.message === 'Payload too large') return json(res, 413, { ok: false, error: 'Payload too large' });
     return json(res, 500, { ok: false, error: e.message });
   }
 });
@@ -326,6 +337,13 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
+server.on('error', (e) => {
+  process.stderr.write('[venlix-node] server failed to start: ' + (e.stack || e.message) + '\n');
+  // Exit so systemd (on-failure) restarts us; otherwise EADDRINUSE leaves a
+  // zombie process that serves nothing while reporting "active".
+  process.exit(1);
+});
+
 server.listen(PORT, HOST, () => {
   process.stdout.write(`[venlix-node] agent listening on ${HOST}:${PORT}\n`);
 });
@@ -335,8 +353,21 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// systemd sends SIGTERM on stop/restart; handle it like SIGINT instead of
+// letting the default action kill the process without a log line.
+process.on('SIGTERM', () => {
+  process.stdout.write('[venlix-node] shutting down\n');
+  process.exit(0);
+});
+
 process.on('uncaughtException', (e) => {
   process.stderr.write('[venlix-node] uncaught: ' + (e.stack || e.message) + '\n');
+});
+
+// Without this handler Node's default is to crash, which is what made agents
+// drop connections after any stray rejection.
+process.on('unhandledRejection', (e) => {
+  process.stderr.write('[venlix-node] unhandled rejection: ' + ((e && (e.stack || e.message)) || String(e)) + '\n');
 });
 
 setTimeout(() => qemu.startOnBootAll(), 3000);

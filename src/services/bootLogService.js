@@ -136,12 +136,24 @@ function createBootLogStream(vm, { onData, onError, onClose, pollInterval = 300 
   try {
     if (fs.existsSync(bootLogPath)) {
       bootWatcher = fs.watch(bootLogPath, () => checkUpdates());
+      // fs.watch emits 'error' asynchronously (watch/inotify limit exhaustion);
+      // unlistened that is an uncaughtException. The poll interval keeps tailing.
+      bootWatcher.on('error', (e) => {
+        logger.warn(`[bootlog] watch error on ${bootLogPath}: ${e.message}`);
+        try { bootWatcher.close(); } catch (_) {}
+        bootWatcher = null;
+      });
     }
   } catch (_) {}
 
   try {
     if (fs.existsSync(qemuLogPath)) {
       qemuWatcher = fs.watch(qemuLogPath, () => checkUpdates());
+      qemuWatcher.on('error', (e) => {
+        logger.warn(`[bootlog] watch error on ${qemuLogPath}: ${e.message}`);
+        try { qemuWatcher.close(); } catch (_) {}
+        qemuWatcher = null;
+      });
     }
   } catch (_) {}
 

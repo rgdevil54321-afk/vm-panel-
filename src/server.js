@@ -1,35 +1,17 @@
 #!/usr/bin/env node
 process.title = 'venlix-nodes';
 
-// CLI first-run DB restore:  node src/server.js --restore-code ./code.file
-const restoreIdx = process.argv.indexOf('--restore-code');
-if (restoreIdx !== -1 && process.argv[restoreIdx + 1]) {
-  const { restoreFromCodeFile } = require('./services/dbTransferService');
-  try {
-    restoreFromCodeFile(process.argv[restoreIdx + 1]);
-  } catch (e) {
-    console.error('[restore] failed: ' + e.message);
-    process.exit(1);
-  }
-}
-
-const { bootstrap } = require('./app');
 const logger = require('./lib/logger');
-const dbTransfer = require('./services/dbTransferService');
 
-const { io } = bootstrap();
-
-// emergencyCode() is async: it runs db.backup() then reads the snapshot into
-// memory and encodes it. Calling it without awaiting, then exiting on the next
-// line, tore the process down mid-export every time, so the one moment we most
-// wanted a recovery code was the moment it never finished writing. Returns a
-// promise that never rejects, and caps the wait so a hung backup cannot block
-// shutdown indefinitely.
+// Cap so a hung backup cannot block shutdown indefinitely.
 const SHUTDOWN_DUMP_TIMEOUT_MS = 8000;
 
 async function crashDump(reason) {
   const timer = new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DUMP_TIMEOUT_MS));
   try {
+    // Lazy require: an early-boot failure may leave dbTransfer unloadable, and
+    // that must not turn into a second uncaught error while dying.
+    const dbTransfer = require('./services/dbTransferService');
     await Promise.race([Promise.resolve(dbTransfer.emergencyCode(reason)), timer]);
   } catch (e) {
     logger.error('[panel] emergency code failed: ' + e.message);
@@ -51,18 +33,56 @@ function shutdown(signal, reason) {
     });
 }
 
+// False until bootstrap() returned: before that nothing is serving, so any
+// fatal error must exit for pm2/systemd to restart us instead of leaving an
+// "online" process with a dead port.
+let booted = false;
+
+function fatal(err) {
+  const code = err && err.code;
+  if (code === 'EADDRINUSE' || code === 'EACCES' || code === 'EPERM') {
+    logger.error('[panel] cannot bind port (' + code + '): ' + (err.message || '') +
+      ' — another instance is probably still running; stop it or free the port');
+    process.exit(1);
+  }
+  if (!booted) {
+    logger.error('[panel] fatal startup error: ' + (err && (err.stack || err.message) || err));
+    process.exit(1);
+  }
+}
+
+// Handlers are registered before app/bootstrap so crashes during module load
+// or startup are logged and recovered instead of bypassing them.
 process.on('SIGINT', () => shutdown('shutting down', 'SIGINT'));
 process.on('SIGTERM', () => shutdown('terminating', 'SIGTERM'));
 
-// A rejection or exception is logged and the process keeps serving, which is
-// deliberate: one bad request should not take the panel down. Neither handler
-// exits.
+// Post-boot an uncaught exception is logged and the process keeps serving
+// (one bad request should not take the panel down), but bind errors and any
+// failure before startup completes exit so the supervisor can recover.
 process.on('uncaughtException', (e) => {
-  logger.error('[panel] uncaught exception: ' + e.stack);
+  logger.error('[panel] uncaught exception: ' + (e && (e.stack || e.message) || e));
+  fatal(e);
   crashDump('uncaughtException').catch(() => {});
 });
 
 process.on('unhandledRejection', (e) => {
-  logger.error('[panel] unhandled rejection: ' + (e && e.stack || e));
+  logger.error('[panel] unhandled rejection: ' + (e && (e.stack || e.message) || e));
+  fatal(e);
   crashDump('unhandledRejection').catch(() => {});
 });
+
+// CLI first-run DB restore:  node src/server.js --restore-code ./code.file
+const restoreIdx = process.argv.indexOf('--restore-code');
+if (restoreIdx !== -1 && process.argv[restoreIdx + 1]) {
+  try {
+    const { restoreFromCodeFile } = require('./services/dbTransferService');
+    restoreFromCodeFile(process.argv[restoreIdx + 1]);
+  } catch (e) {
+    console.error('[restore] failed: ' + e.message);
+    process.exit(1);
+  }
+}
+
+const { bootstrap } = require('./app');
+const { io } = bootstrap();
+booted = true;

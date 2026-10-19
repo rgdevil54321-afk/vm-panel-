@@ -98,14 +98,18 @@ function deliver(hook, event, payload) {
     if (hook.secret && kind === 'generic') {
       opts.headers['X-Venlix-Signature'] = 'sha256=' + crypto.createHmac('sha256', String(hook.secret)).update(body).digest('hex');
     }
+    // Settle exactly once: req.destroy() on timeout does not reliably emit
+    // 'error', and without a 'close' fallback this promise — and every caller
+    // awaiting emit() — hung forever on a stuck webhook endpoint.
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
     const req = mod.request(opts, (res) => {
-      let buf = '';
-      res.on('data', (d) => { buf += d; });
       res.resume();
-      res.on('end', () => resolve(res.statusCode >= 200 && res.statusCode < 300));
+      res.on('end', () => done(res.statusCode >= 200 && res.statusCode < 300));
     });
-    req.on('error', () => resolve(false));
-    req.setTimeout(10000, () => req.destroy());
+    req.on('error', () => done(false));
+    req.on('close', () => done(false));
+    req.setTimeout(10000, () => req.destroy(new Error('webhook timeout')));
     req.write(body);
     req.end();
   });

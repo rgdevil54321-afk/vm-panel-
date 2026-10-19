@@ -9,10 +9,26 @@ if (!fs.existsSync(path.dirname(config.dbPath))) {
 }
 
 const db = new Database(config.dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+try { db.pragma('journal_mode = WAL'); } catch (e) { logger.warn('[db] journal_mode: ' + e.message); }
+try { db.pragma('foreign_keys = ON'); } catch (e) { logger.warn('[db] foreign_keys: ' + e.message); }
 
-db.exec(`
+// Migrations below re-run on every boot. On databases created by an older
+// schema the same table/index/column can already exist in another shape; those
+// idempotency errors are logged and skipped so an existing install still boots,
+// while genuine SQL errors keep failing loudly.
+function safeExec(sql) {
+  try {
+    db.exec(sql);
+  } catch (e) {
+    if (/already exists|already a (table|view)|duplicate column name|no such column|no such table/i.test(String(e.message))) {
+      logger.warn('[db] migration skipped: ' + e.message);
+      return;
+    }
+    throw e;
+  }
+}
+
+safeExec(`
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
@@ -448,54 +464,54 @@ const defaultSettings = {
 
 const vmsColumns = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 if (!vmsColumns.includes('vnc_port')) {
-  db.exec('ALTER TABLE vms ADD COLUMN vnc_port INTEGER');
+  safeExec('ALTER TABLE vms ADD COLUMN vnc_port INTEGER');
 }
 if (!vmsColumns.includes('agent_port')) {
-  db.exec('ALTER TABLE vms ADD COLUMN agent_port INTEGER');
+  safeExec('ALTER TABLE vms ADD COLUMN agent_port INTEGER');
 }
 if (!vmsColumns.includes('agent_token')) {
-  db.exec('ALTER TABLE vms ADD COLUMN agent_token TEXT');
+  safeExec('ALTER TABLE vms ADD COLUMN agent_token TEXT');
 }
 if (!vmsColumns.includes('node_id')) {
-  db.exec('ALTER TABLE vms ADD COLUMN node_id INTEGER');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_vms_node ON vms(node_id)');
+  safeExec('ALTER TABLE vms ADD COLUMN node_id INTEGER');
+  safeExec('CREATE INDEX IF NOT EXISTS idx_vms_node ON vms(node_id)');
 }
 // RAM overcommit ratio (display + creation-only guard). Default 1.0 = strict.
 const nodeCols = db.prepare('PRAGMA table_info(nodes)').all().map((c) => c.name);
 if (!nodeCols.includes('ram_overcommit_ratio')) {
-  db.exec('ALTER TABLE nodes ADD COLUMN ram_overcommit_ratio REAL NOT NULL DEFAULT 1.0');
+  safeExec('ALTER TABLE nodes ADD COLUMN ram_overcommit_ratio REAL NOT NULL DEFAULT 1.0');
 }
 // Pinned ceiling (MB) on the total RAM VMs may use at once on a node. 0 = auto
 // (physical RAM minus a reserve kept for the panel). Enforced at start so guests
 // can never starve the panel process and get it OOM-killed.
 if (!nodeCols.includes('max_vm_memory_mb')) {
-  db.exec('ALTER TABLE nodes ADD COLUMN max_vm_memory_mb INTEGER NOT NULL DEFAULT 0');
+  safeExec('ALTER TABLE nodes ADD COLUMN max_vm_memory_mb INTEGER NOT NULL DEFAULT 0');
 }
 // ---- Per-user preferences ----
 const userColumns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
 if (!userColumns.includes('music_enabled')) {
-  db.exec('ALTER TABLE users ADD COLUMN music_enabled INTEGER NOT NULL DEFAULT 0');
+  safeExec('ALTER TABLE users ADD COLUMN music_enabled INTEGER NOT NULL DEFAULT 0');
 }
 if (!userColumns.includes('sfx_enabled')) {
-  db.exec('ALTER TABLE users ADD COLUMN sfx_enabled INTEGER NOT NULL DEFAULT 1');
+  safeExec('ALTER TABLE users ADD COLUMN sfx_enabled INTEGER NOT NULL DEFAULT 1');
 }
 if (!userColumns.includes('music_volume')) {
-  db.exec('ALTER TABLE users ADD COLUMN music_volume INTEGER NOT NULL DEFAULT 35');
+  safeExec('ALTER TABLE users ADD COLUMN music_volume INTEGER NOT NULL DEFAULT 35');
 }
 if (!userColumns.includes('sfx_volume')) {
-  db.exec('ALTER TABLE users ADD COLUMN sfx_volume INTEGER NOT NULL DEFAULT 40');
+  safeExec('ALTER TABLE users ADD COLUMN sfx_volume INTEGER NOT NULL DEFAULT 40');
 }
 if (!userColumns.includes('secret_blur')) {
-  db.exec('ALTER TABLE users ADD COLUMN secret_blur INTEGER NOT NULL DEFAULT 0');
+  safeExec('ALTER TABLE users ADD COLUMN secret_blur INTEGER NOT NULL DEFAULT 0');
 }
 if (!userColumns.includes('secret_blur_set')) {
   // 1 = user explicitly chose; 0 = inherit the admin-wide panel.secret_blur default
-  db.exec('ALTER TABLE users ADD COLUMN secret_blur_set INTEGER NOT NULL DEFAULT 0');
+  safeExec('ALTER TABLE users ADD COLUMN secret_blur_set INTEGER NOT NULL DEFAULT 0');
 }
 
 // ---- Per-user quotas + credits (billing) ----
 const userQuotaCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
-const addUserCol = (name, ddl) => { if (!userQuotaCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
+const addUserCol = (name, ddl) => { if (!userQuotaCols.includes(name)) safeExec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
 addUserCol('credits', 'REAL NOT NULL DEFAULT 0');
 addUserCol('last_bonus_at', 'TEXT DEFAULT NULL');
 addUserCol('max_vms', 'INTEGER NOT NULL DEFAULT -1');
@@ -506,19 +522,19 @@ addUserCol('max_disk_gb', 'INTEGER NOT NULL DEFAULT -1');
 // tmate SSH address for local VMs (remote VMs store it on the agent side)
 const vmTmateCol = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 if (!vmTmateCol.includes('tmate_ssh')) {
-  db.exec("ALTER TABLE vms ADD COLUMN tmate_ssh TEXT DEFAULT NULL");
+  safeExec("ALTER TABLE vms ADD COLUMN tmate_ssh TEXT DEFAULT NULL");
 }
 
 // Webhooks configuration for a VM (JSON array of {url, secret, events[]})
 const vmWebhookCol = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 if (!vmWebhookCol.includes('webhooks')) {
-  db.exec("ALTER TABLE vms ADD COLUMN webhooks TEXT DEFAULT '[]'");
+  safeExec("ALTER TABLE vms ADD COLUMN webhooks TEXT DEFAULT '[]'");
 }
 
 // Backup retention (# backups to keep) per schedule
 const schedCols = db.prepare('PRAGMA table_info(schedules)').all().map((c) => c.name);
 if (!schedCols.includes('retention')) {
-  db.exec('ALTER TABLE schedules ADD COLUMN retention INTEGER NOT NULL DEFAULT 5');
+  safeExec('ALTER TABLE schedules ADD COLUMN retention INTEGER NOT NULL DEFAULT 5');
 }
 
 // ---- Venlix hKVM-style VM creator advanced columns ----
@@ -563,7 +579,7 @@ const vmAdvColumns = {
 };
 for (const [col, type] of Object.entries(vmAdvColumns)) {
   if (!vmsColumns.includes(col)) {
-    db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
+    safeExec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
   }
 }
 
@@ -588,7 +604,7 @@ const vmNetColumns = {
 const vmNetColNames = db.prepare('PRAGMA table_info(vms)').all().map((c) => c.name);
 for (const [col, type] of Object.entries(vmNetColumns)) {
   if (!vmNetColNames.includes(col)) {
-    db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
+    safeExec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
   }
 }
 
@@ -599,13 +615,13 @@ for (const [col, type] of Object.entries({
   backup_slots: 'INTEGER',                     // max # backups allowed for this machine
 })) {
   if (!vmNetColNames.includes(col)) {
-    db.exec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
+    safeExec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);
   }
 }
 
 // ---- Billing plans get plan-sector + renewal fields ----
 const planColNames = db.prepare('PRAGMA table_info(billing_plans)').all().map((c) => c.name);
-const addPlanCol = (name, ddl) => { if (!planColNames.includes(name)) db.exec(`ALTER TABLE billing_plans ADD COLUMN ${name} ${ddl}`); };
+const addPlanCol = (name, ddl) => { if (!planColNames.includes(name)) safeExec(`ALTER TABLE billing_plans ADD COLUMN ${name} ${ddl}`); };
 addPlanCol('kind', "TEXT NOT NULL DEFAULT 'paid'");        // invite | booster | paid
 addPlanCol('invites_required', 'INTEGER NOT NULL DEFAULT 0');
 addPlanCol('boost_required', 'INTEGER NOT NULL DEFAULT 0');
@@ -617,13 +633,13 @@ addPlanCol('vps_type', "TEXT NOT NULL DEFAULT 'kvm'");
 
 // user_plans extra runtime columns (set via migrations for existing installs)
 const userPlanCols = db.prepare('PRAGMA table_info(user_plans)').all().map((c) => c.name);
-const addUserPlanCol = (name, ddl) => { if (!userPlanCols.includes(name)) db.exec(`ALTER TABLE user_plans ADD COLUMN ${name} ${ddl}`); };
+const addUserPlanCol = (name, ddl) => { if (!userPlanCols.includes(name)) safeExec(`ALTER TABLE user_plans ADD COLUMN ${name} ${ddl}`); };
 addUserPlanCol('invite_code', 'TEXT');
 addUserPlanCol('note', 'TEXT');
 
 // ---- Users: Discord link + active plan ref ----
 const userPlanDiscordCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
-const addUserExtraCol = (name, ddl) => { if (!userPlanDiscordCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
+const addUserExtraCol = (name, ddl) => { if (!userPlanDiscordCols.includes(name)) safeExec(`ALTER TABLE users ADD COLUMN ${name} ${ddl}`); };
 addUserExtraCol('plan_id', 'INTEGER');
 addUserExtraCol('discord_id', 'TEXT');
 addUserExtraCol('discord_name', 'TEXT');
