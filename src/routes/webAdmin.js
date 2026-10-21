@@ -116,7 +116,13 @@ router.get('/admin/servers/create', (req, res) => {
       max_vm_memory_mb: parseInt(n.max_vm_memory_mb, 10) || 0,
     });
   });
-  render(res, 'create', { osList: vmService.getOsList(), users, nodes });
+  render(res, 'create', {
+    osList: vmService.getOsList(),
+    lxcOsList: typeof vmService.getLxcOsList === 'function' ? vmService.getLxcOsList() : [],
+    lxcAvailable: typeof vmService.lxcAvailable === 'function' ? vmService.lxcAvailable() : false,
+    users,
+    nodes,
+  });
 });
 
 router.post('/admin/servers/create', createUpload.fields([{ name: 'image', maxCount: 1 }]), async (req, res) => {
@@ -616,6 +622,16 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
     try {
       settings.set('vm.os_list', JSON.stringify(JSON.parse(req.body.vm_os_list)));
     } catch (_) {}
+  }
+  // Container template catalog ([label, distro, release, arch]) - separate key so
+  // editing one list never wipes the other.
+  if (req.body.vm_os_list_lxc) {
+    try {
+      settings.set('vm.os_list_lxc', JSON.stringify(JSON.parse(req.body.vm_os_list_lxc)));
+    } catch (_) {}
+  }
+  if (req.body.vm_default_virt_type && ['qemu', 'lxc'].includes(req.body.vm_default_virt_type)) {
+    settings.set('vm.default_virt_type', req.body.vm_default_virt_type);
   }
   activity.logActivity({ user_id: req.user.id, event: 'admin:settings_update' });
   return res.redirect('/admin/settings?updated=1');

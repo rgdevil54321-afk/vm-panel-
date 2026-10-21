@@ -296,9 +296,25 @@ do_install() {
 
   log_info "Step 2/7: Installing core system dependencies & QEMU packages..."
   apt-get install -y --no-install-recommends \
-    git curl wget openssl ca-certificates tar gzip iproute2 procps \
+    git curl wget openssl ca-certificates tar gzip xz-utils iproute2 procps \
     build-essential python3 make g++ \
     qemu-system-x86 qemu-utils cloud-image-utils || true
+
+  # LXC: containers are the second virtualization engine. Best-effort, because a
+  # host may only ever run QEMU VMs — but when present, the panel offers LXC.
+  log_info "Installing optional LXC container runtime (lxc, lxc-templates)..."
+  apt-get install -y --no-install-recommends lxc lxc-templates >/dev/null 2>&1 \
+    || dnf install -y lxc lxc-templates >/dev/null 2>&1 \
+    || yum install -y lxc lxc-templates >/dev/null 2>&1 \
+    || log_warn "LXC unavailable from the configured repos — LXC containers need a manual 'apt-get install lxc lxc-templates' to work."
+  # Unprivileged containers need a subordinate id range; add one for root if the
+  # distro did not already allocate it, so containers do not have to run as root.
+  if [ -f /etc/subuid ] && ! grep -q '^root:' /etc/subuid; then
+    echo 'root:100000:65536' >> /etc/subuid 2>/dev/null || true
+  fi
+  if [ -f /etc/subgid ] && ! grep -q '^root:' /etc/subgid; then
+    echo 'root:100000:65536' >> /etc/subgid 2>/dev/null || true
+  fi
 
   # Optional extras — best-effort only: a missing package must never abort
   # the install (set -e is active; every chain below ends in a warning).

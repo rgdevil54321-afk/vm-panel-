@@ -73,11 +73,35 @@
         </div>
       </div>
 
+      <!-- 0. Virtualization Engine -->
+      <div class="card" style="padding:22px">
+        <div class="card-title" style="margin:0 0 6px;font-size:16px">0 · Virtualization</div>
+        <div class="form-hint" style="margin-bottom:14px">A full virtual machine gets its own kernel and a hard slice of RAM. A container shares the node's kernel, so its memory figure is a soft limit — that is what makes far larger RAM plans possible on the same hardware.</div>
+        <input type="hidden" name="virt_type" id="fVirt" value="qemu"/>
+        <div class="grid grid-2" style="gap:12px">
+          <label class="virt-card selected" data-virt="qemu" onclick="selectVirt('qemu')" style="cursor:pointer;border:2px solid var(--accent);border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all .18s ease">
+            <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0">🖥️</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px;color:var(--text)">QEMU / KVM — Virtual Machine</div>
+              <div class="muted text-sm" style="font-size:11px">Own kernel · hard RAM allocation · qcow2 disk · VNC console</div>
+            </div>
+          </label>
+          <label class="virt-card" data-virt="lxc" onclick="selectVirt('lxc')" style="cursor:pointer;border:2px solid var(--border);border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all .18s ease">
+            <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0">📦</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px;color:var(--text)">LXC — System Container</div>
+              <div class="muted text-sm" style="font-size:11px">Shared kernel · soft RAM limit · distro rootfs · SSH only</div>
+            </div>
+          </label>
+        </div>
+        <div id="lxcHint" class="form-hint" style="display:none;margin-top:12px;color:#fbbf24;font-weight:600"></div>
+      </div>
+
       <!-- 1. Operating System Selection -->
       <div class="card" style="padding:22px">
         <div class="flex-between mb-3">
           <div class="card-title" style="margin:0;font-size:16px">1 · Operating System</div>
-          <div class="os-filters">
+          <div class="os-filters" id="osFilters">
             <button type="button" class="os-filter-btn active" onclick="filterOs('all', this)">All</button>
             <button type="button" class="os-filter-btn" onclick="filterOs('ubuntu', this)">Ubuntu</button>
             <button type="button" class="os-filter-btn" onclick="filterOs('debian', this)">Debian</button>
@@ -106,6 +130,35 @@
               <div style="flex:1;min-width:0">
                 <div style="font-weight:700;font-size:14px;color:var(--text)"><%= o[0] %></div>
                 <div class="muted text-sm mono" style="font-size:11px"><%= o[2] || 'standard' %> · x86_64</div>
+              </div>
+              <div class="os-check" style="width:18px;height:18px;border-radius:50%;background:<%= i === 0 ? 'var(--accent)' : 'transparent' %>;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;display:grid;place-items:center">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="10" height="10" style="display:<%= i === 0 ? 'block' : 'none' %>"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+            </label>
+          <% } %>
+        </div>
+
+        <!-- LXC container template grid (shown only when the engine is LXC) -->
+        <div class="grid grid-3" id="lxcOsGrid" style="gap:12px;display:none">
+          <% for (let i = 0; i < lxcOsList.length; i++) {
+             const o = lxcOsList[i];
+             const distro = (o[1] || '').toLowerCase();
+             let icon = '📦';
+             if (distro.includes('ubuntu')) icon = '🟠';
+             else if (distro.includes('debian')) icon = '🔴';
+             else if (distro.includes('fedora')) icon = '🔵';
+             else if (distro.includes('centos')) icon = '🟣';
+             else if (distro.includes('alma')) icon = '🌐';
+             else if (distro.includes('rocky')) icon = '🟢';
+             else if (distro.includes('alpine')) icon = '🏔️';
+             else if (distro.includes('arch')) icon = '🔷';
+          %>
+            <label class="lxc-os-card <%= i === 0 ? 'selected' : '' %>" data-distro="<%= distro %>" style="cursor:pointer;position:relative;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all 0.18s ease">
+              <input type="radio" name="os" value="<%= o[0] %>" data-username="root" <%= i === 0 ? 'checked' : '' %> style="display:none" onchange="selectOsCard(this)"/>
+              <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0"><%= icon %></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:14px;color:var(--text)"><%= o[0] %></div>
+                <div class="muted text-sm mono" style="font-size:11px">container · <%= o[3] || 'amd64' %></div>
               </div>
               <div class="os-check" style="width:18px;height:18px;border-radius:50%;background:<%= i === 0 ? 'var(--accent)' : 'transparent' %>;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;display:grid;place-items:center">
                 <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" width="10" height="10" style="display:<%= i === 0 ? 'block' : 'none' %>"><path d="M20 6L9 17l-5-5"/></svg>
@@ -552,7 +605,9 @@ function setDistroUser() {
 }
 
 function selectOsCard(input) {
-  document.querySelectorAll('.os-select-card').forEach((c) => {
+  // Both the QEMU grid and the LXC grid use this handler, so clear every card in
+  // both lists rather than only the QEMU ones.
+  document.querySelectorAll('.os-select-card, .lxc-os-card').forEach((c) => {
     c.classList.remove('selected');
     const check = c.querySelector('.os-check');
     if (check) {
@@ -574,6 +629,51 @@ function selectOsCard(input) {
 
   currentDistroUser = input.dataset.username || 'ubuntu';
   document.getElementById('btnDistroUser').textContent = currentDistroUser;
+  updateSummary();
+}
+
+// ---------------------------------------------------------------------------
+// Virtualization engine switch. Swapping the engine changes which OS catalog is
+// valid (cloud images vs container templates), so the two grids are toggled and
+// the hidden virt_type field is what actually gets submitted.
+// ---------------------------------------------------------------------------
+function selectVirt(virt) {
+  document.getElementById('fVirt').value = virt;
+  document.querySelectorAll('.virt-card').forEach((c) => {
+    const on = c.dataset.virt === virt;
+    c.classList.toggle('selected', on);
+    c.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
+  });
+
+  const isLxc = virt === 'lxc';
+  const osGrid = document.getElementById('osGrid');
+  const lxcGrid = document.getElementById('lxcOsGrid');
+  const filters = document.getElementById('osFilters');
+  if (osGrid) osGrid.style.display = isLxc ? 'none' : 'grid';
+  if (lxcGrid) lxcGrid.style.display = isLxc ? 'grid' : 'none';
+  // The distro filter buttons only apply to the cloud-image catalog.
+  if (filters) filters.style.display = isLxc ? 'none' : 'flex';
+
+  // Exactly one radio must be checked overall; re-check the first card of the
+  // grid that is now visible.
+  document.querySelectorAll('input[name="os"]').forEach((r) => { r.checked = false; });
+  const grid = isLxc ? lxcGrid : osGrid;
+  const first = grid ? grid.querySelector('input[name="os"]') : null;
+  if (first) { first.checked = true; selectOsCard(first); }
+
+  // QEMU-only knobs: a container has no qcow2 image, no VNC, no cloud-init.
+  ['fDisk', 'fPool'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.closest('.form-group').style.display = isLxc ? 'none' : '';
+  });
+
+  const hint = document.getElementById('lxcHint');
+  if (hint) {
+    hint.style.display = isLxc ? 'block' : 'none';
+    hint.textContent = isLxc
+      ? 'Container mode: the disk is the node filesystem (no qcow2 image), memory is a soft cgroup limit, and access is SSH only (no VNC).'
+      : '';
+  }
   updateSummary();
 }
 
@@ -843,6 +943,7 @@ async function createVm() {
   }
 
   fd.append('vps_type', document.getElementById('fVpsType').value);
+  fd.append('virt_type', (document.getElementById('fVirt') || {}).value || 'qemu');
   fd.append('expiry_days', (document.getElementById('fExpiryDays').value || '0'));
   fd.append('backup_slots', (document.getElementById('fBackupSlots').value || '5'));
 

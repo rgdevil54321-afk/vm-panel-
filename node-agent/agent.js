@@ -5,8 +5,16 @@ const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
 const qemu = require('./lib/qemu');
+const lxc = require('./lib/lxc');
 const state = require('./lib/state');
 const wsrelay = require('./lib/wsrelay');
+
+// Containers and VMs share every agent endpoint; only the engine differs. This
+// picks the right one from the stored record so the panel never has to care
+// which virtualization a node is running for a given machine.
+function engineFor(vm) {
+  return (vm && String(vm.virt_type || '').toLowerCase() === 'lxc') ? lxc : qemu;
+}
 
 // minimal .env loader (zero external deps - built-in modules only)
 (function loadEnv() {
@@ -36,6 +44,7 @@ qemu.ensureDirs();
 
 function serializeVm(vm) {
   if (!vm) return null;
+  const eng = engineFor(vm);
   let forwards = [];
   try { forwards = JSON.parse(vm.port_forwards || '[]'); } catch (e) {}
   const out = {
@@ -43,8 +52,9 @@ function serializeVm(vm) {
     port_forwards: forwards,
     gui_mode: !!vm.gui_mode,
     start_on_boot: !!vm.start_on_boot,
-    status: qemu.isRunning(vm) ? 'running' : 'stopped',
-    running: qemu.isRunning(vm),
+    status: eng.isRunning(vm) ? 'running' : 'stopped',
+    running: eng.isRunning(vm),
+    virt_type: String(vm.virt_type || 'qemu').toLowerCase() === 'lxc' ? 'lxc' : 'qemu',
   };
   delete out.agent_token;
   delete out.password;
@@ -158,12 +168,20 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, usage: qemu.usage() });
     }
     if (method === 'GET' && p === '/os') {
-      return json(res, 200, { ok: true, os_list: state.osList() });
+      const s = state.get();
+      return json(res, 200, { ok: true, os_list: state.osList(), os_list_lxc: s.os_list_lxc || [] });
     }
     if (method === 'POST' && p === '/os') {
       const body = await readBody(req);
       const data = JSON.parse(body.toString() || '{}');
       if (Array.isArray(data.os_list)) state.setOsList(data.os_list);
+      // Container templates are a separate catalog; keep them in their own key so
+      // syncing one never clears the other.
+      if (Array.isArray(data.os_list_lxc)) {
+        const s = state.get();
+        s.os_list_lxc = data.os_list_lxc;
+        state.save();
+      }
       return json(res, 200, { ok: true });
     }
     if (method === 'POST' && p === '/meta') {
@@ -198,10 +216,17 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && p === '/vms') {
       const body = await readBody(req);
       const data = JSON.parse(body.toString() || '{}');
-      const osList = state.osList();
-      const vm = await qemu.createVm({ data, osList });
-      const created = state.getVm(vm.id);
-      qemu.prepareImage(created);
+      const isLxc = String(data.virt_type || '').toLowerCase() === 'lxc';
+      // The panel pushes the container template catalog to a separate key, so a
+      // node can hold both lists without them overwriting each other.
+      const osList = isLxc ? (state.get().os_list_lxc || []) : state.osList();
+      const vm = isLxc
+        ? await lxc.createVm({ data, osList })
+        : await qemu.createVm({ data, osList });
+      if (!isLxc) {
+        const created = state.getVm(vm.id);
+        qemu.prepareImage(created);
+      }
       return json(res, 201, { ok: true, vm: serializeVm(state.getVm(vm.id)) });
     }
 
@@ -212,33 +237,34 @@ const server = http.createServer(async (req, res) => {
       const sub = vmMatch[2] || '';
       const vm = state.getVm(id);
       if (!vm) return json(res, 404, { ok: false, error: 'VM not found' });
+      const eng = engineFor(vm);
 
       if (method === 'GET' && sub === '') return json(res, 200, { ok: true, vm: serializeVm(vm) });
       if (method === 'DELETE' && sub === '') {
-        qemu.removeVm(vm);
+        eng.removeVm(vm);
         return json(res, 200, { ok: true });
       }
       if (method === 'PATCH' && sub === '') {
         const body = await readBody(req);
         const data = JSON.parse(body.toString() || '{}');
-        return json(res, 200, { ok: true, vm: serializeVm(qemu.updateVm(vm, data)) });
+        return json(res, 200, { ok: true, vm: serializeVm(eng.updateVm(vm, data)) });
       }
       if (method === 'POST' && sub === '/start') {
-        const result = qemu.startVm(vm);
-        if (result && result.ok === false) return json(res, 500, { ok: false, error: result.error || 'QEMU failed to start' });
+        const result = await eng.startVm(vm);
+        if (result && result.ok === false) return json(res, 500, { ok: false, error: result.error || 'Failed to start' });
         return json(res, 200, { ok: true, result });
       }
       if (method === 'POST' && sub === '/stop') {
         const body = await readBody(req);
         let force = false;
         try { force = !!(JSON.parse(body.toString() || '{}').force); } catch (e) {}
-        return json(res, 200, { ok: true, result: qemu.stopVm(vm, force) });
+        return json(res, 200, { ok: true, result: eng.stopVm(vm, force) });
       }
-      if (method === 'POST' && sub === '/restart') return json(res, 200, { ok: true, result: qemu.restartVm(vm) });
+      if (method === 'POST' && sub === '/restart') return json(res, 200, { ok: true, result: await eng.restartVm(vm) });
       if (method === 'POST' && sub === '/resize') {
         const body = await readBody(req);
         const data = JSON.parse(body.toString() || '{}');
-        return json(res, 200, { ok: true, vm: serializeVm(qemu.resizeDisk(vm, data.disk_size)) });
+        return json(res, 200, { ok: true, vm: serializeVm(eng.resizeDisk(vm, data.disk_size)) });
       }
       if (method === 'POST' && sub === '/disks') {
         const body = await readBody(req);
@@ -259,10 +285,15 @@ const server = http.createServer(async (req, res) => {
           return json(res, 400, { ok: false, error: e.message });
         }
       }
-      if (method === 'GET' && sub === '/status') return json(res, 200, { ok: true, status: qemu.statusOf(vm), running: qemu.isRunning(vm) });
-      if (method === 'GET' && sub === '/stats') return json(res, 200, { ok: true, stats: await qemu.fullStats(vm) });
-      if (method === 'GET' && sub === '/bootlog') return json(res, 200, { ok: true, log: qemu.bootLog(vm) });
-      if (method === 'POST' && sub === '/bootlog/clear') return json(res, 200, qemu.clearBootLog(vm));
+      if (method === 'GET' && sub === '/status') return json(res, 200, { ok: true, status: eng.statusOf(vm), running: eng.isRunning(vm) });
+      if (method === 'GET' && sub === '/stats') {
+        // qemu.fullStats returns the bare stats object; lxc.fullStats wraps it to
+        // keep io/net alongside. Normalise so the panel sees one shape.
+        const st = await eng.fullStats(vm);
+        return json(res, 200, { ok: true, stats: st && st.stats ? st.stats : st });
+      }
+      if (method === 'GET' && sub === '/bootlog') return json(res, 200, { ok: true, log: eng.bootLog(vm) });
+      if (method === 'POST' && sub === '/bootlog/clear') return json(res, 200, eng.clearBootLog(vm));
 
       if (method === 'GET' && sub === '/snapshots') {
         return json(res, 200, await qemu.listSnapshots(vm));
@@ -309,7 +340,8 @@ const server = http.createServer(async (req, res) => {
         let data = {};
         try { data = JSON.parse(body.toString() || '{}'); } catch (e) {}
         try {
-          const r = await qemu.reinstallVm(vm, data);
+          const eng = engineFor(vm);
+          const r = eng.rebuildVm ? await eng.rebuildVm(vm, data) : await qemu.reinstallVm(vm, data);
           return json(res, 200, r);
         } catch (e) {
           return json(res, 502, { ok: false, error: e.message });
@@ -331,6 +363,8 @@ server.on('upgrade', (req, socket, head) => {
     auth: (r) => auth(r),
     getVncPort: (id) => {
       const vm = state.getVm(id);
+      // Containers have no framebuffer: vnc_port is null, so this returns null
+      // and the relay refuses the connection instead of dialling a dead port.
       if (vm && vm.vnc_port && qemu.isRunning(vm)) return vm.vnc_port;
       return null;
     },
@@ -370,4 +404,4 @@ process.on('unhandledRejection', (e) => {
   process.stderr.write('[venlix-node] unhandled rejection: ' + ((e && (e.stack || e.message)) || String(e)) + '\n');
 });
 
-setTimeout(() => qemu.startOnBootAll(), 3000);
+setTimeout(() => { qemu.startOnBootAll(); lxc.startOnBootAll().catch(() => {}); }, 3000);

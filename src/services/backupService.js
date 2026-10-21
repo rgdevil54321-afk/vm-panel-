@@ -40,13 +40,38 @@ function createBackup(vm, { user = null, name = null, kind = 'full' } = {}) {
   if (slots === 0) {
     throw new Error('Backup slots are disabled for this machine (0 slots). Enable slots or edit the VM to raise the limit.');
   }
+  const label = name || `backup-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const vmBackupDir = path.join(BACKUP_DIR, String(vm.id));
+  fs.mkdirSync(vmBackupDir, { recursive: true });
+
+  // ---- LXC: archive the rootfs tree ----
+  // A container has no disk image to convert, and its rootfs is a plain
+  // directory, so a tar archive is both the correct and the portable backup.
+  if (vmService.isContainer(vm)) {
+    const rootfs = path.join(vmService.vmDir(vm), 'rootfs');
+    if (!fs.existsSync(rootfs)) throw new Error('Container rootfs is missing - nothing to back up');
+    const dest = path.join(vmBackupDir, `${label}.tar.gz`);
+    // --one-file-system keeps host bind mounts inside the container out of the
+    // archive, and --numeric-owner matters because uid mapping is what the
+    // restore relies on to land files on the right in-container owner.
+    const r = spawnSync('tar', ['-czpf', dest, '--one-file-system', '--numeric-owner', '-C', rootfs, '.'], { encoding: 'utf8', timeout: 30 * 60 * 1000 });
+    if (r.status !== 0) {
+      try { fs.unlinkSync(dest); } catch (_) {}
+      throw new Error(`Container backup failed: ${r.error ? r.error.message + '; ' : ''}${r.stderr || 'tar unavailable?'}`);
+    }
+    const size = fs.statSync(dest).size;
+    const info = db.prepare(
+      'INSERT INTO backups (vm_id, name, file, size, kind, created_at) VALUES (?,?,?,?,?,?)'
+    ).run(vm.id, label, dest, size, kind, new Date().toISOString());
+    if (countFor(vm.id) > slots) pruneBackups(vm.id, slots);
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'backup:create', details: { name: label, virt: 'lxc' } });
+    return db.prepare('SELECT * FROM backups WHERE id = ?').get(Number(info.lastInsertRowid));
+  }
+
   if (vmService.isRunning(vm)) {
     // snapshot via qemu-img works on live (qcow2) too
     logger.info('[backup] VM is running; taking qemu snapshot');
   }
-  const label = name || `backup-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-  const vmBackupDir = path.join(BACKUP_DIR, String(vm.id));
-  fs.mkdirSync(vmBackupDir, { recursive: true });
   const dest = path.join(vmBackupDir, `${label}.qcow2`);
   const r = spawnSync('qemu-img', ['convert', '-U', '-O', 'qcow2', vm.img_file, dest], { encoding: 'utf8' });
   if (r.status !== 0) {
@@ -73,6 +98,19 @@ async function restoreBackup(backup, { user = null } = {}) {
     await vmService.stop(vm, { user, force: true });
   }
   if (!fs.existsSync(backup.file)) throw new Error('Backup file missing');
+
+  // ---- LXC: unpack the rootfs archive over the current tree ----
+  if (vmService.isContainer(vm)) {
+    const rootfs = path.join(vmService.vmDir(vm), 'rootfs');
+    // Stop first: extracting over a running container's rootfs corrupts it.
+    fs.mkdirSync(rootfs, { recursive: true });
+    const r = spawnSync('tar', ['-xzpf', backup.file, '--numeric-owner', '-C', rootfs], { encoding: 'utf8', timeout: 30 * 60 * 1000 });
+    if (r.status !== 0) throw new Error('Container restore failed: ' + (r.stderr || 'tar exited ' + r.status).slice(0, 300));
+    db.prepare('UPDATE vms SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), vm.id);
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'backup:restore', details: { name: backup.name, virt: 'lxc' } });
+    return true;
+  }
+
   // unique tmp name: two concurrent restores of the same VM shared one .restore file
   const tmp = vm.img_file + `.restore.${process.pid}-${Date.now()}`;
   try {

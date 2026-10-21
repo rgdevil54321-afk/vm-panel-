@@ -338,10 +338,12 @@ body.term-fullscreen #bgOverlay {
       Live Boot Logs
       <span class="pulse-dot" style="margin-left:6px;margin-right:0"></span>
     </button>
+    <% if (vm.virt_type !== 'lxc') { %>
     <button class="console-tab" id="tabVnc" onclick="switchView('vnc')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       Graphical (VNC)
     </button>
+    <% } %>
     <button class="console-tab" id="tabSshx" onclick="switchView('sshx')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       SSH Link (sshx)
@@ -1412,7 +1414,8 @@ body.term-fullscreen #bgOverlay {
     activeTab = tab;
     document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
     document.getElementById('tabBootLog').classList.toggle('active', tab === 'bootlog');
-    document.getElementById('tabVnc').classList.toggle('active', tab === 'vnc');
+    // The VNC tab is not rendered for containers.
+    if (document.getElementById('tabVnc')) document.getElementById('tabVnc').classList.toggle('active', tab === 'vnc');
     if (document.getElementById('tabSshx')) document.getElementById('tabSshx').classList.toggle('active', tab === 'sshx');
     document.getElementById('paneTerminal').style.display = tab === 'terminal' ? 'block' : 'none';
     document.getElementById('paneBootLog').style.display = tab === 'bootlog' ? 'block' : 'none';

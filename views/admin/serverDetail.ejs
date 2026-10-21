@@ -109,6 +109,7 @@
               </td>
             </tr>
             <tr><td class="muted">OS / Codename</td><td><span class="pill pill-blue font-bold"><%= vm.os_type %> <%= vm.codename %></span></td></tr>
+            <tr><td class="muted">Virtualization</td><td><span class="pill <%= (vm.virt_type === 'lxc') ? 'pill-yellow' : 'pill-blue' %> font-bold"><%= (vm.virt_type === 'lxc') ? 'LXC Container' : 'QEMU / KVM VM' %></span> <span class="muted text-sm"><%= (vm.virt_type === 'lxc') ? 'shared kernel · soft RAM limit' : 'own kernel · hard RAM allocation' %></span></td></tr>
             <tr><td class="muted">SSH Command</td><td>
               <span class="mono" id="sshcmd" data-secret>ssh -p <%= _static ? 22 : vm.ssh_port %> <%= vm.username %>@<%= _static ? _v4 : (vm.node_host || 'localhost') %></span> <button type="button" class="btn btn-sm" style="font-size:11.5px;padding:3px 8px" onclick="copyText('sshcmd', this)">Copy</button>
               <% if (_static) { %><div class="muted text-sm mono" style="margin-top:3px">fallback (always works): ssh -p <%= vm.ssh_port %> <%= vm.username %>@<%= vm.node_host || 'localhost' %></div><% } %>

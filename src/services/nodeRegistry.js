@@ -335,9 +335,13 @@ async function listVmsOnNode(node) {
 
 // ---------- Remote node maintenance ----------
 async function syncOsToNode(node) {
-  const osList = require('./vmService').getOsList();
+  const vmService = require('./vmService');
+  const osList = vmService.getOsList();
   if (!Array.isArray(osList)) throw new Error('OS list unavailable');
-  return agentJson(node, { method: 'POST', path: '/os', body: JSON.stringify({ os_list: osList }) });
+  // Push the container template catalog alongside the cloud-image list; the agent
+  // stores them under separate keys so neither sync clears the other.
+  const osListLxc = typeof vmService.getLxcOsList === 'function' ? vmService.getLxcOsList() : [];
+  return agentJson(node, { method: 'POST', path: '/os', body: JSON.stringify({ os_list: osList, os_list_lxc: osListLxc }) });
 }
 
 async function pushUpdateToNode(node) {

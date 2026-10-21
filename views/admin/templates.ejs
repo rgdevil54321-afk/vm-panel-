@@ -23,6 +23,23 @@
     </div>
     <div class="muted text-sm mt-2">Edit cells inline, then click <b>Save Changes</b> to persist the whole list.</div>
   </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-title">LXC Container Templates</div>
+    <p class="muted text-sm mb-2">These power the <b>LXC — System Container</b> engine in the Create Server page. Rows are stored as <code class="mono">[name, distro, release, arch]</code> in <code class="mono">vm.os_list_lxc</code>. The rootfs is downloaded from <code class="mono">images.linuxcontainers.org</code> at create time — there is no image URL to set.</p>
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Name</th><th>Distro</th><th>Release</th><th>Arch</th><th class="right">Actions</th></tr></thead>
+        <tbody id="lxcRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="flex" style="gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="addLxc()">Add Container Template</button>
+      <button class="btn btn-sm" onclick="saveLxc()">Save Changes</button>
+      <button class="btn btn-sm btn-warning" onclick="restoreLxcDefaults()">Restore Defaults</button>
+    </div>
+    <div class="muted text-sm mt-2">Distro/release must match a published release on images.linuxcontainers.org (e.g. <code class="mono">ubuntu / noble</code>, <code class="mono">debian / bookworm</code>, <code class="mono">alpine / 3.20</code>).</div>
+  </div>
 </div>
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
@@ -93,4 +110,68 @@ async function restoreDefaults() {
 }
 
 loadTemplates();
+
+// ---- LXC container template catalog ----------------------------------------
+let LXC = [];
+
+async function loadLxc() {
+  const rows = document.getElementById('lxcRows');
+  try {
+    const res = await VP.api('/admin/templates/lxc');
+    LXC = (res && res.templates) || [];
+    if (!LXC.length) { rows.innerHTML = '<tr><td colspan="5" class="muted">No container templates.</td></tr>'; return; }
+    renderLxc();
+  } catch (e) { rows.innerHTML = '<tr><td colspan="5" class="muted">Failed: ' + e.message + '</td></tr>'; }
+}
+
+function lxcCell(name, idx, val) {
+  return '<input class="input" style="padding:6px;font-size:12px" value="' + escAttr(val) + '" oninput="LXC[' + idx + '].' + name + '=this.value" />';
+}
+
+function renderLxc() {
+  const rows = document.getElementById('lxcRows');
+  rows.innerHTML = LXC.map((t, i) => {
+    const val = (f) => (t[f] == null ? '' : t[f]);
+    return '<tr>'
+      + '<td>' + lxcCell('name', i, val('name')) + '</td>'
+      + '<td>' + lxcCell('distro', i, val('distro')) + '</td>'
+      + '<td>' + lxcCell('release', i, val('release')) + '</td>'
+      + '<td>' + lxcCell('arch', i, val('arch') || 'amd64') + '</td>'
+      + '<td class="right"><button class="btn btn-sm btn-danger" onclick="removeLxc(' + i + ')">Remove</button></td>'
+      + '</tr>';
+  }).join('');
+}
+function removeLxc(i) { LXC.splice(i, 1); renderLxc(); }
+function addLxc() {
+  LXC.push({ name: 'Custom Container', distro: 'alpine', release: '3.20', arch: 'amd64' });
+  renderLxc();
+}
+async function saveLxc() {
+  if (!LXC.length) { VP.toast('Nothing to save', 'warning'); return; }
+  try {
+    await VP.api('/admin/templates/lxc', { method: 'PUT', body: { templates: LXC } });
+    VP.toast('Container templates saved', 'success');
+    loadLxc();
+  } catch (e) { VP.toast(e.message, 'error'); }
+}
+async function restoreLxcDefaults() {
+  const ok = await VP.confirmDialog('Replace the container catalog with the stock templates?', { title: 'Restore Defaults', danger: false, okText: 'Restore' });
+  if (!ok) return;
+  LXC = [
+    { name: 'Ubuntu 24.04', distro: 'ubuntu', release: 'noble', arch: 'amd64' },
+    { name: 'Ubuntu 22.04', distro: 'ubuntu', release: 'jammy', arch: 'amd64' },
+    { name: 'Debian 12', distro: 'debian', release: 'bookworm', arch: 'amd64' },
+    { name: 'Debian 11', distro: 'debian', release: 'bullseye', arch: 'amd64' },
+    { name: 'Alpine 3.20', distro: 'alpine', release: '3.20', arch: 'amd64' },
+    { name: 'CentOS Stream 9', distro: 'centos', release: 'stream9', arch: 'amd64' },
+    { name: 'Rocky Linux 9', distro: 'rockylinux', release: '9', arch: 'amd64' },
+    { name: 'AlmaLinux 9', distro: 'almalinux', release: '9', arch: 'amd64' },
+    { name: 'Fedora 40', distro: 'fedora', release: '40', arch: 'amd64' },
+    { name: 'Arch Linux', distro: 'archlinux', release: 'current', arch: 'amd64' }
+  ];
+  renderLxc();
+  await saveLxc();
+}
+
+loadLxc();
 </script>

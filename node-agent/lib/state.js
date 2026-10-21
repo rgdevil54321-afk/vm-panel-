@@ -21,6 +21,7 @@ function defaultState() {
     nextVmId: 1,
     used_ports: [],                // allocated host ports
     os_list: [],
+    os_list_lxc: [],               // LXC distro templates: [[label, distro, release, arch]]
     infra: { pools: [], vnets: [], isos: [] },   // pushed from panel: storage pools, virtual networks (+firewall rules), ISO library
   };
 }
@@ -132,6 +133,7 @@ function nextId() {
 
 module.exports = {
   ensureDirs,
+  save,
   get,
   getVm,
   getVmByUuid,

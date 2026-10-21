@@ -1123,6 +1123,31 @@ router.delete('/admin/templates/:idx', apiAdmin, (req, res) => {
   res.json({ ok: true, templates: arr });
 });
 
+// ---------- Container (LXC) templates ----------
+// Parallel to the cloud-image catalog above, but without a disk image: an LXC
+// template is just [label, distro, release, arch] and the rootfs is fetched from
+// images.linuxcontainers.org at create time.
+router.get('/admin/templates/lxc', apiAdmin, (req, res) => {
+  const list = settings.get('vm.os_list_lxc');
+  const templates = Array.isArray(list)
+    ? list.map((t) => (Array.isArray(t) ? { name: t[0], distro: t[1], release: t[2], arch: t[3] || 'amd64' } : t))
+    : [];
+  res.json({ ok: true, templates });
+});
+router.put('/admin/templates/lxc', apiAdmin, json, (req, res) => {
+  try {
+    const incoming = req.body && Array.isArray(req.body.templates) ? req.body.templates : [];
+    const arr = incoming.map((t) => [
+      String(t.name || '').trim(),
+      String(t.distro || '').trim(),
+      String(t.release || '').trim(),
+      String(t.arch || 'amd64').trim(),
+    ]);
+    settings.set('vm.os_list_lxc', arr);
+    res.json({ ok: true, templates: arr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ---------- Infra: storage pools ----------
 router.get('/admin/infra/pools', apiAdmin, (req, res) => {
   const infra = require('../services/infraService');

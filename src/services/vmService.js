@@ -23,9 +23,26 @@ const { logActivity } = require('./activityService');
   const STATIC_IP_MODES = ['ipv4_shared', 'ipv4_dedicated', 'ipv6', 'dual'];
   const wantsStaticIp = (mode) => STATIC_IP_MODES.includes(String(mode || 'none'));
 const neofetchService = require('./neofetchService');
+const lxcService = require('./lxcService');
 
 const VM_DIR = config.vmDir;
 const RUNNING_PREFIX = 'qemu-system';
+
+// ---------------------------------------------------------------------------
+// Virtualization type. 'qemu' (default, every pre-existing row) is a full KVM/QEMU
+// virtual machine. 'lxc' is a system container: it shares the host kernel, so its
+// memory figure is a cgroup limit rather than a hard reservation - which is what
+// allows containers to be sold with far higher RAM than a guest VM could get on
+// the same host.
+// ---------------------------------------------------------------------------
+const VIRT_TYPES = ['qemu', 'lxc'];
+function virtType(vm) {
+  const t = String((vm && vm.virt_type) || 'qemu').toLowerCase();
+  return VIRT_TYPES.includes(t) ? t : 'qemu';
+}
+function isLxc(vm) {
+  return virtType(vm) === 'lxc';
+}
 
 // Available memory in bytes: min(host view, cgroup v1/v2 limit for containers).
 // Returns { bytes, limitedBy } so error messages explain WHERE the cap comes from.
@@ -468,6 +485,19 @@ function buildQemuArgs(vm) {
 
 function getBootLog(vm) {
   const dir = vmDir(vm);
+  // Containers have no serial device; their equivalent output is the lxc log and
+  // the container console captured by lxcService.
+  if (isLxc(vm)) {
+    const c = lxcService.bootLog(vm);
+    if (c && c.trim()) return c;
+    // Fall back to the container's own journal/dmesg through attach, which is the
+    // closest thing to a serial console a container can offer.
+    try {
+      const r = spawnSync('lxc-attach', ['-n', lxcService.containerName(vm), '--', '/bin/sh', '-c', 'dmesg 2>/dev/null | tail -n 100; echo; cat /var/log/syslog 2>/dev/null | tail -n 50'], { encoding: 'utf8', timeout: 15000 });
+      if (r.status === 0 && r.stdout && r.stdout.trim()) return r.stdout;
+    } catch (_) {}
+    return '[Boot Log] No container output recorded yet. Start the machine to stream boot logs.';
+  }
   let content = '';
   const bootLog = path.join(dir, 'boot.log');
   const qemuLog = path.join(dir, 'qemu.log');
@@ -490,6 +520,7 @@ function getBootLog(vm) {
 
 function clearBootLog(vm) {
   const dir = vmDir(vm);
+  if (isLxc(vm)) return lxcService.clearBootLog(vm);
   const bootLog = path.join(dir, 'boot.log');
   const qemuLog = path.join(dir, 'qemu.log');
   try {
@@ -515,6 +546,8 @@ function isRunning(vm) {
   if ((Number(vm.node_id) || 1) !== 1) {
     return (vm.status || 'stopped') === 'running';
   }
+  // Containers are tracked by the host's lxc registry, not by a pidfile.
+  if (isLxc(vm)) return lxcService.isRunning(vm);
   const pid = pidOf(vm);
   if (!pid) return false;
   try {
@@ -528,6 +561,7 @@ function isRunning(vm) {
 function statusOf(vm) {
   if (!vm) return 'stopped';
   if ((Number(vm.node_id) || 1) !== 1) return vm.status || 'stopped';
+  if (isLxc(vm)) return lxcService.statusOf(vm);
   return isRunning(vm) ? 'running' : 'stopped';
 }
 
@@ -736,6 +770,8 @@ function isLocalVm(vm) {
 }
 
 async function snapshotsFor(vm) {
+  // Containers have no qcow2 image to snapshot; use Backups (rootfs archive).
+  if (isLxc(vm)) return { ok: true, snapshots: [], unsupported: 'Snapshots are a QEMU feature. Use Backups to archive or restore a container.' };
   if (isLocalVm(vm)) return localListSnapshots(vm);
   const node = nodeRegistry.getNode(vm.node_id);
   if (!node) throw new Error('No node owns this VM');
@@ -745,6 +781,7 @@ async function snapshotsFor(vm) {
 }
 
 async function createSnapshotFor(vm, name) {
+  if (isLxc(vm)) throw new Error('Snapshots are a QEMU feature. Use Backups to archive this container instead.');
   if (isLocalVm(vm)) return localCreateSnapshot(vm, name);
   const node = nodeRegistry.getNode(vm.node_id);
   if (!node) throw new Error('No node owns this VM');
@@ -754,6 +791,7 @@ async function createSnapshotFor(vm, name) {
 }
 
 async function revertSnapshotFor(vm, name) {
+  if (isLxc(vm)) throw new Error('Snapshots are a QEMU feature. Restore a container from a Backup instead.');
   if (isLocalVm(vm)) return localRevertSnapshot(vm, name);
   const node = nodeRegistry.getNode(vm.node_id);
   if (!node) throw new Error('No node owns this VM');
@@ -763,6 +801,7 @@ async function revertSnapshotFor(vm, name) {
 }
 
 async function deleteSnapshotFor(vm, name) {
+  if (isLxc(vm)) throw new Error('Snapshots are a QEMU feature. Containers do not have snapshots.');
   if (isLocalVm(vm)) return localDeleteSnapshot(vm, name);
   const node = nodeRegistry.getNode(vm.node_id);
   if (!node) throw new Error('No node owns this VM');
@@ -772,6 +811,8 @@ async function deleteSnapshotFor(vm, name) {
 }
 
 async function fullStatsFor(vm) {
+  // Containers have no QMP/blockstats to query; return the cgroup-based view.
+  if (isLocalVm(vm) && isLxc(vm)) return { stats: liveStats(vm), io: null, net: await lxcService.netTotals(vm) };
   if (isLocalVm(vm)) return localFullStats(vm);
   const node = nodeRegistry.getNode(vm.node_id);
   if (!node) throw new Error('No node owns this VM');
@@ -1002,6 +1043,11 @@ function serializeVm(row) {
     status: remote ? (row.status || 'stopped') : statusOf(row),
     managed: remote,
     dir: vmDir(row),
+    // ---- virtualization -----------------------------------------------------
+    // virt_type drives the badge, the create wizard and every engine dispatch.
+    virt_type: virtType(row),
+    virt_label: isLxc(row) ? 'LXC container' : 'QEMU/KVM virtual machine',
+    is_container: isLxc(row),
     vps_type: row.vps_type || 'kvm',
     expiry: vmExpiry(row),
     backup_slots: row.backup_slots != null ? Number(row.backup_slots) : Number(settings.get('vm.default_backup_slots') || '5'),
@@ -1529,9 +1575,19 @@ function normalizeAdvanced(data) {
 }
 
 async function create({ user, data }) {
-  const osList = getOsList();
+  // Which catalog the requested OS name is looked up in depends on the engine:
+  // QEMU uses cloud images, LXC uses distro rootfs templates. Admins can edit
+  // both lists (vm.os_list / vm.os_list_lxc).
+  const virt = VIRT_TYPES.includes(String(data.virt_type || '').toLowerCase())
+    ? String(data.virt_type).toLowerCase()
+    : String(settings.get('vm.default_virt_type') || 'qemu').toLowerCase();
+  const osList = virt === 'lxc' ? lxcService.getLxcOsList() : getOsList();
   const osEntry = osList.find((o) => o[0] === data.os) || osList[0];
-  if (!osEntry) throw new Error('No OS templates configured — add one in Admin → Settings (vm.os_list) before creating servers.');
+  if (!osEntry) {
+    throw new Error(virt === 'lxc'
+      ? 'No container templates configured — add one in Admin → Settings (vm.os_list_lxc) before creating containers.'
+      : 'No OS templates configured — add one in Admin → Settings (vm.os_list) before creating servers.');
+  }
   const vmName = String(data.name || '').trim().replace(/\s+/g, '-');
   if (!vmName || !/^[a-zA-Z0-9_-]+$/.test(vmName)) {
     throw new Error('VM name can only contain letters, numbers, hyphens, underscores');
@@ -1570,7 +1626,14 @@ async function create({ user, data }) {
     if (!node.agent_token || node.agent_token === 'local-primary-no-agent') {
       throw new Error('Selected node has no agent configured');
     }
+    if (virt === 'lxc') {
+      // The node needs the container template catalog before it can build one.
+      await nodeRegistry.syncOsToNode(node).catch((e) => {
+        logger.warn('[vm] os list sync to node failed before LXC create: ' + e.message);
+      });
+    }
     const payload = {
+      virt_type: virt,
       uuid: uuidv4(),
       name: vmName,
       os: data.os,
@@ -1684,7 +1747,7 @@ async function create({ user, data }) {
         storage_pool, disk_format, additional_disks, cloudinit_userdata, cloudinit_packages, cloudinit_commands, cloudinit_files,
         startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced,
         ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk, neofetch_gpu,
-        vps_type, expires_at, backup_slots)
+        vps_type, expires_at, backup_slots, virt_type)
        VALUES (@node_id, @uuid, @owner_id, @name, @os_type, @codename, @img_url, @hostname, @username, @password,
         @disk_size, @memory, @cpus, @ssh_port, @vnc_port, @agent_port, @agent_token, @gui_mode, @port_forwards, @start_on_boot, @startup_command, 'stopped', @notes, @created, @created,
         @description, @tag, @region, @vmid, @cpu_sockets, @cores_per_socket, @threads_per_core, @cpu_model, @cpu_type, @cpu_units, @cpu_limit,
@@ -1692,9 +1755,10 @@ async function create({ user, data }) {
         @storage_pool, @disk_format, @additional_disks, @cloudinit_userdata, @cloudinit_packages, @cloudinit_commands, @cloudinit_files,
         @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced,
         @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk, @neofetch_gpu,
-        @vps_type, @expires_at, @backup_slots)`
+        @vps_type, @expires_at, @backup_slots, @virt_type)`
     ).run({
       node_id: targetNodeId,
+      virt_type: virt,
       uuid: rv.uuid,
       owner_id: user.id,
       name: rv.name,
@@ -1831,7 +1895,8 @@ async function create({ user, data }) {
   const sshPort = data.ssh_port ? parseInt(data.ssh_port, 10) : allocPort();
   if (isNaN(sshPort) || sshPort < 23 || sshPort > 65535) throw new Error('Invalid SSH port');
   if (inUsePort(sshPort)) throw new Error(`Port ${sshPort} is already in use`);
-  const vncPort = allocVncPort();
+  // Containers have no framebuffer, so no VNC port is reserved for them.
+  const vncPort = virt === 'lxc' ? null : allocVncPort();
   const agentPort = allocAgentPort();
   const agentToken = genAgentToken();
   const guiMode = data.gui_mode === true || data.gui_mode === '1' || data.gui_mode === 'true';
@@ -1912,6 +1977,7 @@ async function create({ user, data }) {
     vps_type: resolveVpsType(data, user),
     expires_at: expiryFromDays(data.expiry_days),
     backup_slots: toBackupSlots(data.backup_slots),
+    virt_type: virt,
   };
 
   const info = db.prepare(
@@ -1922,7 +1988,7 @@ async function create({ user, data }) {
       storage_pool, disk_format, additional_disks, cloudinit_userdata, cloudinit_packages, cloudinit_commands, cloudinit_files,
       startup_script, install_guest_agent, enable_monitoring, enable_backups, backup_schedule, timezone, locale, advanced,
       ip_mode, ip_address, ip_gateway, ip_prefix, ipv6_address, ipv6_gateway, ipv6_prefix, neofetch_cpu, neofetch_mem, neofetch_disk, neofetch_gpu,
-      vps_type, expires_at, backup_slots)
+      vps_type, expires_at, backup_slots, virt_type)
      VALUES (@node_id, @uuid, @owner_id, @name, @os_type, @codename, @img_url, @hostname, @username, @password,
       @disk_size, @memory, @cpus, @ssh_port, @vnc_port, @agent_port, @agent_token, @gui_mode, @port_forwards, @start_on_boot, @startup_command, @status, @notes, @created, @created,
       @description, @tag, @region, @vmid, @cpu_sockets, @cores_per_socket, @threads_per_core, @cpu_model, @cpu_type, @cpu_units, @cpu_limit,
@@ -1930,7 +1996,7 @@ async function create({ user, data }) {
       @storage_pool, @disk_format, @additional_disks, @cloudinit_userdata, @cloudinit_packages, @cloudinit_commands, @cloudinit_files,
       @startup_script, @install_guest_agent, @enable_monitoring, @enable_backups, @backup_schedule, @timezone, @locale, @advanced,
       @ip_mode, @ip_address, @ip_gateway, @ip_prefix, @ipv6_address, @ipv6_gateway, @ipv6_prefix, @neofetch_cpu, @neofetch_mem, @neofetch_disk, @neofetch_gpu,
-      @vps_type, @expires_at, @backup_slots)`
+      @vps_type, @expires_at, @backup_slots, @virt_type)`
   ).run({ ...vm, created: now() });
 
   const id = Number(info.lastInsertRowid);
@@ -1942,6 +2008,21 @@ async function create({ user, data }) {
   vm.seed_file = path.join(dir, 'seed.iso');
 
   db.prepare('UPDATE vms SET img_file = ?, seed_file = ? WHERE id = ?').run(vm.img_file, vm.seed_file, id);
+
+  if (virt === 'lxc') {
+    // ---- LXC: unpack a distro rootfs instead of downloading a cloud image ----
+    // No qcow2, no qemu-img, no cloud-init seed: the container shares the host
+    // kernel and boots the template's own init. SSH reachability comes from host
+    // networking plus the bootstrap in lxcService (sshd on vm.ssh_port).
+    await lxcService.createContainer({
+      vm,
+      entry: osEntry,
+      onProgress: (m) => logger.info(`[lxc] vm ${id}: ${m}`),
+    });
+    setDbStatus(id, 'stopped');
+    logActivity({ user_id: user.id, vm_id: id, event: 'vm:create', details: { name: vmName, port: sshPort, virt: 'lxc' } });
+    return getVm(id);
+  }
 
   const img = vm.img_file;
   if (!fs.existsSync(img)) {
@@ -2083,7 +2164,21 @@ async function start(vm, { user = null } = {}) {
     return { ok: true, status: 'running' };
   }
 
-  if (!fs.existsSync(vm.img_file)) throw new Error(`Image file not found: ${vm.img_file}`);
+  if (!fs.existsSync(vm.img_file) && !isLxc(vm)) throw new Error(`Image file not found: ${vm.img_file}`);
+
+  // ---- LXC container start ----
+  // Containers skip the qcow2/seed/RAM-allocation path entirely: memory is a
+  // cgroup limit, so there is nothing to reserve up front and no overcommit risk
+  // to warn about. lxcService.start does the state transition and bootstrap.
+  if (isLxc(vm)) {
+    ensureAgentPort(vm);
+    const res = await lxcService.start(vm);
+    setDbStatus(vm.id, 'running');
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:start', details: { virt: 'lxc' } });
+    webhooks.emit(vm, 'vm:start', { id: vm.id, name: vm.name });
+    return { ok: true, status: 'running', message: res && res.already ? 'already running' : undefined };
+  }
+
   // Refresh the seed on every start so template fixes reach existing VMs.
   // The instance-id carries a content hash, so cloud-init only re-runs its
   // per-instance modules when the seed actually changed.
@@ -2178,6 +2273,17 @@ async function stop(vm, { user = null, force = false } = {}) {
     return { ok: true, status: 'stopped' };
   }
 
+  if (isLxc(vm)) {
+    // Host-networking containers are stopped through the lxc CLI; there is no
+    // pidfile to signal.
+    const r = lxcService.stop(vm, force);
+    setDbStatus(vm.id, 'stopped');
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: force ? 'vm:kill' : 'vm:stop', details: { virt: 'lxc' } });
+    webhooks.emit(vm, 'vm:stop', { id: vm.id, name: vm.name, forced: !!force });
+    if (r && r.ok === false) logger.warn('[lxc] stop vm ' + vm.id + ': ' + r.error);
+    return { ok: true, status: 'stopped' };
+  }
+
   const pid = pidOf(vm);
   if (!pid) {
     setDbStatus(vm.id, 'stopped');
@@ -2223,6 +2329,12 @@ async function restart(vm, user) {
     logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:restart' });
     return { ok: true };
   }
+  if (isLxc(vm)) {
+    await lxcService.restart(vm);
+    setDbStatus(vm.id, 'running');
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:restart', details: { virt: 'lxc' } });
+    return { ok: true };
+  }
   await stop(vm, { user });
   await new Promise((r) => setTimeout(r, 1500));
   return start(vm, { user });
@@ -2239,7 +2351,13 @@ async function remove(vm, user) {
       }
     }
   } else {
-    if (isRunning(vm)) await stop(vm, { user, force: true });
+    if (isLxc(vm)) {
+      // Unregister the container first so the host's lxc never keeps pointing at
+      // a rootfs we are about to delete.
+      try { lxcService.remove(vm); } catch (e) { logger.warn('[lxc] remove error for ' + vm.name + ': ' + e.message); }
+    } else if (isRunning(vm)) {
+      await stop(vm, { user, force: true });
+    }
     try {
       fs.rmSync(vmDir(vm), { recursive: true, force: true });
     } catch (e) {
@@ -2256,6 +2374,25 @@ async function remove(vm, user) {
 }
 
 async function reinstall(vm, data, user) {
+  // Local LXC container: rebuild in place from the (possibly changed) template.
+  // Local QEMU VMs are unaffected by this branch.
+  if (isLxc(vm) && !isRemoteVm(vm)) {
+    const osList = lxcService.getLxcOsList();
+    const entry = (data && data.os ? osList.find((o) => o[0] === data.os) : null)
+      || osList.find((o) => o[0] === vm.os_type) || osList[0];
+    if (!entry) throw new Error('No container template configured — add one in Templates Studio (LXC) first.');
+    try { lxcService.stop(vm, true); } catch (_) {}
+    await lxcService.rebuildContainer({ vm, entry, onProgress: (m) => logger.info(`[lxc] reinstall vm ${vm.id}: ${m}`) });
+    db.prepare('UPDATE vms SET os_type = ?, codename = ?, updated_at = ? WHERE id = ?')
+      .run(entry[0], entry[2] || '', now(), vm.id);
+    setDbStatus(vm.id, 'stopped');
+    const fresh = getVm(vm.id);
+    await lxcService.start(fresh);
+    setDbStatus(vm.id, 'running');
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:reinstall', details: { os: entry[0], virt: 'lxc' } });
+    return { ok: true, vm: getVm(vm.id) };
+  }
+
   const node = remoteNodeFor(vm);
   if (!node) throw new Error('Node not found for this VM');
   const r = await nodeRegistry.reinstallVmOnNode(node, vm, data || {});
@@ -2453,6 +2590,14 @@ async function resizeDisk(vm, newSize, user) {
     logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:resize', details: { newSize } });
     return getVm(vm.id);
   }
+  // A container's rootfs lives on the node filesystem, so there is no image to
+  // grow - only the recorded quota changes. Enforced by the plan, not the disk.
+  if (isLxc(vm)) {
+    await Promise.resolve(lxcService.resizeDisk(vm, newSize.toUpperCase()));
+    db.prepare('UPDATE vms SET disk_size = ?, updated_at = ? WHERE id = ?').run(newSize.toUpperCase(), now(), vm.id);
+    logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:resize', details: { newSize, virt: 'lxc' } });
+    return getVm(vm.id);
+  }
   const r = spawnSync('qemu-img', ['resize', vm.img_file, newSize], { encoding: 'utf8' });
   if (r.status !== 0) throw new Error(r.stderr || 'Failed to resize disk');
   db.prepare('UPDATE vms SET disk_size = ?, updated_at = ? WHERE id = ?').run(newSize.toUpperCase(), now(), vm.id);
@@ -2590,6 +2735,7 @@ async function addDataDiskFor(vm, data, user) {
 }
 
 async function growDataDiskFor(vm, diskName, newSize, user) {
+  if (isLxc(vm)) throw new Error('Containers use the node filesystem, not block disks, so extra data disks are not supported.');
   normalizeDiskSizeLocal(newSize);
   if (isLocalVm(vm)) {
     let disks = parseDataDisks(vm);
@@ -2614,6 +2760,16 @@ async function growDataDiskFor(vm, diskName, newSize, user) {
 }
 
 function volumesFor(vm) {
+  // A container has no block device: its rootfs is a directory on the node
+  // filesystem, so there is no volume to list or grow. Report the recorded
+  // allocation so the page can explain the difference rather than break.
+  if (isLxc(vm)) {
+    return {
+      volumes: [{ name: 'root', size: vm.disk_size, bus: 'filesystem', file: vmDir(vm) + '/rootfs', primary: true }],
+      running: isRunning(vm),
+      virt_type: 'lxc',
+    };
+  }
   const main = {
     name: 'root',
     size: vm.disk_size,
@@ -2695,6 +2851,52 @@ function diskActualUsage(vm) {
 
 function liveStats(vm) {
   const running = isRunning(vm);
+  // Containers report their real usage from the cgroup, so the numbers are not
+  // an estimate the way the ps-based QEMU path has to be.
+  if (isLxc(vm)) {
+    const s = lxcService.liveStats(vm);
+    const memUsedBytes = s.memUsage || 0;
+    const totalMemBytes = (parseInt(vm.memory, 10) || 1024) * 1024 * 1024;
+    const diskBytes = s.diskActualUsage || 0;
+    let totalDiskBytes = 20 * 1024 * 1024 * 1024;
+    if (vm.disk_size) {
+      const m = String(vm.disk_size).trim().match(/^(\d+)([GMK]?)$/i);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        const unit = (m[2] || 'G').toUpperCase();
+        if (unit === 'G') totalDiskBytes = num * 1024 * 1024 * 1024;
+        else if (unit === 'M') totalDiskBytes = num * 1024 * 1024;
+        else if (unit === 'K') totalDiskBytes = num * 1024;
+      }
+    }
+    return {
+      id: vm.id,
+      name: vm.name,
+      status: running ? 'running' : 'stopped',
+      running,
+      virt_type: 'lxc',
+      pid: null,
+      uptime: s.uptimeSeconds || 0,
+      cpu: { percent: s.cpuUsage || 0, cpus: vm.cpus || 1 },
+      memory: {
+        used_bytes: memUsedBytes,
+        used_mb: Math.round(memUsedBytes / 1024 / 1024),
+        total_mb: vm.memory,
+        // A container's limit is a cap, not a reservation: report the cgroup
+        // figure when we have it so the tile reflects what it may actually use.
+        limit_mb: s.memoryLimit ? Math.round(s.memoryLimit / 1024 / 1024) : vm.memory,
+        percent: totalMemBytes > 0 ? Math.min(100, Math.round((memUsedBytes / totalMemBytes) * 100)) : 0,
+      },
+      disk: {
+        allocated: vm.disk_size,
+        actual_bytes: diskBytes,
+        actual_mb: Math.round(diskBytes / 1024 / 1024),
+        percent: totalDiskBytes > 0 ? Math.min(100, Math.round((diskBytes / totalDiskBytes) * 100)) : 0,
+      },
+      ports: { ssh: vm.ssh_port, vnc: null, agent: vm.agent_port },
+      updated_at: new Date().toISOString(),
+    };
+  }
   const pid = running ? pidOf(vm) : null;
   const uptime = running ? uptimeSeconds(vm) : 0;
   const memUsedBytes = running ? memUsage(vm) : 0;
@@ -2788,6 +2990,9 @@ module.exports = {
   resizeDisk, isRunning, isRemoteVm, statusOf, serializeVm, canAccess, isOwnerOrAdmin,
   SUBUSER_PERMS, OWNER, sanitizeSubuserPerms, allocPort, allocVncPort, allocAgentPort,
     parseForwards, usage, uptimeSeconds, memUsage, cpuUsage, diskActualUsage, liveStats, liveStatsRemote, totalDiskUsage, startOnBootAll, getOsList, getBootLog, clearBootLog, hasKvm, transferOwner, applyNeofetchSpoof,
+    // ---- virtualization -----------------------------------------------------
+    VIRT_TYPES, virtType, isLxc, isContainer: isLxc, getLxcOsList: lxcService.getLxcOsList,
+    lxcAvailable: lxcService.lxcAvailable, vmDir,
   reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
   addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,

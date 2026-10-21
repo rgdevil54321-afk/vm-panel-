@@ -419,6 +419,24 @@ const defaultSettings = {
     ['AlmaLinux 9', 'almalinux', '9', 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2', 'almalinux', 'root'],
     ['Rocky Linux 9', 'rockylinux', '9', 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2', 'rocky', 'root']
   ]),
+  // LXC template catalog. Unlike the QEMU list these are NOT cloud images - they
+  // are distro rootfs tarballs unpacked straight into the container, which is why
+  // a container needs no disk image, no cloud-init and no qemu process. Tuple:
+  // [label, distro, release, arch] - the download URL is built from these against
+  // images.linuxcontainers.org so admins only ever edit friendly names.
+  'vm.os_list_lxc': JSON.stringify([
+    ['Ubuntu 24.04', 'ubuntu', 'noble', 'amd64'],
+    ['Ubuntu 22.04', 'ubuntu', 'jammy', 'amd64'],
+    ['Debian 12', 'debian', 'bookworm', 'amd64'],
+    ['Debian 11', 'debian', 'bullseye', 'amd64'],
+    ['Alpine 3.20', 'alpine', '3.20', 'amd64'],
+    ['CentOS Stream 9', 'centos', 'stream9', 'amd64'],
+    ['Rocky Linux 9', 'rockylinux', '9', 'amd64'],
+    ['AlmaLinux 9', 'almalinux', '9', 'amd64'],
+    ['Fedora 40', 'fedora', '40', 'amd64'],
+    ['Arch Linux', 'archlinux', 'current', 'amd64']
+  ]),
+  'vm.default_virt_type': 'qemu',
   'vm.default_cpu_model': 'default',
   'vm.default_nic_model': 'virtio',
   'vm.default_machine_type': 'pc',
@@ -613,6 +631,11 @@ for (const [col, type] of Object.entries({
   vps_type: "TEXT NOT NULL DEFAULT 'kvm'",   // kvm | nat | storage | highcpu | gaming | backup
   expires_at: 'TEXT',                          // ISO date when the machine expires (null = never)
   backup_slots: 'INTEGER',                     // max # backups allowed for this machine
+  // Virtualization engine for this machine. 'qemu' = full KVM/QEMU VM (own kernel,
+  // hard RAM allocation, qcow2 disk, SLIRP net). 'lxc' = system container sharing
+  // the host kernel (soft RAM limits, template rootfs, host networking) - that is
+  // what makes it possible to hand out far larger RAM figures than a VM can get.
+  virt_type: "TEXT NOT NULL DEFAULT 'qemu'",   // qemu | lxc
 })) {
   if (!vmNetColNames.includes(col)) {
     safeExec(`ALTER TABLE vms ADD COLUMN ${col} ${type}`);

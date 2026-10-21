@@ -62,7 +62,7 @@
             <td class="hide-sm">
               <span class="muted font-bold"><%= v.owner_name %></span>
             </td>
-            <td class="hide-xs"><span class="pill pill-blue font-bold"><%= v.os_type || '-' %></span></td>
+            <td class="hide-xs"><span class="pill pill-blue font-bold"><%= v.os_type || '-' %></span> <% if (v.virt_type === 'lxc') { %><span class="pill pill-yellow" title="LXC system container">LXC</span><% } %></td>
             <td class="hide-sm"><span class="muted"><%= v.cpus %> vCPU · <%= v.memory %>MB · <%= v.disk_size %></span></td>
             <td class="mono font-bold" style="color:var(--accent-2)">Port <%= v.ssh_port %></td>
             <td><span class="pill <%= v.status === 'running' ? 'pill-green' : 'pill-gray' %>"><%= v.status %></span></td>
