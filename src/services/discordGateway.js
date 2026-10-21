@@ -142,6 +142,7 @@ function onMessage(raw) {
         heartbeatAck = false;
         send({ op: 1, d: lastSeq });
       }, iv);
+      heartbeatTimer.unref(); // heartbeats must never hold the process open
       if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = null; }
       startRotation();
       if (sessionId && lastSeq != null) {

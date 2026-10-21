@@ -22,7 +22,7 @@ const CATEGORIES = [
 const cache = new Map();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-function fetchHtml(url) {
+function fetchHtml(url, depth = 0) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
     const req = client.get(url, {
@@ -34,7 +34,9 @@ function fetchHtml(url) {
       timeout: 10000,
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchHtml(res.headers.location).then(resolve).catch(reject);
+        if (depth >= 5) return reject(new Error('Too many redirects'));
+        // Location may be relative; resolve against the current URL or https.get throws
+        return fetchHtml(new URL(res.headers.location, url).toString(), depth + 1).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
         return reject(new Error(`HTTP error ${res.statusCode}`));
@@ -164,6 +166,7 @@ async function getWallpapers({ category = 'all', page = 1, query = '' } = {}) {
       wallpapers: items,
     };
 
+    if (cache.size >= 200) cache.clear(); // query keys are user-supplied; keep the cache from growing forever
     cache.set(cacheKey, { time: Date.now(), data: result });
     return result;
   } catch (err) {

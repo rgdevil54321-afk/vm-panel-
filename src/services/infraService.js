@@ -36,7 +36,8 @@ function updatePool(id, data) {
     String(data.type !== undefined ? data.type : pool.type || 'dir'),
     String(data.path !== undefined ? data.path : pool.path).trim(),
     data.node_id !== undefined ? (data.node_id ? Number(data.node_id) : null) : pool.node_id,
-    data.active === undefined || data.active === true || data.active === 1 || data.active === '1' ? 1 : 0,
+    // keep the stored flag on partial updates — `undefined` must not re-enable a disabled pool
+    data.active !== undefined ? (data.active === true || data.active === 1 || data.active === '1' ? 1 : 0) : pool.active,
     data.options ? JSON.stringify(data.options) : (pool.options || null),
     id
   );
@@ -84,9 +85,10 @@ function updateVnet(id, data) {
     String(data.bridge !== undefined ? data.bridge : (net.bridge || '')),
     String(data.cidr !== undefined ? data.cidr : (net.cidr || '')),
     String(data.gateway !== undefined ? data.gateway : (net.gateway || '')),
-    data.nat === undefined || data.nat === true || data.nat === 1 || data.nat === '1' ? 1 : 0,
-    data.dhcp === undefined || data.dhcp === true || data.dhcp === 1 || data.dhcp === '1' ? 1 : 0,
-    data.enabled === undefined || data.enabled === true || data.enabled === 1 || data.enabled === '1' ? 1 : 0,
+    // keep stored flags on partial updates — `undefined` must not flip them on
+    data.nat !== undefined ? (data.nat === true || data.nat === 1 || data.nat === '1' ? 1 : 0) : net.nat,
+    data.dhcp !== undefined ? (data.dhcp === true || data.dhcp === 1 || data.dhcp === '1' ? 1 : 0) : net.dhcp,
+    data.enabled !== undefined ? (data.enabled === true || data.enabled === 1 || data.enabled === '1' ? 1 : 0) : net.enabled,
     id
   );
   return getVnet(id);
@@ -128,7 +130,7 @@ function updateRule(id, data) {
     String(data.port !== undefined ? data.port : (rule.port || '')),
     String(data.source !== undefined ? data.source : (rule.source || '')),
     String(data.action !== undefined ? data.action : rule.action),
-    parseInt(data.priority, 10) || 100,
+    data.priority !== undefined ? (parseInt(data.priority, 10) || 100) : rule.priority,
     String(data.description !== undefined ? data.description : (rule.description || '')),
     id
   );
@@ -164,7 +166,7 @@ function updateIso(idx, data) {
     name: String(data.name || arr[i].name).trim(),
     url: String(data.url !== undefined ? data.url : (arr[i].url || '')),
     pool_id: data.pool_id !== undefined ? (data.pool_id ? Number(data.pool_id) : null) : (arr[i].pool_id || null),
-    size_mb: parseFloat(data.size_mb) || 0,
+    size_mb: data.size_mb !== undefined ? (parseFloat(data.size_mb) || 0) : (arr[i].size_mb || 0),
     description: String(data.description !== undefined ? data.description : (arr[i].description || '')),
   };
   return saveIsos(arr);

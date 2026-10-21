@@ -20,7 +20,7 @@
         <tbody>
         <% for (const vol of volumes) { %>
           <tr>
-            <td class="mono"><%= vol.name %> <%= vol.primary ? '<span class="pill pill-blue" style="margin-left:6px">boot</span>' : '' %></td>
+            <td class="mono"><%= vol.name %> <%- vol.primary ? '<span class="pill pill-blue" style="margin-left:6px">boot</span>' : '' %></td>
             <td><%= vol.size %></td>
             <td><span class="pill pill-gray"><%= vol.bus %></span></td>
             <td><%= vol.primary ? 'system (root)' : 'data' %></td>

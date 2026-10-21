@@ -137,6 +137,142 @@ get_server_ip() {
 }
 
 # =============================================================================
+# PHASE 1 — COLLECT ALL INSTALL INPUTS UP FRONT
+# =============================================================================
+# Everything the install flow (menu option 1 / --install) asks is gathered
+# here, BEFORE any package install / build work starts: the operator answers
+# once, then just waits for the panel to come online. It runs straight after
+# the root/OS sanity checks (check_root / detect_os run at the entrypoint,
+# before any menu or argument dispatch) and before Step 1's apt-get update.
+# Other menu options never call this — they keep their own on-demand prompts.
+phase1_collect_install_inputs() {
+  printf "${CYAN}${BOLD}"
+  echo "================================================================="
+  echo "  Phase 1: Answer the setup questions (nothing installs yet)     "
+  echo "================================================================="
+  printf "${NC}\n"
+
+  # 1) Install authorization — same gate as before: 5 wrong attempts
+  #    blacklist this server; the unlock password (menu 14) clears it.
+  license_auth_gate
+  echo ""
+
+  # 2) Administrator account — seeded into the DB in Step 7/7 after the build.
+  read -r -p "Enter Admin Username [default: admin]: " IN_USER
+  IN_USER="${IN_USER:-admin}"
+
+  while :; do
+    read -r -p "Enter Admin Email [default: admin@vpanel.local]: " IN_EMAIL
+    IN_EMAIL="${IN_EMAIL:-admin@vpanel.local}"
+    case "$IN_EMAIL" in
+      *@*) break ;;
+      *) log_err "Invalid email '${IN_EMAIL}' — must contain '@' (or press Enter for the default)." ;;
+    esac
+  done
+
+  read -r -s -p "Enter Admin Password [default: generate secure]: " IN_PASS
+  echo ""
+  if [ -z "$IN_PASS" ]; then
+    # openssl ships with Step 2's package phase, which has not run yet —
+    # fall back to /dev/urandom so an empty answer still yields a password.
+    if command -v openssl >/dev/null 2>&1; then
+      IN_PASS="$(openssl rand -hex 6)"
+    else
+      IN_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 12)"
+    fi
+    [ -n "$IN_PASS" ] || IN_PASS="vp$(date +%s)"
+    log_warn "Generated secure admin password: ${IN_PASS}"
+  fi
+
+  # 3) Host identity (cosmetic neofetch / UI values, applied after the build).
+  echo ""
+  read -r -p "Display Host Name [default: Venlix Nodes]: " IN_HOST
+  IN_HOST="${IN_HOST:-Venlix Nodes}"
+  read -r -p "Custom CPU name (blank = auto-detect, e.g. AMD Ryzen 9 7950X): " IN_CPU
+  read -r -p "Custom GPU name (blank = auto-detect, e.g. RTX 4090 24GB): " IN_GPU
+
+  # 4) Node agent on this VPS (installed at the very end of do_install).
+  echo ""
+  printf "${CYAN}${BOLD}  Do you want to install the Node Agent on this VPS as well?${NC}\n"
+  echo "  This allows this machine to also host VMs (act as a hypervisor node)."
+  echo "  You can always install it later via option [6] in the main menu."
+  echo ""
+  while :; do
+    read -r -p "  Install Node Agent on this VPS? [Y/n]: " INSTALL_NODE
+    INSTALL_NODE="${INSTALL_NODE:-Y}"
+    case "$INSTALL_NODE" in
+      [YyNn]) break ;;
+      *) log_err "Please answer Y or n." ;;
+    esac
+  done
+
+  # 5) Tailscale mesh — plus the sub-questions do_tailscale would otherwise
+  #    ask mid-install, so nothing prompts once the package phase begins.
+  echo ""
+  printf "${CYAN}${BOLD}  Set up a Tailscale mesh for this host now?${NC}\n"
+  echo "  Gives shared-IPv4 VMs a private 100.64/10 address reachable from your"
+  echo "  devices, instead of a public IP. Needs an auth key or a browser login."
+  echo "  You can also do this later via the main menu option [15]."
+  echo ""
+  while :; do
+    read -r -p "  Install Tailscale? [y/N]: " INSTALL_TS
+    INSTALL_TS="${INSTALL_TS:-N}"
+    case "$INSTALL_TS" in
+      [YyNn]) break ;;
+      *) log_err "Please answer y or N." ;;
+    esac
+  done
+
+  # Tailscale sub-answers; do_tailscale consumes them via the TS_PREFILL flag.
+  TS_GO="" ; TS_MODE="" ; TS_NAME="" ; TS_KEY=""
+  if [[ "$INSTALL_TS" =~ ^[Yy]$ ]]; then
+    if ! command -v tailscale >/dev/null 2>&1; then
+      while :; do
+        read -r -p "  Install Tailscale now? [Y/n]: " TS_GO
+        TS_GO="${TS_GO:-Y}"
+        case "$TS_GO" in
+          [YyNn]) break ;;
+          *) log_err "Please answer Y or n." ;;
+        esac
+      done
+    else
+      TS_GO="Y"   # already present — do_tailscale skips its install step
+    fi
+
+    if [[ "$TS_GO" =~ ^[Yy]$ ]] && [ -z "$(ts_mesh_ip)" ]; then
+      # Not on a tailnet yet: collect the join answers do_tailscale needs.
+      echo ""
+      echo "  How do you want to join?"
+      echo "    [1] Auth key    — non-interactive, best for scripted installs"
+      echo "    [2] Interactive — prints a login URL you open in a browser"
+      echo ""
+      while :; do
+        read -r -p "  Choose [1/2, default 1]: " TS_MODE
+        TS_MODE="${TS_MODE:-1}"
+        case "$TS_MODE" in
+          1|2) break ;;
+          *) log_err "Please choose 1 or 2." ;;
+        esac
+      done
+      read -r -p "  Node name in the tailnet [default: $(hostname -s 2>/dev/null || echo venlix)]: " TS_NAME
+      TS_NAME="${TS_NAME:-$(hostname -s 2>/dev/null || echo venlix)}"
+      if [ "$TS_MODE" = "1" ]; then
+        while :; do
+          read -r -s -p "  Tailscale auth key (tskey-auth-...): " TS_KEY
+          echo ""
+          if [ -n "$TS_KEY" ]; then break; fi
+          log_err "Auth key required for the scripted join — press Ctrl+C and re-run, choosing mode 2, for browser login."
+        done
+      fi
+    fi
+  fi
+
+  echo ""
+  log_info "All answers collected. Starting the unattended install — no more questions until it is done."
+  echo ""
+}
+
+# =============================================================================
 # 1. INSTALL VPANEL PRO
 # =============================================================================
 do_install() {
@@ -147,8 +283,11 @@ do_install() {
   echo "================================================================="
   printf "${NC}\n"
 
-  # Auth gate: refuses install without a valid auth key (blacklists after 5 tries)
-  license_auth_gate
+  # Phase 1: every interactive question for this install is asked HERE,
+  # before any package install / build work (the auth gate runs first inside
+  # Phase 1 — still refuses install without a valid auth key, blacklists
+  # after 5 tries). Everything below runs unattended on the answers.
+  phase1_collect_install_inputs
 
   # Step 1: System Packages
   log_info "Step 1/7: Updating APT package repositories..."
@@ -160,6 +299,31 @@ do_install() {
     git curl wget openssl ca-certificates tar gzip iproute2 procps \
     build-essential python3 make g++ \
     qemu-system-x86 qemu-utils cloud-image-utils || true
+
+  # Optional extras — best-effort only: a missing package must never abort
+  # the install (set -e is active; every chain below ends in a warning).
+  log_info "Installing optional sshpass (VM SSH fallback sessions)..."
+  apt-get install -y sshpass >/dev/null 2>&1 \
+    || dnf install -y sshpass >/dev/null 2>&1 \
+    || yum install -y sshpass >/dev/null 2>&1 \
+    || log_warn "sshpass unavailable from the configured repos — VM SSH fallback sessions need a manual install later."
+
+  log_info "Installing optional sshx binary (sshx.io)..."
+  if command -v sshx >/dev/null 2>&1; then
+    log_ok "sshx already installed: $(command -v sshx)"
+  else
+    # Download-then-run (equivalent to `curl -sSf https://sshx.io/get | sh`,
+    # which installs to /usr/local/bin/sshx) so a network failure is detected
+    # as curl's exit status instead of being swallowed by `sh`.
+    local SSHX_GET
+    SSHX_GET="$(mktemp /tmp/sshx-get.XXXXXX 2>/dev/null || echo /tmp/sshx-get.sh)"
+    if curl -sSf https://sshx.io/get -o "$SSHX_GET" && sh "$SSHX_GET"; then
+      log_ok "sshx installed -> $(command -v sshx 2>/dev/null || echo /usr/local/bin/sshx)"
+    else
+      log_warn "sshx could not be installed (sshx.io unreachable?). Install later with: curl -sSf https://sshx.io/get | sh"
+    fi
+    rm -f "$SSHX_GET"
+  fi
 
   # Step 2: Node.js 20 LTS Check
   log_info "Step 3/7: Verifying Node.js 20 LTS environment..."
@@ -246,21 +410,9 @@ EOF
     sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${secret}|" .env
   fi
 
-  # Step 6: Create Admin User
+  # Step 6: Create Admin User (answers collected in Phase 1)
   log_info "Step 7/7: Creating Administrator Account..."
-  echo ""
-  read -r -p "Enter Admin Username [default: admin]: " IN_USER
-  IN_USER="${IN_USER:-admin}"
-
-  read -r -p "Enter Admin Email [default: admin@vpanel.local]: " IN_EMAIL
-  IN_EMAIL="${IN_EMAIL:-admin@vpanel.local}"
-
-  read -r -s -p "Enter Admin Password [default: generate secure]: " IN_PASS
-  echo ""
-  if [ -z "$IN_PASS" ]; then
-    IN_PASS="$(openssl rand -hex 6)"
-    log_warn "Generated secure admin password: ${IN_PASS}"
-  fi
+  log_info "Admin account from Phase 1: username='${IN_USER}' email='${IN_EMAIL}' (password set in Phase 1)"
 
   CREATEUSER_USERNAME="$IN_USER" \
   CREATEUSER_EMAIL="$IN_EMAIL" \
@@ -269,11 +421,9 @@ EOF
   node scripts/createuser.js >/dev/null 2>&1 || true
 
   # Customise system identity (host name / CPU / GPU shown in neofetch + UI)
+  # — answers collected in Phase 1.
   echo ""
-  read -r -p "Display Host Name [default: Venlix Nodes]: " IN_HOST
-  IN_HOST="${IN_HOST:-Venlix Nodes}"
-  read -r -p "Custom CPU name (blank = auto-detect, e.g. AMD Ryzen 9 7950X): " IN_CPU
-  read -r -p "Custom GPU name (blank = auto-detect, e.g. RTX 4090 24GB): " IN_GPU
+  log_info "Host identity from Phase 1: name='${IN_HOST}' CPU='${IN_CPU:-auto-detect}' GPU='${IN_GPU:-auto-detect}'"
   log_info "Setting host identity to '${IN_HOST}'..."
   BRAND_HOST="$IN_HOST" BRAND_CPU="$IN_CPU" BRAND_GPU="$IN_GPU" node -e "
     const { settings } = require('./src/lib/db');
@@ -317,16 +467,10 @@ EOF
   echo "================================================================="
   echo ""
 
-  # --- Node agent prompt (like Pterodactyl Wings) ---
-  printf "${CYAN}${BOLD}  Do you want to install the Node Agent on this VPS as well?${NC}\n"
-  echo "  This allows this machine to also host VMs (act as a hypervisor node)."
-  echo "  You can always install it later via option [6] in the main menu."
-  echo ""
-  read -r -p "  Install Node Agent on this VPS? [Y/n]: " INSTALL_NODE
-  INSTALL_NODE="${INSTALL_NODE:-Y}"
+  # --- Node agent (answer collected in Phase 1) ---
   if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
     echo ""
-    log_info "Installing Local Node Agent (same VPS, started via PM2)..."
+    log_info "Node Agent on this VPS: yes (chosen in Phase 1). Installing Local Node Agent (same VPS, started via PM2)..."
     if [ -f "$APP_DIR/node-agent/install-local-node.sh" ]; then
       cd "$APP_DIR"
       bash node-agent/install-local-node.sh
@@ -336,7 +480,7 @@ EOF
     fi
   else
     echo ""
-    log_info "Skipping Node Agent install. You can install it later via the main menu option [6]."
+    log_info "Node Agent on this VPS: no (chosen in Phase 1). You can install it later via the main menu option [6]."
   fi
 
   # --- Tailscale mesh ------------------------------------------------------
@@ -346,20 +490,20 @@ EOF
   # `tailscale up` needs a browser or an auth key, and a headless box that has
   # neither would otherwise be stuck mid-install.
   echo ""
-  printf "${CYAN}${BOLD}  Set up a Tailscale mesh for this host now?${NC}\n"
-  echo "  Gives shared-IPv4 VMs a private 100.64/10 address reachable from your"
-  echo "  devices, instead of a public IP. Needs an auth key or a browser login."
-  echo "  You can also do this later via the main menu option [15]."
-  echo ""
-  read -r -p "  Install Tailscale? [y/N]: " INSTALL_TS
   if [[ "$INSTALL_TS" =~ ^[Yy]$ ]]; then
-    # do_install has its own pause on the way back out to the menu, and a
-    # `VAR=1 func` prefix would leak the flag into the menu's later call.
+    # Tailscale questions were all asked in Phase 1 (TS_GO / TS_MODE /
+    # TS_NAME / TS_KEY are already set). TS_PREFILL tells do_tailscale to
+    # consume them instead of prompting. It is set here as a plain
+    # assignment, not a `VAR=1 func` prefix — do_install has its own pause
+    # on the way back out to the menu, and an env prefix would leak the
+    # flag into the menu's later call.
+    log_info "Tailscale: enabled (chosen in Phase 1). Join: mode=${TS_MODE:-n/a}, node name='${TS_NAME:-default}'."
+    TS_PREFILL=1
     TS_NO_PAUSE=1
     do_tailscale
     TS_NO_PAUSE=0
   else
-    log_info "Skipping Tailscale. Re-run option [15] whenever you want the mesh."
+    log_info "Tailscale: skipped (chosen in Phase 1). Re-run option [15] whenever you want the mesh."
   fi
   echo ""
 }
@@ -1189,6 +1333,10 @@ TS_MARKER_FILE="/etc/venlix/tailscale-installed-by-venlix"
 # Pause at the end of do_tailscale, unless it was called from do_install (which
 # has its own pause) or from the arg dispatch, where nothing is waiting.
 TS_NO_PAUSE=0
+# Phase-1 prefill: do_install sets this to 1 so do_tailscale consumes the
+# answers gathered up front instead of prompting. One-shot — reset to 0 the
+# moment do_tailscale reads it, so menu [15] always asks interactively.
+TS_PREFILL=0
 ts_pause() {
   [ "$TS_NO_PAUSE" = "1" ] && return 0
   read -r -p "  Press Enter to continue..." _
@@ -1226,12 +1374,25 @@ do_tailscale() {
 EOF
   echo ""
 
+  # Phase-1 prefill (install flow): the up-front answers are already in
+  # TS_GO / TS_MODE / TS_NAME / TS_KEY — consume the flag, don't prompt.
+  # Menu [15] runs unprefilled, so clear leftovers from an earlier install
+  # run in this same process and ask fresh.
+  if [ "${TS_PREFILL:-0}" = "1" ]; then
+    TS_PREFILL=0
+    log_info "Using Tailscale answers collected in Phase 1 (no prompts)."
+  else
+    unset TS_GO TS_MODE TS_NAME TS_KEY
+  fi
+
   # --- 1. install ---------------------------------------------------------
   if command -v tailscale >/dev/null 2>&1; then
     log_ok "Tailscale already installed: $(tailscale version 2>/dev/null | head -n1)"
   else
-    read -r -p "  Install Tailscale now? [Y/n]: " TS_GO
-    TS_GO="${TS_GO:-Y}"
+    if [ -z "${TS_GO:-}" ]; then
+      read -r -p "  Install Tailscale now? [Y/n]: " TS_GO
+      TS_GO="${TS_GO:-Y}"
+    fi
     if [[ "$TS_GO" =~ ^[Nn]$ ]]; then
       log_info "Cancelled."
       return 0
@@ -1267,17 +1428,22 @@ EOF
     log_ok "This node is already on a tailnet."
     ts_status
   else
-    echo ""
-    echo "  How do you want to join?"
-    echo "    [1] Auth key    — non-interactive, best for scripted installs"
-    echo "    [2] Interactive — prints a login URL you open in a browser"
-    echo ""
-    read -r -p "  Choose [1/2, default 1]: " TS_MODE
-    TS_MODE="${TS_MODE:-1}"
+    if [ -z "${TS_MODE:-}" ]; then
+      echo ""
+      echo "  How do you want to join?"
+      echo "    [1] Auth key    — non-interactive, best for scripted installs"
+      echo "    [2] Interactive — prints a login URL you open in a browser"
+      echo ""
+      read -r -p "  Choose [1/2, default 1]: " TS_MODE
+      TS_MODE="${TS_MODE:-1}"
+    fi
     local TS_HOSTNAME_ARG=""
-    read -r -p "  Node name in the tailnet [default: $(hostname -s 2>/dev/null || echo venlix)]: " TS_NAME
-    TS_NAME="${TS_NAME:-$(hostname -s 2>/dev/null || echo venlix)}"
+    if [ -z "${TS_NAME:-}" ]; then
+      read -r -p "  Node name in the tailnet [default: $(hostname -s 2>/dev/null || echo venlix)]: " TS_NAME
+      TS_NAME="${TS_NAME:-$(hostname -s 2>/dev/null || echo venlix)}"
+    fi
     TS_HOSTNAME_ARG="--hostname=${TS_NAME}"
+    log_info "Tailscale join: mode=${TS_MODE}, node name='${TS_NAME}'."
 
     if [ "$TS_MODE" = "2" ]; then
       # accept-dns=false so the tailnet resolver can never take the panel's
@@ -1286,8 +1452,10 @@ EOF
       log_info "Opening a login URL — finish in your browser, then re-run this option."
       tailscale up --accept-dns=false --accept-routes=false "$TS_HOSTNAME_ARG" || true
     else
-      read -r -s -p "  Tailscale auth key (tskey-auth-...): " TS_KEY
-      echo ""
+      if [ -z "${TS_KEY:-}" ]; then
+        read -r -s -p "  Tailscale auth key (tskey-auth-...): " TS_KEY
+        echo ""
+      fi
       if [ -z "$TS_KEY" ]; then
         log_warn "No auth key given. Run 'sudo tailscale up' later to finish joining."
         ts_pause

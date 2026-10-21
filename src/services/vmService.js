@@ -206,7 +206,9 @@ function hasBin(bin) {
 
 function getOsList() {
   let raw = settings.get('vm.os_list');
-  if (typeof raw === 'string') raw = JSON.parse(raw);
+  try {
+    if (typeof raw === 'string') raw = JSON.parse(raw);
+  } catch (_) { raw = []; } // a corrupt os_list setting must not 500 every page that lists OSes
   return Array.isArray(raw) ? raw : [];
 }
 
@@ -1123,13 +1125,22 @@ async function download(url, dest) {
     const child = spawn('wget', ['-q', '--show-progress', '-O', tmp, url], { stdio: 'inherit' });
     child.on('close', (code) => {
       if (code === 0) {
-        fs.renameSync(tmp, dest);
-        resolve(dest);
+        try {
+          fs.renameSync(tmp, dest);
+          resolve(dest);
+        } catch (e) {
+          try { fs.unlinkSync(tmp); } catch (_) {}
+          reject(e);
+        }
       } else {
+        try { fs.unlinkSync(tmp); } catch (_) {}
         reject(new Error(`wget failed with code ${code}`));
       }
     });
-    child.on('error', reject);
+    child.on('error', (e) => {
+      try { fs.unlinkSync(tmp); } catch (_) {}
+      reject(e);
+    });
   });
 }
 
@@ -1225,7 +1236,8 @@ async function applyNeofetchSpoof(vm) {
 
 function writeSeed(vm) {
   const dir = vmDir(vm);
-  const passHash = spawnSync('openssl', ['passwd', '-6', vm.password], { encoding: 'utf8' }).stdout.trim();
+  // stdout is null when the openssl binary is missing; guard so start() reports it cleanly
+  const passHash = (spawnSync('openssl', ['passwd', '-6', vm.password], { encoding: 'utf8' }).stdout || '').trim();
 
   // ---- Optional advanced cloud-init blocks ----
   const blocks = [];
@@ -1416,7 +1428,8 @@ ${userData ? '\n# === User-supplied cloud-init (appended verbatim) ===\n' + user
       : [path.join(dir, 'seed.iso'), path.join(dir, 'user-data'), path.join(dir, 'meta-data')],
     { encoding: 'utf8' });
   if (r.status !== 0) {
-    throw new Error(`cloud-localds failed: ${r.stderr || r.stdout}`);
+    // r.error carries ENOENT when the binary is missing; stderr/stdout are null then
+    throw new Error(`cloud-localds failed (exit ${r.status}): ${r.error ? r.error.message + '; ' : ''}${r.stderr || r.stdout || 'no output — is cloud-localds installed?'}`);
   }
 }
 
@@ -1518,6 +1531,7 @@ function normalizeAdvanced(data) {
 async function create({ user, data }) {
   const osList = getOsList();
   const osEntry = osList.find((o) => o[0] === data.os) || osList[0];
+  if (!osEntry) throw new Error('No OS templates configured — add one in Admin → Settings (vm.os_list) before creating servers.');
   const vmName = String(data.name || '').trim().replace(/\s+/g, '-');
   if (!vmName || !/^[a-zA-Z0-9_-]+$/.test(vmName)) {
     throw new Error('VM name can only contain letters, numbers, hyphens, underscores');
@@ -1537,6 +1551,12 @@ async function create({ user, data }) {
   const { q, wantMem, wantDiskGb } = checkQuota(user, data);
   const cost = billingCost(wantMem, wantDiskGb);
   chargeCredits(user, cost);
+
+  // Refund + rollback: if any deploy step below throws after the charge, give
+  // the credits back and undo the partial VM - row + files for a local create,
+  // and for a remote create also delete the machine on the agent.
+  const made = { id: null, node: null, remoteVm: null };
+  try {
 
   // ---- Normalize advanced hKVM-style fields (safe defaults, TCG/Docker compatible) ----
   const adv = normalizeAdvanced(data);
@@ -1750,6 +1770,9 @@ async function create({ user, data }) {
       created: now(),
     });
     const id = Number(info.lastInsertRowid);
+    made.id = id;
+    made.node = node;
+    made.remoteVm = rv;
     setDbStatus(id, 'stopped');
     logActivity({ user_id: user.id, vm_id: id, event: 'vm:create', details: { name: vmName, node: node.name } });
     return getVm(id);
@@ -1911,6 +1934,7 @@ async function create({ user, data }) {
   ).run({ ...vm, created: now() });
 
   const id = Number(info.lastInsertRowid);
+  made.id = id; // rollback target if a later deploy step fails
   const dir = path.join(VM_DIR, String(id));
   fs.mkdirSync(dir, { recursive: true });
   vm.id = id;
@@ -1957,6 +1981,21 @@ async function create({ user, data }) {
   logActivity({ user_id: user.id, vm_id: id, event: 'vm:create', details: { name: vmName, port: sshPort } });
 
   return getVm(id);
+  } catch (e) {
+    try {
+      if (cost > 0) db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?').run(cost, user.id);
+    } catch (_) {}
+    if (made.node && made.remoteVm) {
+      // remote: the agent already created the machine - remove it so the node
+      // is not left holding an orphan the panel no longer tracks.
+      try { await nodeRegistry.deleteVmOnNode(made.node, made.remoteVm); } catch (_) {}
+    }
+    if (made.id) {
+      try { db.prepare('DELETE FROM vms WHERE id = ?').run(made.id); } catch (_) {}
+      try { fs.rmSync(path.join(VM_DIR, String(made.id)), { recursive: true, force: true }); } catch (_) {}
+    }
+    throw e;
+  }
 }
 
 // Push the current seed input (banner, spoof toggles, cloud-init inputs) to a

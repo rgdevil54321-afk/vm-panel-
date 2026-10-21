@@ -86,13 +86,19 @@ function reload() {
   loadAll();
 }
 
+// retention drives backup rotation counts; NaN must never reach the DB
+function sanitizeRetention(v, fallback) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
 function add(data, user) {
   const cronExpr = toCron(data.cron);
   if (!cronExpr) throw new Error('Invalid cron expression');
   if (!['start', 'stop', 'restart', 'backup'].includes(data.action)) throw new Error('Invalid action');
   const info = db.prepare(
     'INSERT INTO schedules (vm_id, name, cron, action, enabled, retention, created_at) VALUES (?,?,?,?,?,?,?)'
-  ).run(data.vm_id, data.name, cronExpr, data.action, data.enabled ? 1 : 0, parseInt(data.retention || '5', 10), new Date().toISOString());
+  ).run(data.vm_id, data.name, cronExpr, data.action, data.enabled ? 1 : 0, sanitizeRetention(data.retention, 5), new Date().toISOString());
   const sched = db.prepare('SELECT * FROM schedules WHERE id = ?').get(Number(info.lastInsertRowid));
   register(sched);
   logActivity({ user_id: user ? user.id : null, vm_id: data.vm_id, event: 'schedule:create', details: data });
@@ -103,13 +109,14 @@ function update(id, data, user) {
   const sched = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id);
   if (!sched) throw new Error('Schedule not found');
   const cronExpr = data.cron ? toCron(data.cron) : sched.cron;
+  if (data.cron && !cronExpr) throw new Error('Invalid cron expression'); // else the schedule would be saved dead
   db.prepare('UPDATE schedules SET name = ?, cron = ?, action = ?, enabled = ?, retention = ? WHERE id = ?')
     .run(
       data.name ?? sched.name,
       cronExpr,
       data.action ?? sched.action,
       data.enabled !== undefined ? (data.enabled ? 1 : 0) : sched.enabled,
-      data.retention !== undefined ? parseInt(data.retention, 10) : sched.retention,
+      data.retention !== undefined ? sanitizeRetention(data.retention, sched.retention) : sched.retention,
       id
     );
   const updated = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id);

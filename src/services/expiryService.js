@@ -32,8 +32,10 @@ async function check() {
 function start(intervalMs) {
   if (timer) clearInterval(timer);
   timer = setInterval(() => { check().catch(() => {}); }, intervalMs || 60000);
+  timer.unref(); // expiry sweeps must never hold the process open
   // first sweep shortly after boot
-  setTimeout(() => { check().catch(() => {}); }, 5000);
+  const first = setTimeout(() => { check().catch(() => {}); }, 5000);
+  first.unref();
   return timer;
 }
 

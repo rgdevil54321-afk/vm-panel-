@@ -12,6 +12,9 @@ function hashToken(t) {
 
 // Admin signs an impersonation token that is bound to a session row in DB.
 function createImpersonation(adminUser, target, reason = '') {
+  // Belt-and-braces: the only caller sits behind requireAdmin, but the gate
+  // belongs with the capability, not just with the route.
+  if (!adminUser || (adminUser.role !== 'admin' && !adminUser.root_admin)) throw new Error('Forbidden');
   const token = crypto.randomBytes(32).toString('base64url');
   const now = new Date();
   db.prepare(
@@ -58,8 +61,9 @@ function resolveImpersonation(reqUser, decodedPayload) {
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) return null;
   if (new Date(row.created_at).getTime() > signedAt + 5000) return null;
-  const admin = db.prepare('SELECT id, username, role, root_admin FROM users WHERE id = ?').get(row.admin_id);
-  if (!admin || (admin.role !== 'admin' && !admin.root_admin)) return null;
+  const admin = db.prepare('SELECT id, username, role, root_admin, suspended FROM users WHERE id = ?').get(row.admin_id);
+  // A suspended (or demoted) admin must not keep driving someone else's account.
+  if (!admin || admin.suspended || (admin.role !== 'admin' && !admin.root_admin)) return null;
   return { admin, target: reqUser, row };
 }
 

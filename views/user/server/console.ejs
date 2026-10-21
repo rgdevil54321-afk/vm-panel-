@@ -342,6 +342,10 @@ body.term-fullscreen #bgOverlay {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       Graphical (VNC)
     </button>
+    <button class="console-tab" id="tabSshx" onclick="switchView('sshx')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      SSH Link (sshx)
+    </button>
   </div>
 
   <!-- SSH Terminal Pane (multi-session) -->
@@ -479,6 +483,26 @@ body.term-fullscreen #bgOverlay {
       </div>
       <canvas id="vncScreen" style="display:none;width:100%;height:100%"></canvas>
     </div>
+  </div>
+
+  <!-- SSH Link (sshx) fallback Pane -->
+  <div id="paneSshx" class="card" style="padding:16px;display:none">
+    <div class="flex-between" style="margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <div style="max-width:640px">
+        <div style="font-weight:700;margin-bottom:3px">SSH Link fallback (sshx)</div>
+        <div class="muted text-sm">If the panel console cannot connect, generate a one-click link that opens this server&rsquo;s SSH session straight in your browser. Works even when the panel terminal is slow or blocked.</div>
+      </div>
+      <div class="flex" style="gap:8px">
+        <button class="btn btn-sm btn-primary" id="btnSshxGen" onclick="generateSshx()">Generate link</button>
+        <button class="btn btn-sm" id="btnSshxStop" onclick="stopSshx()" style="display:none">Stop</button>
+      </div>
+    </div>
+    <div id="sshxResult" class="flex" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="sshxUrl" readonly onclick="this.select()" class="input" style="flex:1;min-width:240px;font-family:JetBrains Mono,Menlo,Consolas,monospace;font-size:12px" />
+      <button class="btn btn-sm" onclick="copySshx()">Copy</button>
+      <a class="btn btn-sm btn-primary" id="sshxOpen" target="_blank" rel="noopener">Open link</a>
+    </div>
+    <div id="sshxStatus" class="muted text-sm" style="margin-top:8px"></div>
   </div>
 </div>
 
@@ -848,10 +872,17 @@ body.term-fullscreen #bgOverlay {
     }
     socketDead = false;
     socket = io({
-      transports: ['websocket', 'polling'],
+      // Polling first: it connects through any proxy/tunnel immediately, then
+      // engine.io upgrades to websocket in the background. Trying websocket
+      // first made every connect stall for the full handshake timeout whenever
+      // the tunnel did not forward upgrades, which is exactly the "terminal
+      // takes forever to connect" symptom.
+      transports: ['polling', 'websocket'],
       auth: { token: vpToken() },
       reconnection: true,
-      reconnectionDelay: 2000,
+      reconnectionDelay: 700,
+      reconnectionDelayMax: 4000,
+      timeout: 10000,
     });
 
     if (socket.io) {
@@ -1382,12 +1413,14 @@ body.term-fullscreen #bgOverlay {
     document.getElementById('tabTerminal').classList.toggle('active', tab === 'terminal');
     document.getElementById('tabBootLog').classList.toggle('active', tab === 'bootlog');
     document.getElementById('tabVnc').classList.toggle('active', tab === 'vnc');
+    if (document.getElementById('tabSshx')) document.getElementById('tabSshx').classList.toggle('active', tab === 'sshx');
     document.getElementById('paneTerminal').style.display = tab === 'terminal' ? 'block' : 'none';
     document.getElementById('paneBootLog').style.display = tab === 'bootlog' ? 'block' : 'none';
     if (document.getElementById('paneVnc')) document.getElementById('paneVnc').style.display = tab === 'vnc' ? 'block' : 'none';
+    if (document.getElementById('paneSshx')) document.getElementById('paneSshx').style.display = tab === 'sshx' ? 'block' : 'none';
 
     if (history.replaceState) {
-      const q = tab === 'bootlog' ? '?tab=bootlog' : tab === 'vnc' ? '?tab=vnc' : '?tab=terminal';
+      const q = tab === 'bootlog' ? '?tab=bootlog' : tab === 'vnc' ? '?tab=vnc' : tab === 'sshx' ? '?tab=sshx' : '?tab=terminal';
       history.replaceState(null, null, q);
     }
 
@@ -1474,10 +1507,62 @@ body.term-fullscreen #bgOverlay {
     setVncState('disconnected', 'pill-gray');
   };
 
+  // ---------------- SSH Link (sshx) fallback ----------------
+  window.generateSshx = async function () {
+    const btn = document.getElementById('btnSshxGen');
+    const status = document.getElementById('sshxStatus');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Starting shared SSH session (first run may install sshx)...';
+    try {
+      const r = await VP.api('/servers/<%= vm.id %>/sshx', { method: 'POST' });
+      const url = r && r.url;
+      if (!url) throw new Error((r && r.error) || 'No link returned');
+      document.getElementById('sshxUrl').value = url;
+      document.getElementById('sshxOpen').href = url;
+      document.getElementById('sshxResult').style.display = 'flex';
+      document.getElementById('sshxStop').style.display = '';
+      if (status) {
+        status.textContent = r.sshpass
+          ? 'Open the link - you land directly in the server shell.'
+          : 'Open the link, then log in with the server username and root password.';
+      }
+      if (window.VP && VP.toast) VP.toast('SSH link ready', 'success');
+    } catch (e) {
+      if (status) status.textContent = 'Failed: ' + e.message;
+      if (window.VP && VP.toast) VP.toast(e.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  window.stopSshx = async function () {
+    try {
+      await VP.api('/servers/<%= vm.id %>/sshx/stop', { method: 'POST' });
+    } catch (e) { /* already gone */ }
+    document.getElementById('sshxUrl').value = '';
+    document.getElementById('sshxResult').style.display = 'none';
+    document.getElementById('btnSshxStop').style.display = 'none';
+    document.getElementById('sshxStatus').textContent = 'Session stopped.';
+  };
+
+  window.copySshx = function () {
+    const i = document.getElementById('sshxUrl');
+    if (!i || !i.value) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(i.value)
+        .then(() => { if (window.VP && VP.toast) VP.toast('Link copied!', 'success'); })
+        .catch(() => { i.select(); try { document.execCommand('copy'); } catch (_) {} });
+    } else {
+      i.select();
+      try { document.execCommand('copy'); } catch (_) {}
+    }
+  };
+
   // ---------------- Init ----------------
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = (urlParams.get('tab') === 'bootlog' || window.location.hash === '#bootlog') ? 'bootlog'
     : (urlParams.get('tab') === 'vnc' || window.location.hash === '#vnc') ? 'vnc'
+    : (urlParams.get('tab') === 'sshx' || window.location.hash === '#sshx') ? 'sshx'
     : 'terminal';
 
   initBootTerm();
@@ -1488,6 +1573,9 @@ body.term-fullscreen #bgOverlay {
     setupSocket();
   } else if (initialTab === 'vnc') {
     switchView('vnc');
+    setupSocket();
+  } else if (initialTab === 'sshx') {
+    switchView('sshx');
     setupSocket();
   } else {
     if (isVmRunning) {

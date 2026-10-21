@@ -529,25 +529,28 @@ function discordState(userId) {
 
 router.get('/settings/discord/link', (req, res) => {
   const d = require('../services/discordService');
-  if (!d.oauthConfigured()) return res.redirect('/settings?err=discord_not_configured');
+  if (!d.oauthConfigured()) return res.redirect('/settings?tab=integrations&err=discord_not_configured');
   res.redirect(d.authorizeUrl(oauthRedirectUri(req), discordState(req.user.id)));
 });
 
 router.get('/settings/discord/callback', ah(async (req, res) => {
   const { code, state, error } = req.query;
-  if (error) return res.redirect('/settings?err=discord_denied');
+  if (error) return res.redirect('/settings?tab=integrations&err=discord_denied');
   const parts = String(state || '').split('.');
   const userId = parseInt(parts[0], 10);
-  if (!parts[1] || !userId) return res.redirect('/settings?err=discord_badstate');
+  if (!parts[1] || !userId) return res.redirect('/settings?tab=integrations&err=discord_badstate');
   const expected = crypto.createHmac('sha256', config.jwtSecret).update(String(userId)).digest('hex');
   const a = Buffer.from(String(parts[1]));
   const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.redirect('/settings?err=discord_badstate');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.redirect('/settings?tab=integrations&err=discord_badstate');
+  // The state is only HMAC(userId), not tied to this session - link must stay
+  // with the logged-in account or a planted state/code could relink someone else.
+  if (userId !== Number(req.user.id)) return res.redirect('/settings?tab=integrations&err=discord_badstate');
   const d = require('../services/discordService');
   const tok = await d.exchangeCode(String(code || ''), oauthRedirectUri(req));
-  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/settings?err=discord_oauth_failed');
+  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/settings?tab=integrations&err=discord_oauth_failed');
   const me = await d.getOAuthUser(tok.data.access_token);
-  if (!me.ok || !me.data || !me.data.id) return res.redirect('/settings?err=discord_oauth_failed');
+  if (!me.ok || !me.data || !me.data.id) return res.redirect('/settings?tab=integrations&err=discord_oauth_failed');
   db.prepare('UPDATE users SET discord_id = ?, discord_name = ?, discord_avatar = ?, discord_linked_at = ?, updated_at = ? WHERE id = ?')
     .run(String(me.data.id), String(me.data.username || '').slice(0, 64), d.cdnAvatar(me.data), new Date().toISOString(), new Date().toISOString(), userId);
   activity.logActivity({ user_id: userId, event: 'account:discord_link', details: { discord_id: me.data.id, discord_name: me.data.username || '' } });
@@ -566,7 +569,7 @@ router.get('/settings/discord/callback', ah(async (req, res) => {
   } catch (e) {
     logger.warn('[discord] guild auto-join error: ' + e.message);
   }
-  res.redirect('/settings?ok=discord_linked' + (joined ? '&joined=' + joined : ''));
+  res.redirect('/settings?tab=integrations&ok=discord_linked' + (joined ? '&joined=' + joined : ''));
 }));
 
 router.post('/settings/discord/unlink', express.json(), (req, res) => {
@@ -597,7 +600,7 @@ function googleStateOk(state) {
 
 router.get('/settings/google/link', (req, res) => {
   const g = require('../services/googleService');
-  if (!g.oauthConfigured()) return res.redirect('/settings?err=google_not_configured');
+  if (!g.oauthConfigured()) return res.redirect('/settings?tab=integrations&err=google_not_configured');
   res.redirect(g.authorizeUrl(googleRedirectUri(req), discordState(req.user.id)));
 });
 
@@ -607,22 +610,24 @@ router.get('/settings/google/callback', (req, res, next) => {
 
 async function handleGoogleCallback(req, res) {
   const { code, state, error } = req.query;
-  if (error) return res.redirect('/settings?err=google_denied');
+  if (error) return res.redirect('/settings?tab=integrations&err=google_denied');
   const userId = googleStateOk(state);
-  if (!userId) return res.redirect('/settings?err=discord_badstate');
+  if (!userId) return res.redirect('/settings?tab=integrations&err=discord_badstate');
+  // Same binding as the Discord callback above: state is not session-bound.
+  if (Number(userId) !== Number(req.user.id)) return res.redirect('/settings?tab=integrations&err=discord_badstate');
   const g = require('../services/googleService');
   const tok = await g.exchangeCode(String(code || ''), googleRedirectUri(req));
-  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/settings?err=google_oauth_failed');
+  if (!tok.ok || !tok.data || !tok.data.access_token) return res.redirect('/settings?tab=integrations&err=google_oauth_failed');
   const me = await g.getOAuthUser(tok.data.access_token);
-  if (!me.ok || !me.data || !me.data.sub) return res.redirect('/settings?err=google_oauth_failed');
+  if (!me.ok || !me.data || !me.data.sub) return res.redirect('/settings?tab=integrations&err=google_oauth_failed');
   const gid = String(me.data.sub);
   const taken = db.prepare('SELECT id FROM users WHERE google_id = ? AND id != ?').get(gid, userId);
-  if (taken) return res.redirect('/settings?err=google_already_linked');
+  if (taken) return res.redirect('/settings?tab=integrations&err=google_already_linked');
   const avatar = me.data.picture ? String(me.data.picture) : null;
   db.prepare('UPDATE users SET google_id = ?, google_name = ?, google_avatar = ?, google_linked_at = ?, updated_at = ? WHERE id = ?')
     .run(gid, String(me.data.name || me.data.email || '').slice(0, 64), avatar, new Date().toISOString(), new Date().toISOString(), userId);
   activity.logActivity({ user_id: userId, event: 'account:google_link', details: { google_id: gid } });
-  res.redirect('/settings?ok=google_linked');
+  res.redirect('/settings?tab=integrations&ok=google_linked');
 }
 
 router.post('/settings/google/unlink', express.json(), (req, res) => {
@@ -719,6 +724,14 @@ router.post('/settings', express.urlencoded({ extended: true }), (req, res) => {
 });
 
 router.get('/settings/tfa/setup', (req, res) => {
+  // This GET regenerates the stored 2FA secret, so a cross-site top-level
+  // navigation (SameSite=Lax still sends the cookie) must not trigger it.
+  if (String(req.get('sec-fetch-site') || '') === 'cross-site') {
+    return res.status(403).render('error/403', {
+      code: 403, title: 'Forbidden', message: 'Cross-site request rejected.',
+      settings: settings.all(), user: req.user,
+    });
+  }
   const tfaSetup = authService.setupTfa(req.user);
   const loginHistory = activity.listLoginHistory({ user_id: req.user.id, limit: 50 });
   return render(res, 'account', { tfaSetup, loginHistory });

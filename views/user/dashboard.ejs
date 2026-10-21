@@ -103,7 +103,11 @@
           </thead>
           <tbody>
           <% for (const v of (canSeeAll && allVms.length ? allVms : myServers)) { %>
-            <tr id="vm-row-<%= v.id %>" data-mine="<%= v.mine ? 1 : 0 %>" data-vcpu="<%= v.cpus || 0 %>" data-ram="<%= v.memory || 0 %>" data-status="<%= v.status %>">
+            <%# `mine` only exists on admin allVms rows; without this default, the
+                client-side applyFilter() (curFilter starts as 'mine') hides every
+                row for non-admin users and the freshly created server vanishes
+                from the overview even though it is in the list. %>
+            <tr id="vm-row-<%= v.id %>" data-mine="<%= (typeof canSeeAll !== 'undefined' && canSeeAll) ? (v.mine ? 1 : 0) : 1 %>" data-vcpu="<%= v.cpus || 0 %>" data-ram="<%= v.memory || 0 %>" data-status="<%= v.status %>">
               <td>
                 <div class="flex" style="gap:10px">
                   <div style="width:34px;height:34px;border-radius:10px;background:var(--glass);display:grid;place-items:center;border:1px solid var(--border)">

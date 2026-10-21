@@ -2,133 +2,100 @@
 <%- include('../partials/ambient') %>
 <%- include('../partials/topbar') %>
 <%- include('../partials/sidebar') %>
+<style>
+  /* In-page settings sections - same look as the console tabs */
+  .set-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .set-tab {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.2s ease;
+  }
+  .set-tab:hover { background: rgba(30, 41, 59, 0.8); color: #fff; border-color: var(--border-hover); }
+  .set-tab.active { background: var(--accent); color: #fff; border-color: var(--accent-light); box-shadow: 0 0 14px var(--accent-glow); }
+  .set-panel { display: none; }
+  .set-panel.active { display: block; }
+</style>
 <div class="main">
   <h2 style="font-size:22px" class="mb-3">Settings</h2>
   <% if (typeof error !== 'undefined' && error) { %><div class="alert alert-error"><%= error %></div><% } %>
   <% if (typeof success !== 'undefined' && success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
-  <div class="grid grid-2">
-    <div class="card">
-      <div class="card-title">Preferences</div>
-      <form method="post" action="/settings">
-        <div class="form-group"><label>Language</label>
-          <select name="language">
-            <option value="en" <%= user.language === 'en' ? 'selected' : '' %>>English</option>
-            <option value="hi" <%= user.language === 'hi' ? 'selected' : '' %>>हिन्दी</option>
-            <option value="es" <%= user.language === 'es' ? 'selected' : '' %>>Español</option>
-            <option value="de" <%= user.language === 'de' ? 'selected' : '' %>>Deutsch</option>
-            <option value="ar" <%= user.language === 'ar' ? 'selected' : '' %>>العربية</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" type="submit">Save Preferences</button>
-      </form>
-    </div>
+  <div class="set-tabs">
+    <button type="button" class="set-tab active" data-settab="general">General</button>
+    <button type="button" class="set-tab" data-settab="security">Security</button>
+    <button type="button" class="set-tab" data-settab="integrations">Integrations</button>
+    <button type="button" class="set-tab" data-settab="developer">Developer</button>
+  </div>
 
-    <div class="card">
-      <div class="card-title">Music &amp; Sound</div>
-      <p class="muted mb-2 text-sm">Soft calm ambient music while you work — no custom songs, just on/off and volume.</p>
-      <div class="flex-between mb-2" style="gap:10px">
-        <span class="text-sm" style="font-weight:600">Ambient Music</span>
-        <label class="switch"><input type="checkbox" id="ambientMusicSwitch" <%= (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
+  <!-- ======================= GENERAL ======================= -->
+  <div class="set-panel active" id="setp-general">
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-title">Preferences</div>
+        <form method="post" action="/settings">
+          <div class="form-group"><label>Language</label>
+            <select name="language">
+              <option value="en" <%= user.language === 'en' ? 'selected' : '' %>>English</option>
+              <option value="hi" <%= user.language === 'hi' ? 'selected' : '' %>>हिन्दी</option>
+              <option value="es" <%= user.language === 'es' ? 'selected' : '' %>>Español</option>
+              <option value="de" <%= user.language === 'de' ? 'selected' : '' %>>Deutsch</option>
+              <option value="ar" <%= user.language === 'ar' ? 'selected' : '' %>>العربية</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit">Save Preferences</button>
+        </form>
       </div>
-      <div class="mb-3" id="ambientVolWrap" style="<%= (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) ? '' : 'opacity:0.4' %>">
-        <div class="flex-between mb-1">
-          <span class="text-sm">Music Volume</span>
-          <span class="pill pill-green mono font-bold" id="ambientVolBadge"><%= (user.music_volume !== undefined && user.music_volume !== null) ? user.music_volume : '35' %>%</span>
-        </div>
-        <input type="range" id="ambientVol" min="0" max="100" step="1" value="<%= (user.music_volume !== undefined && user.music_volume !== null) ? user.music_volume : '35' %>"/>
-      </div>
-      <hr class="hr" style="margin:14px 0"/>
-      <div class="flex-between mb-2" style="gap:10px">
-        <span class="text-sm" style="font-weight:600">UI Sound Effects (clicks, toasts)</span>
-        <label class="switch"><input type="checkbox" id="sfxToggle" <%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
-      </div>
-      <div id="sfxVolWrap" style="<%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? '' : 'opacity:0.4' %>">
-        <div class="flex-between mb-1">
-          <span class="text-sm">Effects Volume</span>
-          <span class="pill pill-blue mono font-bold" id="sfxVolBadge"><%= (user.sfx_volume !== undefined && user.sfx_volume !== null) ? user.sfx_volume : '40' %>%</span>
-        </div>
-        <input type="range" id="sfxVol" min="0" max="100" step="1" value="<%= (user.sfx_volume !== undefined && user.sfx_volume !== null) ? user.sfx_volume : '40' %>"/>
-      </div>
-    </div>
 
-    <%
-      var _discordLinked = !!user.discord_id;
-      var _googleLinked = !!user.google_id;
-      var _linkedCount = (_discordLinked ? 1 : 0) + (_googleLinked ? 1 : 0);
-      var _discordReady = !!(String(settings['oauth.discord_client_id'] || settings['bot.client_id'] || '') && String(settings['oauth.discord_client_secret'] || settings['bot.client_secret'] || ''));
-      var _googleReady = !!(String(settings['google.client_id'] || '') && String(settings['google.client_secret'] || ''));
-    %>
-    <div class="card">
-      <div class="flex-between mb-1" style="align-items:center">
-        <div class="card-title" style="margin:0">Linked Accounts</div>
-        <span class="pill <%= _linkedCount === 2 ? 'pill-green' : (_linkedCount === 1 ? 'pill-yellow' : 'pill-red') %>"><%= _linkedCount %>/2 linked</span>
-      </div>
-      <p class="muted mb-2 text-sm">Link the accounts you use so invite / booster plans count you, the bot can DM you about plan warnings, and you can sign in with either provider.</p>
-
-      <div style="border-top:1px solid var(--border)">
-        <div class="flex-between" style="gap:12px;padding:14px 0;flex-wrap:wrap">
-          <div class="flex" style="gap:12px;align-items:center;min-width:0">
-            <% if (_discordLinked && user.discord_avatar) { %><img src="<%= user.discord_avatar %>" style="width:36px;height:36px;border-radius:50%;flex-shrink:0" alt="Discord avatar"/><% } else if (_discordLinked) { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0"><%= (user.discord_name || user.discord_id || 'D')[0] %></div><% } else { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0;background:rgba(255,255,255,0.06);color:var(--muted)">D</div><% } %>
-            <div style="min-width:0">
-              <div style="font-weight:600">Discord</div>
-              <% if (_discordLinked) { %>
-                <div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= user.discord_name || 'Discord user' %> &middot; <span class="mono"><%= user.discord_id %></span></div>
-                <% if (user.discord_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.discord_linked_at).toLocaleDateString() %></div><% } %>
-              <% } else { %>
-                <div class="muted text-sm">Not linked</div>
-              <% } %>
-            </div>
-          </div>
-          <div class="flex" style="gap:8px;flex-shrink:0">
-            <% if (_discordLinked) { %>
-              <a class="btn btn-sm" href="/settings/discord/link">Re-authorize</a>
-              <button class="btn btn-sm btn-danger" onclick="unlinkDiscord()">Unlink</button>
-            <% } else if (_discordReady) { %>
-              <a class="btn btn-sm btn-primary" href="/settings/discord/link">Link</a>
-            <% } else { %>
-              <span class="muted text-sm">Not configured</span>
-            <% } %>
-          </div>
+      <div class="card">
+        <div class="card-title">Music &amp; Sound</div>
+        <p class="muted mb-2 text-sm">Soft calm ambient music while you work — no custom songs, just on/off and volume.</p>
+        <div class="flex-between mb-2" style="gap:10px">
+          <span class="text-sm" style="font-weight:600">Ambient Music</span>
+          <label class="switch"><input type="checkbox" id="ambientMusicSwitch" <%= (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
         </div>
+        <div class="mb-3" id="ambientVolWrap" style="<%= (user.music_enabled === 1 || user.music_enabled === '1' || user.music_enabled === true) ? '' : 'opacity:0.4' %>">
+          <div class="flex-between mb-1">
+            <span class="text-sm">Music Volume</span>
+            <span class="pill pill-green mono font-bold" id="ambientVolBadge"><%= (user.music_volume !== undefined && user.music_volume !== null) ? user.music_volume : '35' %>%</span>
+          </div>
+          <input type="range" id="ambientVol" min="0" max="100" step="1" value="<%= (user.music_volume !== undefined && user.music_volume !== null) ? user.music_volume : '35' %>"/>
+        </div>
+        <hr class="hr" style="margin:14px 0"/>
+        <div class="flex-between mb-2" style="gap:10px">
+          <span class="text-sm" style="font-weight:600">UI Sound Effects (clicks, toasts)</span>
+          <label class="switch"><input type="checkbox" id="sfxToggle" <%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
+        </div>
+        <div id="sfxVolWrap" style="<%= (user.sfx_enabled === undefined || user.sfx_enabled === 1 || user.sfx_enabled === '1' || user.sfx_enabled === true) ? '' : 'opacity:0.4' %>">
+          <div class="flex-between mb-1">
+            <span class="text-sm">Effects Volume</span>
+            <span class="pill pill-blue mono font-bold" id="sfxVolBadge"><%= (user.sfx_volume !== undefined && user.sfx_volume !== null) ? user.sfx_volume : '40' %>%</span>
+          </div>
+          <input type="range" id="sfxVol" min="0" max="100" step="1" value="<%= (user.sfx_volume !== undefined && user.sfx_volume !== null) ? user.sfx_volume : '40' %>"/>
+        </div>
+      </div>
 
-        <div class="flex-between" style="gap:12px;padding:14px 0;border-top:1px solid var(--border);flex-wrap:wrap">
-          <div class="flex" style="gap:12px;align-items:center;min-width:0">
-            <% if (_googleLinked && user.google_avatar) { %><img src="<%= user.google_avatar %>" style="width:36px;height:36px;border-radius:50%;flex-shrink:0" alt="Google avatar"/><% } else if (_googleLinked) { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0"><%= (user.google_name || user.google_id || 'G')[0] %></div><% } else { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0;background:rgba(255,255,255,0.06);color:var(--muted)">G</div><% } %>
-            <div style="min-width:0">
-              <div style="font-weight:600">Google</div>
-              <% if (_googleLinked) { %>
-                <div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= user.google_name || 'Google user' %> &middot; <span class="mono"><%= user.google_id %></span></div>
-                <% if (user.google_linked_at) { %><div class="muted text-sm">Linked <%= new Date(user.google_linked_at).toLocaleDateString() %></div><% } %>
-              <% } else { %>
-                <div class="muted text-sm">Not linked</div>
-              <% } %>
-            </div>
-          </div>
-          <div class="flex" style="gap:8px;flex-shrink:0">
-            <% if (_googleLinked) { %>
-              <a class="btn btn-sm" href="/settings/google/link">Re-authorize</a>
-              <button class="btn btn-sm btn-danger" onclick="unlinkGoogle()">Unlink</button>
-            <% } else if (_googleReady) { %>
-              <a class="btn btn-sm btn-primary" href="/settings/google/link">Link</a>
-            <% } else { %>
-              <span class="muted text-sm">Not configured</span>
-            <% } %>
-          </div>
+      <div class="card">
+        <div class="card-title">Privacy</div>
+        <p class="muted mb-2 text-sm">Blur sensitive information (passwords, tokens, API keys) on screen to protect against screen sharing. Hover a blurred value to briefly reveal it.</p>
+        <div class="flex-between" style="gap:10px">
+          <span class="text-sm" style="font-weight:600">Secret Blur</span>
+          <label class="switch"><input type="checkbox" id="secretBlurToggle" data-sb-toggle <%= (user.secret_blur_set === 1 ? (user.secret_blur === 1 || user.secret_blur === '1' || user.secret_blur === true) : (String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true)) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
         </div>
       </div>
     </div>
+  </div>
 
-    <div class="card">
-      <div class="card-title">Privacy</div>
-      <p class="muted mb-2 text-sm">Blur sensitive information (passwords, tokens, API keys) on screen to protect against screen sharing. Hover a blurred value to briefly reveal it.</p>
-      <div class="flex-between" style="gap:10px">
-        <span class="text-sm" style="font-weight:600">Secret Blur</span>
-        <label class="switch"><input type="checkbox" id="secretBlurToggle" data-sb-toggle <%= (user.secret_blur_set === 1 ? (user.secret_blur === 1 || user.secret_blur === '1' || user.secret_blur === true) : (String(settings['panel.secret_blur']) === '1' || settings['panel.secret_blur'] === true)) ? 'checked' : '' %>/><span class="switch-slider"></span></label>
-      </div>
-    </div>
-
-    <div class="card">
+  <!-- ======================= SECURITY ======================= -->
+  <div class="set-panel" id="setp-security">
+    <div class="card" style="max-width:640px">
       <div class="card-title">Two-Factor Authentication (2FA)</div>
       <% if (typeof tfaSetup !== 'undefined' && tfaSetup) { %>
         <div class="alert alert-info">
@@ -138,7 +105,7 @@
         <div class="form-group"><label>Code</label><input id="tfaCode" inputmode="numeric" placeholder="6-digit code"/></div>
         <div class="flex">
           <button class="btn btn-primary" onclick="enableTfa()">Enable 2FA</button>
-          <button class="btn" onclick="window.location='/settings'">Cancel</button>
+          <button class="btn" onclick="window.location='/settings?tab=security'">Cancel</button>
         </div>
       <% } else { %>
         <% if (user.tfa_enabled) { %>
@@ -153,29 +120,98 @@
     </div>
   </div>
 
-  <div class="card mt-3">
-    <div class="card-title">API Keys</div>
-    <p class="muted mb-2 text-sm">Personal API keys with prefix <code class="mono">vp_live_</code>. Use them with <code class="mono">Authorization: Bearer &lt;key&gt;</code> for the Venlix REST API. Keys are shown once at creation.</p>
-    <div class="table-wrap" style="margin-top:10px">
-      <table>
-        <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Last Used</th><th>Created</th><th class="right">Actions</th></tr></thead>
-        <tbody id="apikeyRows">
-          <tr><td colspan="6" class="muted">Loading…</td></tr>
-        </tbody>
-      </table>
+  <!-- ======================= INTEGRATIONS ======================= -->
+  <%
+    // ---- External providers. To add a new integration, drop one entry into
+    // ---- this array - the row below renders for each of them automatically.
+    var _providers = [
+      {
+        key: 'discord', name: 'Discord',
+        linked: !!user.discord_id, ready: !!(String(settings['oauth.discord_client_id'] || settings['bot.client_id'] || '') && String(settings['oauth.discord_client_secret'] || settings['bot.client_secret'] || '')),
+        avatar: user.discord_avatar, initial: (user.discord_name || user.discord_id || 'D')[0],
+        label: user.discord_name || 'Discord user', pid: user.discord_id, linkedAt: user.discord_linked_at,
+        href: '/settings/discord/link', unlinkFn: 'unlinkDiscord()', unlinkTitle: 'Unlink Discord',
+        unlinkMsg: 'Unlink your Discord account? Invite and booster plans may stop counting until you link again.',
+        blurb: 'Sign in with Discord, have invite / booster plans counted automatically, and receive DMs about plan warnings.'
+      },
+      {
+        key: 'google', name: 'Google',
+        linked: !!user.google_id, ready: !!(String(settings['google.client_id'] || '') && String(settings['google.client_secret'] || '')),
+        avatar: user.google_avatar, initial: (user.google_name || user.google_id || 'G')[0],
+        label: user.google_name || 'Google user', pid: user.google_id, linkedAt: user.google_linked_at,
+        href: '/settings/google/link', unlinkFn: 'unlinkGoogle()', unlinkTitle: 'Unlink Google',
+        unlinkMsg: 'Unlink your Google account? You will no longer be able to sign in with Google.',
+        blurb: 'Sign in with your Google account — no password needed on shared devices.'
+      }
+    ];
+    var _linkedCount = _providers.filter(function (p) { return p.linked; }).length;
+  %>
+  <div class="set-panel" id="setp-integrations">
+    <div class="card">
+      <div class="flex-between mb-1" style="align-items:center">
+        <div class="card-title" style="margin:0">Connected Accounts</div>
+        <span class="pill <%= _linkedCount === _providers.length ? 'pill-green' : (_linkedCount > 0 ? 'pill-yellow' : 'pill-red') %>"><%= _linkedCount %>/<%= _providers.length %> linked</span>
+      </div>
+      <p class="muted mb-2 text-sm">External accounts you can connect to the panel. Linked accounts let plans and sign-in follow you between services.</p>
+
+      <div style="border-top:1px solid var(--border)">
+        <% _providers.forEach(function (p) { %>
+        <div class="flex-between" style="gap:12px;padding:14px 0;<%= p.key !== _providers[0].key ? 'border-top:1px solid var(--border);' : '' %>flex-wrap:wrap">
+          <div class="flex" style="gap:12px;align-items:center;min-width:0">
+            <% if (p.linked && p.avatar) { %><img src="<%= p.avatar %>" style="width:36px;height:36px;border-radius:50%;flex-shrink:0" alt="<%= p.name %> avatar"/><% } else { %><div class="avatar" style="width:36px;height:36px;font-size:15px;flex-shrink:0<%= p.linked ? '' : ';background:rgba(255,255,255,0.06);color:var(--muted)' %>"><%= p.linked ? p.initial : p.name[0] %></div><% } %>
+            <div style="min-width:0">
+              <div style="font-weight:600"><%= p.name %></div>
+              <% if (p.linked) { %>
+                <div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= p.label %> &middot; <span class="mono"><%= p.pid %></span></div>
+                <% if (p.linkedAt) { %><div class="muted text-sm">Linked <%= new Date(p.linkedAt).toLocaleDateString() %></div><% } %>
+              <% } else { %>
+                <div class="muted text-sm">Not linked</div>
+              <% } %>
+            </div>
+          </div>
+          <div class="flex" style="gap:8px;flex-shrink:0">
+            <% if (p.linked) { %>
+              <a class="btn btn-sm" href="<%= p.href %>">Re-authorize</a>
+              <button class="btn btn-sm btn-danger" onclick="<%= p.unlinkFn %>">Unlink</button>
+            <% } else if (p.ready) { %>
+              <a class="btn btn-sm btn-primary" href="<%= p.href %>">Link</a>
+            <% } else { %>
+              <span class="muted text-sm">Not configured</span>
+            <% } %>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+      <p class="muted text-sm" style="margin-top:12px">More integrations are on the way — new services will appear on this page as they arrive.</p>
     </div>
-    <div class="grid grid-3" style="gap:12px;margin-top:14px">
-      <div class="form-group" style="margin:0">
-        <label>Name</label>
-        <input id="ak_name" class="input" placeholder="e.g. ci-deploy" />
+  </div>
+
+  <!-- ======================= DEVELOPER ======================= -->
+  <div class="set-panel" id="setp-developer">
+    <div class="card">
+      <div class="card-title">API Keys</div>
+      <p class="muted mb-2 text-sm">Personal API keys with prefix <code class="mono">vp_live_</code>. Use them with <code class="mono">Authorization: Bearer &lt;key&gt;</code> for the Venlix REST API. Keys are shown once at creation.</p>
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Last Used</th><th>Created</th><th class="right">Actions</th></tr></thead>
+          <tbody id="apikeyRows">
+            <tr><td colspan="6" class="muted">Loading…</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="form-group" style="margin:0">
-        <label>Scopes (comma-separated)</label>
-        <input id="ak_scopes" class="input" placeholder="r_servers" value="r_servers" />
-        <div class="muted mt-1">Enforced. <code>r_</code> scopes are read-only; any <code>w_</code> scope unlocks POST/PUT/PATCH/DELETE. <code>*</code> grants everything including <code>/admin</code>. Keys with only <code>r_</code> scopes cannot reach <code>/admin</code> at all.</div>
-      </div>
-      <div class="flex" style="align-items:flex-end">
-        <button class="btn btn-primary" onclick="createApiKey()">Create Key</button>
+      <div class="grid grid-3" style="gap:12px;margin-top:14px">
+        <div class="form-group" style="margin:0">
+          <label>Name</label>
+          <input id="ak_name" class="input" placeholder="e.g. ci-deploy" />
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Scopes (comma-separated)</label>
+          <input id="ak_scopes" class="input" placeholder="r_servers" value="r_servers" />
+          <div class="muted mt-1">Enforced. <code>r_</code> scopes are read-only; any <code>w_</code> scope unlocks POST/PUT/PATCH/DELETE. <code>*</code> grants everything including <code>/admin</code>. Keys with only <code>r_</code> scopes cannot reach <code>/admin</code> at all.</div>
+        </div>
+        <div class="flex" style="align-items:flex-end">
+          <button class="btn btn-primary" onclick="createApiKey()">Create Key</button>
+        </div>
       </div>
     </div>
   </div>
@@ -183,6 +219,16 @@
 <%- include('../partials/music') %>
 <%- include('../partials/foot') %>
 <script>
+// ---------------- Section tabs (deep-linkable via ?tab=) ----------------
+function switchSetTab(tab, push) {
+  const known = ['general', 'security', 'integrations', 'developer'];
+  if (known.indexOf(tab) === -1) tab = 'general';
+  document.querySelectorAll('.set-tab').forEach((b) => b.classList.toggle('active', b.getAttribute('data-settab') === tab));
+  document.querySelectorAll('.set-panel').forEach((p) => p.classList.toggle('active', p.id === 'setp-' + tab));
+  if (history.replaceState) history.replaceState(null, null, '?tab=' + tab);
+}
+document.querySelectorAll('.set-tab').forEach((b) => b.addEventListener('click', () => switchSetTab(b.getAttribute('data-settab'))));
+
 async function unlinkDiscord() {
   const ok = await VP.confirmDialog('Unlink your Discord account? Invite and booster plans may stop counting until you link again.', { title: 'Unlink Discord' });
   if (!ok) return;
@@ -206,7 +252,7 @@ async function enableTfa() {
   try {
     await VP.api('/settings/tfa/enable', { method: 'POST', body: { code } });
     VP.toast('2FA enabled', 'success');
-    setTimeout(() => location.href = '/settings', 700);
+    setTimeout(() => location.href = '/settings?tab=security', 700);
   } catch (e) { VP.toast(e.message, 'error'); }
 }
 async function disableTfa() {
@@ -268,5 +314,11 @@ async function revokeApiKey(id, name) {
     loadApiKeys();
   } catch (e) { VP.toast(e.message, 'error'); }
 }
+
+// ---------------- Init ----------------
+(function () {
+  const p = new URLSearchParams(window.location.search).get('tab');
+  switchSetTab(p || 'general'); // also normalises unknown values
+})();
 loadApiKeys();
 </script>

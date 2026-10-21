@@ -194,6 +194,7 @@ function submitLicense(req, res) {
   try { key = (req.body && req.body.key) || ''; } catch (_) {}
   const r = activate(String(key).trim());
   if (!r.ok) return res.status(401).json({ ok: false, error: r.error });
+  tick().catch(() => {}); // run the unlock/restart enforcer now instead of waiting for the next 60s pass
   return res.json({ ok: true, message: r.message });
 }
 
@@ -221,25 +222,33 @@ async function tick() {
   if (_ticking) return;
   _ticking = true;
   try {
-    const st = ensureGrace(Date.now());
-    const locked = Date.now() > st.expiresAt;
+    let st = ensureGrace(Date.now());
+    let locked = Date.now() > st.expiresAt;
     if (locked && st.lastAction !== 'locked') {
       let vmService;
       try { vmService = require('../services/vmService'); } catch (_) {}
+      const stopped = [];
       if (vmService) {
         for (const vm of (vmService.dbVms ? vmService.dbVms() : [])) {
           try {
             if (vmService.isRunning(vm)) {
               await vmService.stop(vm);
-              if (st.shutdownForLicense.indexOf(vm.id) === -1) st.shutdownForLicense.push(vm.id);
+              stopped.push(vm.id);
             }
           } catch (_) {}
         }
       }
+      // Re-read: a key submitted during the awaits persists a fresh grant the stale snapshot would erase.
+      st = loadState();
+      for (const id of stopped) {
+        if (st.shutdownForLicense.indexOf(id) === -1) st.shutdownForLicense.push(id);
+      }
       st.lastAction = 'locked';
       saveState(st);
       log('[license] EXPIRED - panel locked, all VMs powered off.');
-    } else if (!locked && st.lastAction === 'locked') {
+      locked = Date.now() > st.expiresAt; // a grant may have landed while VMs were stopping
+    }
+    if (!locked && st.lastAction === 'locked') {
       let vmService;
       try { vmService = require('../services/vmService'); } catch (_) {}
       const ids = st.shutdownForLicense || [];

@@ -20,6 +20,12 @@ const ah = (fn) => (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+// Session cookie flag: mark Secure whenever the request actually arrived over
+// HTTPS (directly or via the proxy header), without breaking plain-HTTP panels.
+function isHttps(req) {
+  return !!(req.secure || String(req.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https');
+}
+
   function render(res, view, vars = {}) {
   const req = res.req;
   const proto = (req.secure || String(req.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https') ? 'https' : 'http';
@@ -127,7 +133,7 @@ router.get('/auth/discord/callback', ah(async (req, res) => {
     if (user.suspended) return res.redirect('/login?err=suspended');
     if (user.tfa_enabled) return res.redirect('/login?err=discord_tfa');
     const { token } = authService.finishLogin(user, ip);
-    res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+    res.cookie('token', token, { httpOnly: false, sameSite: 'lax', secure: isHttps(req), maxAge: 7 * 24 * 3600 * 1000 });
     return res.redirect('/dashboard');
   }
   // Sign-in never provisions an account. Create the account first, then link
@@ -174,7 +180,7 @@ router.get('/auth/google/callback', ah(async (req, res) => {
     if (user.suspended) return res.redirect('/login?err=suspended');
     if (user.tfa_enabled) return res.redirect('/login?err=google_tfa');
     const { token } = authService.finishLogin(user, ip);
-    res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+    res.cookie('token', token, { httpOnly: false, sameSite: 'lax', secure: isHttps(req), maxAge: 7 * 24 * 3600 * 1000 });
     return res.redirect('/dashboard');
   }
   // Sign-in never provisions an account. Create the account first, then link
@@ -211,7 +217,7 @@ router.post('/admin/login', express.urlencoded({ extended: true }), (req, res) =
     return render(res, 'adminLogin', { error: 'This account is not an administrator.', username });
   }
   const { token } = authService.finishLogin(user, ip);
-  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', secure: isHttps(req), maxAge: 7 * 24 * 3600 * 1000 });
   res.redirect('/admin');
 });
 
@@ -231,7 +237,7 @@ router.post('/login', express.urlencoded({ extended: true }), (req, res) => {
     if (!check.ok) return render(res, 'login', { tfa: true, tfaUser: user.username, error: check.error });
   }
   const { token } = authService.finishLogin(user, ip);
-  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+  res.cookie('token', token, { httpOnly: false, sameSite: 'lax', secure: isHttps(req), maxAge: 7 * 24 * 3600 * 1000 });
   res.redirect('/dashboard');
 });
 
@@ -264,7 +270,11 @@ router.post('/register', express.urlencoded({ extended: true }), (req, res) => {
     activity.logActivity({ user_id: user.id, event: 'auth:register', ip: req.ip });
     return render(res, 'register', { success: 'Account created! You can now login.' });
   } catch (e) {
-    return render(res, 'register', { error: e.message, username, email, name });
+    // Do not confirm that a username/email is already taken (enumeration).
+    const msg = String(e.message || '').includes('already exists')
+      ? 'Could not create the account with those details.'
+      : e.message;
+    return render(res, 'register', { error: msg, username, email, name });
   }
 });
 
@@ -273,10 +283,10 @@ function awaitable(p) { return Promise.resolve(p).catch(() => {}); }
 router.get('/forgot', (req, res) => render(res, 'forgot'));
 router.post('/forgot', express.urlencoded({ extended: true }), (req, res) => {
   const target = authService.findByUsername(String(req.body.email || '').trim().toLowerCase());
-  if (target) {
-    const token = authService.createResetToken(target);
-    awaitable(mailService.sendResetEmail(target, token));
-  }
+  // createResetToken returns null when a fresh link was already sent this
+  // minute (rate limit); the response stays identical either way.
+  const token = target && authService.createResetToken(target);
+  if (token) awaitable(mailService.sendResetEmail(target, token));
   return render(res, 'forgot', { success: 'If that email exists, a reset link has been sent.' });
 });
 

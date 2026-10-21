@@ -86,10 +86,11 @@ function enforceApiKeyScopes(req, res) {
   const scopes = apiKeyScopes(req.apiKey);
   if (scopes.includes('*') || scopes.includes('all')) return true;
   const method = String(req.method || 'GET').toUpperCase();
-  // The api router is mounted at both '/' and '/api', and originalUrl carries
-  // whichever prefix matched, so normalise before testing.
-  const full = String(req.originalUrl || req.url || '').split('?')[0];
-  const path = full.replace(/^\/api(?=\/)/, '');
+  // Lowercase first, then strip the /api mount(s): Express matches routes
+  // case-insensitively, so /API/ADMIN/users must still read as an admin path.
+  const path = String(req.originalUrl || req.url || '').split('?')[0]
+    .toLowerCase()
+    .replace(/^(?:\/api)+(?=\/)/, '');
   const isAdminPath = path === '/admin' || path.startsWith('/admin/');
   if (isAdminPath) {
     res.status(403).json({ error: 'This API key is not allowed on admin endpoints. Use the panel key or a key scoped "*".' });
@@ -158,4 +159,4 @@ function apiAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, optionalAuth, requireAdmin, apiAuth, apiAdmin, getUserFromReq, ensurePanelKey };
+module.exports = { requireAuth, optionalAuth, requireAdmin, apiAuth, apiAdmin, getUserFromReq, ensurePanelKey, enforceApiKeyScopes };

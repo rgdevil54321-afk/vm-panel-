@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const speakeasy = require('speakeasy');
 const { v4: uuidv4 } = require('uuid');
@@ -125,7 +126,31 @@ function countAdmins() {
   return db.prepare('SELECT COUNT(*) c FROM users WHERE role = ? OR root_admin = 1').get('admin').c;
 }
 
+// Reset/verification tokens are single-use secrets; only their sha256 lands in
+// the DB, so a leaked database dump cannot be replayed as a login/reset link.
+function hashToken(t) {
+  return crypto.createHash('sha256').update(String(t)).digest('hex');
+}
+
+// Per (username, ip) pair: one address cannot brute-force an account, and an
+// attacker cannot lock a victim out from a different address.
+function loginThrottled(username, ip) {
+  try {
+    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const row = db.prepare(
+      "SELECT COUNT(*) c FROM login_attempts WHERE created_at > ? AND username = ? AND ip = ? AND status LIKE 'failed%'"
+    ).get(since, String(username || ''), String(ip || ''));
+    return row.c >= 10;
+  } catch (_) {
+    return 0;
+  }
+}
+
 function attemptLogin(username, password, ip) {
+  if (loginThrottled(username, ip)) {
+    logLogin({ ip, username, status: 'throttled' });
+    return { ok: false, error: 'Too many failed attempts. Try again in a few minutes.' };
+  }
   const user = findByUsername(username);
   if (!user) {
     logLogin({ ip, username, status: 'failed_user' });
@@ -165,12 +190,16 @@ function genVerifyToken() {
 
 function createVerifyToken(user) {
   const token = genVerifyToken();
-  db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(token, user.id);
+  db.prepare('UPDATE users SET verify_token = ? WHERE id = ?').run(hashToken(token), user.id);
   return token;
 }
 
 function verifyEmail(token) {
-  const user = db.prepare('SELECT * FROM users WHERE verify_token = ?').get(token);
+  const raw = String(token || '');
+  // Second match keeps links mailed before hashing working (legacy rows hold
+  // the raw token; a sha256 hex can never equal a raw one).
+  const user = db.prepare('SELECT * FROM users WHERE verify_token = ? OR verify_token = ?')
+    .get(hashToken(raw), raw);
   if (!user) return { ok: false, error: 'Invalid or expired verification token' };
   db.prepare('UPDATE users SET verified = 1, verify_token = NULL WHERE id = ?').run(user.id);
   logActivity({ user_id: user.id, event: 'auth:email_verified' });
@@ -178,16 +207,27 @@ function verifyEmail(token) {
 }
 
 function createResetToken(user) {
+  // Rate-limit hook: at most one fresh link per account per minute, so this
+  // endpoint cannot be used to flood a mailbox.
+  try {
+    const fresh = db.prepare(
+      'SELECT id FROM reset_tokens WHERE user_id = ? AND used = 0 AND created_at > ?'
+    ).get(user.id, new Date(Date.now() - 60000).toISOString());
+    if (fresh) return null;
+  } catch (_) { /* fall through and mint anyway */ }
   const token = genVerifyToken();
   db.prepare(
     'INSERT INTO reset_tokens (user_id, token, expires_at, created_at) VALUES (?,?,?,?)'
-  ).run(user.id, token, new Date(Date.now() + 3600000).toISOString(), new Date().toISOString());
-  return token;
+  ).run(user.id, hashToken(token), new Date(Date.now() + 3600000).toISOString(), new Date().toISOString());
+  return token; // plaintext only in the email link; the DB keeps the hash
 }
 
 function resetPassword(token, newPassword) {
   if (!newPassword || newPassword.length < 6) return { ok: false, error: 'Password must be at least 6 characters' };
-  const row = db.prepare('SELECT * FROM reset_tokens WHERE token = ? AND used = 0').get(token);
+  const raw = String(token || '');
+  // OR raw: same legacy-row compatibility as verifyEmail above.
+  const row = db.prepare('SELECT * FROM reset_tokens WHERE used = 0 AND (token = ? OR token = ?)')
+    .get(hashToken(raw), raw);
   if (!row) return { ok: false, error: 'Invalid or expired token' };
   if (new Date(row.expires_at).getTime() < Date.now()) return { ok: false, error: 'Token expired' };
   const hash = bcrypt.hashSync(newPassword, 10);

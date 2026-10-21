@@ -8,7 +8,7 @@ const scheduleService = require('../services/scheduleService');
 const agentService = require('../services/agentService');
 const activity = require('../services/activityService');
 const { db, settings } = require('../lib/db');
-const { apiAuth, apiAdmin, getUserFromReq } = require('../middleware/auth');
+const { apiAuth, apiAdmin, getUserFromReq, enforceApiKeyScopes } = require('../middleware/auth');
 const { requireLinkedAccounts } = require('../middleware/requireLinkedAccounts');
 const { uploadAvatar } = require('../middleware/upload');
 const router = express.Router();
@@ -43,6 +43,10 @@ router.post('/auth/register', json, (req, res) => {
     });
     return res.json({ ok: true, user: authService.publicUser(user) });
   } catch (e) {
+    // Do not confirm that a username/email is already taken (enumeration).
+    if (String(e.message || '').includes('already exists')) {
+      return res.status(409).json({ error: 'Could not create the account with those details.' });
+    }
     return res.status(500).json({ error: e.message });
   }
 });
@@ -74,6 +78,7 @@ const ah = (fn) => (req, res, next) => {
 router.post('/customization/save-beacon', json, (req, res) => {
   const user = getUserFromReq(req); // sendBeacon sends cookies, no Bearer header
   if (!user || (user.role !== 'admin' && !user.root_admin)) return res.status(401).json({ error: 'Not authenticated' });
+  if (!enforceApiKeyScopes(req, res)) return; // registered before apiAuth, so scopes are not enforced yet
   try {
     const fields = ['panel.bg_overlay', 'panel.bg_blur', 'panel.bg_transparency'];
     for (const k of fields) {
@@ -113,6 +118,21 @@ router.post('/impersonation/leave', json, (req, res) => {
 });
 
 // ---------- API Keys (self-service for each user; admin list endpoint added) ----------
+// Capability view of a scope list: a key may only mint keys whose capabilities
+// it already holds, or a narrow key could escalate by creating a "*" one.
+function scopeCaps(scopes) {
+  const list = String(scopes || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return {
+    admin: list.includes('*') || list.includes('all'),
+    write: list.some((s) => s === '*' || s === 'all' || s.startsWith('w_')),
+  };
+}
+function scopesWithin(requested, owned) {
+  const want = scopeCaps(requested);
+  const own = scopeCaps(owned);
+  return (!want.admin || own.admin) && (!want.write || own.write);
+}
+
 router.get('/api-keys', (req, res) => {
   const apiKeyService = require('../services/apiKeyService');
   res.json({ ok: true, keys: apiKeyService.listApiKeys(req.user.id) });
@@ -121,7 +141,11 @@ router.get('/api-keys', (req, res) => {
 router.post('/api-keys', json, (req, res) => {
   try {
     const apiKeyService = require('../services/apiKeyService');
-    const created = apiKeyService.createApiKey(req.user.id, req.body.name, req.body.scopes || 'r_servers');
+    const scopes = String(req.body.scopes || 'r_servers');
+    if (req.apiKey && !scopesWithin(scopes, req.apiKey.scopes)) {
+      return res.status(403).json({ error: 'An API key can only create keys with the scopes it already has' });
+    }
+    const created = apiKeyService.createApiKey(req.user.id, req.body.name, scopes);
     activity.logActivity({ user_id: req.user.id, event: 'api_key:create', details: { name: req.body.name || 'untitled', prefix: created.prefix } });
     res.json({ ok: true, key: created.key, prefix: created.prefix });
   } catch (e) {

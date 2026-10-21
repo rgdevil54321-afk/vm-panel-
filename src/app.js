@@ -103,6 +103,7 @@ function createWebApp() {
   app.get('/', (req, res) => res.redirect(req.user ? '/dashboard' : '/login'));
   app.use('/', require('./routes/webAuth'));
   app.use('/', require('./routes/webUser'));
+  app.use('/', require('./routes/webSshx'));
   app.use('/', require('./routes/webAdmin'));
   // Admin views call JSON endpoints without an /api prefix (VP.api('/admin/...')).
   // Mount the API router at the root as well; page routes above take precedence.
@@ -547,6 +548,7 @@ function bootstrap() {
 
   const webServer = http.createServer(webApp);
   const io = new Server(webServer, {
+    allowEIO3: true, // accept an older cached socket.io client instead of rejecting the handshake
     maxHttpBufferSize: 1e7,
     pingInterval: 10000,
     pingTimeout: 25000,

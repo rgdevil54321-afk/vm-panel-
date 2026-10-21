@@ -40,10 +40,6 @@ function createBackup(vm, { user = null, name = null, kind = 'full' } = {}) {
   if (slots === 0) {
     throw new Error('Backup slots are disabled for this machine (0 slots). Enable slots or edit the VM to raise the limit.');
   }
-  if (countFor(vm.id) >= slots) {
-    // enforce the slot limit by rotating out the oldest backup
-    pruneBackups(vm.id, slots - 1);
-  }
   if (vmService.isRunning(vm)) {
     // snapshot via qemu-img works on live (qcow2) too
     logger.info('[backup] VM is running; taking qemu snapshot');
@@ -53,11 +49,16 @@ function createBackup(vm, { user = null, name = null, kind = 'full' } = {}) {
   fs.mkdirSync(vmBackupDir, { recursive: true });
   const dest = path.join(vmBackupDir, `${label}.qcow2`);
   const r = spawnSync('qemu-img', ['convert', '-U', '-O', 'qcow2', vm.img_file, dest], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(r.stderr || 'Backup conversion failed');
+  if (r.status !== 0) {
+    try { fs.unlinkSync(dest); } catch (_) {} // remove the partial image a failed convert leaves behind
+    throw new Error(`Backup conversion failed: ${r.error ? r.error.message + '; ' : ''}${r.stderr || 'qemu-img unavailable?'}`);
+  }
   const size = fs.statSync(dest).size;
   const info = db.prepare(
     'INSERT INTO backups (vm_id, name, file, size, kind, created_at) VALUES (?,?,?,?,?,?)'
   ).run(vm.id, label, dest, size, kind, new Date().toISOString());
+  // Rotate out the oldest backup only now that the new one is complete and recorded.
+  if (countFor(vm.id) > slots) pruneBackups(vm.id, slots);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'backup:create', details: { name: label } });
   return db.prepare('SELECT * FROM backups WHERE id = ?').get(Number(info.lastInsertRowid));
 }
@@ -72,9 +73,15 @@ async function restoreBackup(backup, { user = null } = {}) {
     await vmService.stop(vm, { user, force: true });
   }
   if (!fs.existsSync(backup.file)) throw new Error('Backup file missing');
-  const tmp = vm.img_file + '.restore';
-  fs.copyFileSync(backup.file, tmp);
-  fs.renameSync(tmp, vm.img_file);
+  // unique tmp name: two concurrent restores of the same VM shared one .restore file
+  const tmp = vm.img_file + `.restore.${process.pid}-${Date.now()}`;
+  try {
+    fs.copyFileSync(backup.file, tmp);
+    fs.renameSync(tmp, vm.img_file);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw e;
+  }
   db.prepare('UPDATE vms SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), vm.id);
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'backup:restore', details: { name: backup.name } });
   return true;

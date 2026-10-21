@@ -29,6 +29,8 @@ function shutdown(signal, reason) {
     .catch(() => {})
     .then(() => {
       try { io.close(); } catch (_) {}
+      // Kill sshx fallback sessions so their shells do not outlive the panel.
+      try { require('./services/sshxService').stopAll(); } catch (_) {}
       process.exit(0);
     });
 }

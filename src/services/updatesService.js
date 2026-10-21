@@ -80,19 +80,24 @@ async function detectPm2Names() {
 
 function restartPm2() {
   return new Promise(async (resolve) => {
-    const { hasPm2, names } = await detectPm2Names();
-    const shell = process.platform === 'win32';
-    const candidates = ['vpanel', 'venlix', 'vpanel-pro'].filter((n) => names.includes(n));
-    if (hasPm2 && candidates.length) {
-      execFile(shell ? 'pm2' : 'bash', shell ? ['restart', candidates[0]] : ['-lc', `pm2 restart ${candidates[0]} --update-env`], { cwd: ROOT, timeout: 30000 }, (e) => {
-        resolve({ ok: !e, detail: `pm2 restart ${candidates[0]}` });
-      });
-    } else if (hasPm2) {
-      execFile(shell ? 'pm2' : 'bash', shell ? ['restart', 'all'] : ['-lc', 'pm2 restart all --update-env'], { cwd: ROOT, timeout: 30000 }, (e) => {
-        resolve({ ok: !e, detail: 'pm2 restart all' });
-      });
-    } else {
-      resolve({ ok: false, detail: 'pm2 not available - restart the panel manually' });
+    // async executor: a throw here would leave the promise pending forever
+    try {
+      const { hasPm2, names } = await detectPm2Names();
+      const shell = process.platform === 'win32';
+      const candidates = ['vpanel', 'venlix', 'vpanel-pro'].filter((n) => names.includes(n));
+      if (hasPm2 && candidates.length) {
+        execFile(shell ? 'pm2' : 'bash', shell ? ['restart', candidates[0]] : ['-lc', `pm2 restart ${candidates[0]} --update-env`], { cwd: ROOT, timeout: 30000 }, (e) => {
+          resolve({ ok: !e, detail: `pm2 restart ${candidates[0]}` });
+        });
+      } else if (hasPm2) {
+        execFile(shell ? 'pm2' : 'bash', shell ? ['restart', 'all'] : ['-lc', 'pm2 restart all --update-env'], { cwd: ROOT, timeout: 30000 }, (e) => {
+          resolve({ ok: !e, detail: 'pm2 restart all' });
+        });
+      } else {
+        resolve({ ok: false, detail: 'pm2 not available - restart the panel manually' });
+      }
+    } catch (e) {
+      resolve({ ok: false, detail: 'pm2 restart failed: ' + e.message });
     }
   });
 }

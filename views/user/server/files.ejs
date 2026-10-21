@@ -28,7 +28,7 @@
         </div>
         <h3 style="font-size:18px;font-weight:700;margin-bottom:8px">Server is Offline</h3>
         <p class="muted" style="max-width:420px;margin:0 auto 18px">The virtual machine must be running to access the live filesystem via the guest agent or SSH.</p>
-        <button class="btn btn-green" onclick="VP.api('/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'start' } }).then(() => { VP.toast('Starting server...', 'info'); setTimeout(() => location.reload(), 1500); })">
+        <button class="btn btn-green" onclick="VP.api('/servers/<%= vm.id %>/power', { method: 'POST', body: { action: 'start' } }).then(() => { VP.toast('Starting server...', 'info'); setTimeout(() => location.reload(), 1500); })">
           Start Virtual Machine
         </button>
       </div>
