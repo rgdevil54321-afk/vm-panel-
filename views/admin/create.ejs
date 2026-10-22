@@ -86,6 +86,7 @@
               <div class="muted text-sm" style="font-size:11px">Own kernel · hard RAM allocation · qcow2 disk · VNC console</div>
             </div>
           </label>
+          <% if (lxcAvailable) { %>
           <label class="virt-card" data-virt="lxc" onclick="selectVirt('lxc')" style="cursor:pointer;border:2px solid var(--border);border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all .18s ease">
             <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0">📦</div>
             <div style="flex:1;min-width:0">
@@ -93,6 +94,15 @@
               <div class="muted text-sm" style="font-size:11px">Shared kernel · soft RAM limit · distro rootfs · SSH only</div>
             </div>
           </label>
+          <% } else { %>
+          <label class="virt-card" style="cursor:not-allowed;opacity:.5;border:2px dashed var(--border);border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass)" title="LXC is not installed on this host">
+            <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0">📦</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px;color:var(--text)">LXC — System Container</div>
+              <div class="muted text-sm" style="font-size:11px">Unavailable — install lxc &amp; lxc-templates on this host to enable</div>
+            </div>
+          </label>
+          <% } %>
         </div>
         <div id="lxcHint" class="form-hint" style="display:none;margin-top:12px;color:#fbbf24;font-weight:600"></div>
       </div>
@@ -153,8 +163,8 @@
              else if (distro.includes('alpine')) icon = '🏔️';
              else if (distro.includes('arch')) icon = '🔷';
           %>
-            <label class="lxc-os-card <%= i === 0 ? 'selected' : '' %>" data-distro="<%= distro %>" style="cursor:pointer;position:relative;border:2px solid <%= i === 0 ? 'var(--accent)' : 'var(--border)' %>;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all 0.18s ease">
-              <input type="radio" name="os" value="<%= o[0] %>" data-username="root" <%= i === 0 ? 'checked' : '' %> style="display:none" onchange="selectOsCard(this)"/>
+            <label class="lxc-os-card" data-distro="<%= distro %>" style="cursor:pointer;position:relative;border:2px solid var(--border);border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px;background:var(--glass);transition:all 0.18s ease">
+              <input type="radio" name="os" value="<%= o[0] %>" data-username="root" style="display:none" onchange="selectOsCard(this)"/>
               <div style="font-size:24px;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);display:grid;place-items:center;flex-shrink:0"><%= icon %></div>
               <div style="flex:1;min-width:0">
                 <div style="font-weight:700;font-size:14px;color:var(--text)"><%= o[0] %></div>

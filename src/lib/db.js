@@ -428,12 +428,14 @@ const defaultSettings = {
     ['Ubuntu 24.04', 'ubuntu', 'noble', 'amd64'],
     ['Ubuntu 22.04', 'ubuntu', 'jammy', 'amd64'],
     ['Debian 12', 'debian', 'bookworm', 'amd64'],
-    ['Debian 11', 'debian', 'bullseye', 'amd64'],
-    ['Alpine 3.20', 'alpine', '3.20', 'amd64'],
-    ['CentOS Stream 9', 'centos', 'stream9', 'amd64'],
+    ['Debian 13', 'debian', 'trixie', 'amd64'],
+    ['Alpine 3.22', 'alpine', '3.22', 'amd64'],
+    ['Alpine 3.21', 'alpine', '3.21', 'amd64'],
+    ['CentOS Stream 9', 'centos', '9-Stream', 'amd64'],
+    ['CentOS Stream 10', 'centos', '10-Stream', 'amd64'],
     ['Rocky Linux 9', 'rockylinux', '9', 'amd64'],
     ['AlmaLinux 9', 'almalinux', '9', 'amd64'],
-    ['Fedora 40', 'fedora', '40', 'amd64'],
+    ['Fedora 43', 'fedora', '43', 'amd64'],
     ['Arch Linux', 'archlinux', 'current', 'amd64']
   ]),
   'vm.default_virt_type': 'qemu',
@@ -678,6 +680,28 @@ function seedSettings() {
   for (const [k, v] of Object.entries(defaultSettings)) stmt.run(k, v);
 }
 seedSettings();
+
+// Repair the LXC template catalog on existing installs. The first shipped
+// default pointed at images.linuxcontainers.org paths and release names that do
+// not exist (and the URL scheme was wrong), so every container build failed with
+// "template download failed". INSERT OR IGNORE above never touches an existing
+// row, so the broken value has to be replaced explicitly - but only when the
+// stored catalog still contains one of the known-bad entries, so an admin who
+// has since curated their own list is left alone.
+(function migrateLxcOsList() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'vm.os_list_lxc'").get();
+    if (!row) return;
+    let list;
+    try { list = JSON.parse(row.value); } catch (_) { return; }
+    if (!Array.isArray(list)) return;
+    const BAD = new Set(['bullseye', 'stream9']);
+    const isStock = list.some((o) => Array.isArray(o) && (BAD.has(o[2]) || o[2] === '3.20' || o[2] === '40'));
+    if (!isStock) return;
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'vm.os_list_lxc'")
+      .run(defaultSettings['vm.os_list_lxc']);
+  } catch (_) {}
+})();
 
 const S = {
   // Normalise scalar values so flag-type settings stored as '0'/'1'/'true' round-trip

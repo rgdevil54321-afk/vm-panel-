@@ -178,6 +178,12 @@ router.post('/admin/servers/:id/action', async (req, res) => {
       const { os } = req.body || {};
       res.json(await vmService.reinstall(vm, { os }, req.user));
     }
+    else if (action === 'convert-lxc') {
+      // Destructive in-place engine change: the qcow2 is discarded and the
+      // machine is rebuilt as a container. Admin-only (this route already is).
+      const { os } = req.body || {};
+      res.json(await vmService.convertToLxc(vm, { os }, req.user));
+    }
     else if (action === 'tmate') {
       const regen = !!(req.body && req.body.regen);
       const job = vmService.startTmateJob(vm, regen);
@@ -363,7 +369,14 @@ router.get('/admin/servers/:id', (req, res) => {
   const schedules = db.prepare('SELECT * FROM schedules WHERE vm_id = ?').all(vm.id);
   const subs = db.prepare('SELECT s.*, u.username FROM subusers s JOIN users u ON u.id = s.user_id WHERE s.vm_id = ?').all(vm.id);
   const allUsers = db.prepare('SELECT id, username, email FROM users ORDER BY username').all();
-  render(res, 'serverDetail', { vm, specs: specs.display(vm), backups, schedules, subs, allUsers, uptime: vmService.uptimeSeconds(vm), mem: vmService.memUsage(vm), osList: vmService.getOsList() });
+  // A container must be reinstalled from the container template catalog, not the
+  // cloud-image list, so hand the view whichever catalog matches the engine. This
+  // also drives the Reinstall control (the old reinstallVm() looked up an element
+  // that was never rendered anywhere).
+  const lxcOsList = typeof vmService.getLxcOsList === 'function' ? vmService.getLxcOsList() : [];
+  const osList = vm.virt_type === 'lxc' ? lxcOsList : vmService.getOsList();
+  const lxcAvailable = typeof vmService.lxcAvailable === 'function' ? vmService.lxcAvailable() : false;
+  render(res, 'serverDetail', { vm, specs: specs.display(vm), backups, schedules, subs, allUsers, uptime: vmService.uptimeSeconds(vm), mem: vmService.memUsage(vm), osList, lxcOsList, lxcAvailable });
 });
 
 router.get('/admin/users', (req, res) => {

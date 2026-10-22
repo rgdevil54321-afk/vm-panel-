@@ -10,17 +10,19 @@ const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
-function gate(req, res) {
+function gate(req, res, { requireRunning = true } = {}) {
   const vm = vmService.getVm(parseInt(req.params.id, 10));
   if (!vm || !vmService.canAccess(req.user, vm, 'console')) {
     res.status(404).json({ error: 'Server not found or no access.' });
     return null;
   }
   if (!vmService.isOwnerOrAdmin(req.user, vm)) {
-    res.status(403).json({ error: 'Only the server owner can generate an SSH link.' });
+    res.status(403).json({ error: 'Only the server owner can manage an SSH link.' });
     return null;
   }
-  if (!vmService.isRunning(vm)) {
+  // Stopping must work even when the server is down, otherwise a session created
+  // before the server was stopped can never be cleaned up from the UI.
+  if (requireRunning && !vmService.isRunning(vm)) {
     res.status(400).json({ error: 'Start the server first.' });
     return null;
   }
@@ -49,7 +51,7 @@ router.post('/servers/:id/sshx', express.json(), ah(async (req, res) => {
 }));
 
 router.post('/servers/:id/sshx/stop', express.json(), ah(async (req, res) => {
-  const vm = gate(req, res);
+  const vm = gate(req, res, { requireRunning: false });
   if (!vm) return;
   sshxService.stop(vm);
   res.json({ ok: true });

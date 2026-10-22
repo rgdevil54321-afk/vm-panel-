@@ -125,7 +125,10 @@ router.get('/servers/:id/status', loadVm(), async (req, res) => {
 });
 
 router.get('/servers/:id/console', loadVm('console'), (req, res) => {
-  render(res, 'server/console', { vm: req.vm });
+  // The sshx fallback hands out a shell and needs the plaintext root password,
+  // so the route is owner/admin-only. Tell the view, otherwise a console-only
+  // subuser sees a "Generate link" button that can only ever return 403.
+  render(res, 'server/console', { vm: req.vm, canSshx: vmService.isOwnerOrAdmin(req.user, req.vm) });
 });
 
 router.get('/servers/:id/bootlog', loadVm('console'), (req, res) => {

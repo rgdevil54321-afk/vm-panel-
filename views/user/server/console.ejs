@@ -344,10 +344,12 @@ body.term-fullscreen #bgOverlay {
       Graphical (VNC)
     </button>
     <% } %>
+    <% if (typeof canSshx === 'undefined' || canSshx) { %>
     <button class="console-tab" id="tabSshx" onclick="switchView('sshx')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:6px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       SSH Link (sshx)
     </button>
+    <% } %>
   </div>
 
   <!-- SSH Terminal Pane (multi-session) -->
@@ -488,6 +490,7 @@ body.term-fullscreen #bgOverlay {
   </div>
 
   <!-- SSH Link (sshx) fallback Pane -->
+  <% if (typeof canSshx === 'undefined' || canSshx) { %>
   <div id="paneSshx" class="card" style="padding:16px;display:none">
     <div class="flex-between" style="margin-bottom:12px;flex-wrap:wrap;gap:10px">
       <div style="max-width:640px">
@@ -506,6 +509,7 @@ body.term-fullscreen #bgOverlay {
     </div>
     <div id="sshxStatus" class="muted text-sm" style="margin-top:8px"></div>
   </div>
+  <% } %>
 </div>
 
 <%- include('../../partials/music') %>
@@ -1520,10 +1524,16 @@ body.term-fullscreen #bgOverlay {
       const r = await VP.api('/servers/<%= vm.id %>/sshx', { method: 'POST' });
       const url = r && r.url;
       if (!url) throw new Error((r && r.error) || 'No link returned');
-      document.getElementById('sshxUrl').value = url;
-      document.getElementById('sshxOpen').href = url;
-      document.getElementById('sshxResult').style.display = 'flex';
-      document.getElementById('sshxStop').style.display = '';
+      const urlEl = document.getElementById('sshxUrl');
+      const openEl = document.getElementById('sshxOpen');
+      const resultEl = document.getElementById('sshxResult');
+      if (urlEl) urlEl.value = url;
+      if (openEl) openEl.href = url;
+      if (resultEl) resultEl.style.display = 'flex';
+      // The button's id is btnSshxStop; using 'sshxStop' here threw a TypeError
+      // and aborted the success path even though the link had been created.
+      const stopEl = document.getElementById('btnSshxStop');
+      if (stopEl) stopEl.style.display = '';
       if (status) {
         status.textContent = r.sshpass
           ? 'Open the link - you land directly in the server shell.'
@@ -1542,10 +1552,14 @@ body.term-fullscreen #bgOverlay {
     try {
       await VP.api('/servers/<%= vm.id %>/sshx/stop', { method: 'POST' });
     } catch (e) { /* already gone */ }
-    document.getElementById('sshxUrl').value = '';
-    document.getElementById('sshxResult').style.display = 'none';
-    document.getElementById('btnSshxStop').style.display = 'none';
-    document.getElementById('sshxStatus').textContent = 'Session stopped.';
+    const urlEl = document.getElementById('sshxUrl');
+    const resultEl = document.getElementById('sshxResult');
+    const stopEl = document.getElementById('btnSshxStop');
+    const status = document.getElementById('sshxStatus');
+    if (urlEl) urlEl.value = '';
+    if (resultEl) resultEl.style.display = 'none';
+    if (stopEl) stopEl.style.display = 'none';
+    if (status) status.textContent = 'Session stopped.';
   };
 
   window.copySshx = function () {
@@ -1563,9 +1577,14 @@ body.term-fullscreen #bgOverlay {
 
   // ---------------- Init ----------------
   const urlParams = new URLSearchParams(window.location.search);
-  const initialTab = (urlParams.get('tab') === 'bootlog' || window.location.hash === '#bootlog') ? 'bootlog'
-    : (urlParams.get('tab') === 'vnc' || window.location.hash === '#vnc') ? 'vnc'
-    : (urlParams.get('tab') === 'sshx' || window.location.hash === '#sshx') ? 'sshx'
+  const hasSshxTab = !!document.getElementById('tabSshx');
+  const hasVncTab = !!document.getElementById('tabVnc');
+  // Only honour ?tab= for panes this user actually got rendered: a container has
+  // no VNC tab, and a console-only subuser has no sshx tab.
+  const wantTab = urlParams.get('tab') || (window.location.hash || '').replace('#', '');
+  const initialTab = wantTab === 'bootlog' ? 'bootlog'
+    : (wantTab === 'vnc' && hasVncTab) ? 'vnc'
+    : (wantTab === 'sshx' && hasSshxTab) ? 'sshx'
     : 'terminal';
 
   initBootTerm();

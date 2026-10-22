@@ -61,6 +61,21 @@ function hasBin(bin) {
   return spawnSync('which', [bin], { stdio: 'ignore' }).status === 0;
 }
 
+function shq(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+// Total physical RAM in MB, used only to clamp a container's hard memory cap so
+// it can never exceed what the node can actually back. Returns 0 when unknown.
+function hostMemMb() {
+  try {
+    const txt = fs.readFileSync('/proc/meminfo', 'utf8');
+    const m = txt.match(/^MemTotal:\s+(\d+)\s+kB/m);
+    if (m) return Math.floor(parseInt(m[1], 10) / 1024);
+  } catch (_) {}
+  return 0;
+}
+
 // lxc-* can be missing on a host that was set up for VMs only. Every caller that
 // needs it checks this first so the user gets an actionable message instead of
 // an ENOENT.
@@ -106,10 +121,34 @@ function findTemplateEntry(list, id) {
   return list.find((o) => o[0] === id || (o[1] + '/' + o[2]) === id) || null;
 }
 
-// images.linuxcontainers.org publishes rootfs tarballs under this layout.
-function templateUrl(entry) {
+// images.linuxcontainers.org does NOT expose .../default/rootfs.tar.xz directly.
+// Each release/arch publishes one directory per daily build, e.g.
+//   /images/ubuntu/noble/amd64/default/20261018_07:42/rootfs.tar.xz
+// and the newest build is simply the highest date-named subdirectory (there is
+// no LATEST symlink on this mirror). Return the directory listing URL, then
+// resolve the newest build inside it.
+function baseDirUrl(entry) {
   const [, distro, release, arch] = entry;
-  return `${TEMPLATE_SERVER}/images/${distro}/${release}/${arch || 'amd64'}/default/rootfs.tar.xz`;
+  return `${TEMPLATE_SERVER}/images/${distro}/${release}/${arch || 'amd64'}/default/`;
+}
+
+// Pick the newest YYYYMMDD_HH:MM build directory out of an Apache listing.
+function newestBuild(html) {
+  const names = (html || '').match(/\d{8}_\d{2}:\d{2}/g) || [];
+  if (!names.length) return null;
+  // Lexicographic order works because the format is fixed-width.
+  return names.sort()[names.length - 1];
+}
+
+// Resolve the concrete rootfs.tar.xz URL for a template, following the
+// per-build directory layout above. Returns null if the listing has no builds.
+async function templateUrl(entry) {
+  const listing = await run('sh', ['-c',
+    `curl -fsSL ${shq(baseDirUrl(entry))} 2>/dev/null || wget -qO- ${shq(baseDirUrl(entry))} 2>/dev/null`
+  ], { timeout: 30000 });
+  const build = newestBuild(listing.stdout);
+  if (!build) return null;
+  return baseDirUrl(entry) + build.replace(':', '%3A') + '/rootfs.tar.xz';
 }
 
 function cachedTemplatePath(entry) {
@@ -123,7 +162,10 @@ async function ensureTemplate(entry, onProgress) {
   const dest = cachedTemplatePath(entry);
   if (fs.existsSync(dest) && fs.statSync(dest).size > 1024 * 1024) return dest;
   const tmp = dest + '.part';
-  const url = templateUrl(entry);
+  const url = await templateUrl(entry);
+  if (!url) {
+    throw new Error('Could not find any published build for ' + entry[0] + ' at ' + baseDirUrl(entry) + ' — check the template entry (distro/release) in Admin → Settings.');
+  }
   if (onProgress) onProgress('Downloading ' + entry[0] + ' rootfs...');
   // wget/curl both land here; wget is already a panel dependency for images.
   const bin = hasBin('wget') ? 'wget' : (hasBin('curl') ? 'curl' : null);
@@ -153,6 +195,9 @@ function writeConfig(vm) {
   fs.mkdirSync(lxcDir, { recursive: true });
   const memMb = Math.max(64, parseInt(vm.memory, 10) || 512);
   const cpus = Math.max(1, parseInt(vm.cpus, 10) || 1);
+  // Hard cap gets headroom over the advertised soft limit (see the comment on
+  // the memory lines below), but never more than the host physically has.
+  const memHardMb = Math.max(memMb, Math.min(Math.round(memMb * 1.5), hostMemMb() || (memMb * 2)));
 
   const lines = [
     '# Managed by Venlix - edits are overwritten on next start.',
@@ -180,11 +225,23 @@ function writeConfig(vm) {
     'lxc.cgroup2.devices.allow = c 10:200 rwm',// /dev/net/tun
     'lxc.mount.entry = /dev/net/tun dev/net/tun none bind,create=file',
     // --- resource limits -----------------------------------------------------
-    // Soft limits: a container that asks for more than this is throttled/OOM
-    // killed inside its own cgroup, never the host. This is why RAM figures here
-    // can be far bigger than a KVM guest on the same box.
-    'lxc.cgroup2.memory.max = ' + memMb + 'M',
+    // Container memory model. This is the whole reason LXC exists in the panel:
+    // the advertised figure is a *soft* target, not a reservation, so many more
+    // containers fit on one box than KVM guests.
+    //
+    //   memory.high  = the advertised RAM. Above this the kernel reclaims page
+    //                  cache and aggressively throttles the cgroup, so the
+    //                  customer feels pressure at their plan size.
+    //   memory.max   = headroom above it. Setting memory.max == memory.high is a
+    //                  trap: memory.current counts page cache, so an ordinary
+    //                  file copy or package build would blow straight through the
+    //                  limit and the OOM killer would kill the container's init.
+    //                  A cap a little above the soft limit keeps the guarantee
+    //                  ("this plan is N MB") while letting bursts breathe.
+    // memory.max is capped at the host's real RAM so one container can never be
+    // handed a limit the node cannot physically back.
     'lxc.cgroup2.memory.high = ' + memMb + 'M',
+    'lxc.cgroup2.memory.max = ' + memHardMb + 'M',
     'lxc.cgroup2.cpu.max = ' + (cpus * 100000) + ' 100000',
   ];
 
@@ -627,6 +684,7 @@ module.exports = {
   getLxcOsList,
   findTemplateEntry,
   templateUrl,
+  baseDirUrl,
   containerName,
   containerDir,
   createContainer,

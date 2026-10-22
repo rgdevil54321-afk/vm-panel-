@@ -32,6 +32,10 @@
       <a class="btn btn-sm" href="/servers/<%= vm.id %>/console?tab=bootlog">Live Boot Logs</a>
       <button class="btn btn-sm btn-primary" onclick="openEdit()">Edit Server</button>
       <button class="btn btn-sm" onclick="openRenew()">Renew</button>
+      <button class="btn btn-sm" onclick="openReinstall()">Reinstall</button>
+      <% if (vm.virt_type !== 'lxc' && lxcAvailable) { %>
+      <button class="btn btn-sm" onclick="openConvert()" title="Rebuild this machine as a container so a much larger RAM plan fits on the same hardware">Convert to Container</button>
+      <% } %>
       <button class="btn btn-sm btn-danger" onclick="del()">Delete Server</button>
     </div>
   </div>
@@ -387,6 +391,68 @@
         <button type="button" class="btn btn-primary" onclick="submitRenew(this)">Apply Renewal</button>
       </div>
     </div>
+</div>
+
+<!-- Reinstall Modal -->
+<div class="vp-modal" id="reinstallModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(500px,94vw)">
+    <div class="flex-between mb-3">
+      <h3 style="font-size:18px;font-weight:700;margin:0">Reinstall <%= vm.name %></h3>
+      <button type="button" class="btn btn-sm" onclick="closeReinstall()">✕</button>
+    </div>
+    <p class="muted text-sm mb-3">
+      <% if (vm.virt_type === 'lxc') { %>
+        Rebuilds this container from a fresh template. <strong>Everything inside it is destroyed.</strong>
+      <% } else { %>
+        Wipes the disk and reinstalls from a template. <strong>All data on the disk is destroyed.</strong>
+      <% } %>
+    </p>
+    <div class="form-group mb-3">
+      <label><%= vm.virt_type === 'lxc' ? 'Container template' : 'Operating system' %></label>
+      <select id="reinstall_os" class="input">
+        <% for (const o of osList) { %>
+          <option value="<%= vm.virt_type === 'lxc' ? o[0] : o[0] %>" <%= vm.os_type === o[1] ? 'selected' : '' %>><%= o[0] %></option>
+        <% } %>
+      </select>
+      <div class="muted text-sm" style="margin-top:6px">Leave as-is to rebuild with the current template, or pick a different one.</div>
+    </div>
+    <div class="flex right" style="gap:8px">
+      <button type="button" class="btn" onclick="closeReinstall()">Cancel</button>
+      <button type="button" class="btn btn-danger" onclick="reinstallVm(this)">Wipe &amp; Reinstall</button>
+    </div>
+  </div>
+</div>
+
+<!-- Convert to Container Modal -->
+<div class="vp-modal" id="convertModal" aria-hidden="true" style="display:none">
+  <div class="vp-modal__panel" data-vp-panel style="max-width:min(520px,94vw)">
+    <div class="flex-between mb-3">
+      <h3 style="font-size:18px;font-weight:700;margin:0">Convert <%= vm.name %> to a container</h3>
+      <button type="button" class="btn btn-sm" onclick="closeConvert()">✕</button>
+    </div>
+    <p class="muted text-sm mb-3">
+      This rebuilds the machine as an <strong>LXC container</strong> instead of a full VM.
+      A container shares the node's kernel, so its RAM figure is a soft limit &mdash; you can
+      sell far larger plans on the same hardware, and it starts instantly.
+    </p>
+    <div class="form-group mb-3">
+      <label>Container template</label>
+      <select id="convert_os" class="input">
+        <% for (const o of lxcOsList) { %>
+          <option value="<%= o[0] %>"><%= o[0] %></option>
+        <% } %>
+      </select>
+    </div>
+    <div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:10px;padding:10px 12px;margin-bottom:14px" class="text-sm">
+      <strong>Destructive:</strong> the current disk is discarded and the machine is rebuilt
+      from the template. Anything stored inside the server is gone, and the server returns
+      <em>stopped</em>. Keep the same name, SSH port and plan.
+    </div>
+    <div class="flex right" style="gap:8px">
+      <button type="button" class="btn" onclick="closeConvert()">Cancel</button>
+      <button type="button" class="btn btn-danger" onclick="convertToLxc(this)">Convert to Container</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -748,15 +814,51 @@ async function loadTmate(regen, btn) {
   }
 }
 
+function openReinstall() { VP.modal.open(document.getElementById('reinstallModal')); }
+function closeReinstall() { VP.modal.close(document.getElementById('reinstallModal')); }
+function openConvert() { VP.modal.open(document.getElementById('convertModal')); }
+function closeConvert() { VP.modal.close(document.getElementById('convertModal')); }
+
+async function convertToLxc(btn) {
+  const sel = document.getElementById('convert_os');
+  const os = (sel && sel.value) || '';
+  const ok = await VP.confirmDialog(
+    'Rebuild <%= vm.name %> as an LXC container from "' + (os || 'the first template') + '"? ' +
+    'The current disk is discarded and the server comes back stopped, keeping its name and SSH port.',
+    { title: 'Convert to container?' }
+  );
+  if (!ok) return;
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Converting…';
+    const r = await VP.api('/admin/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'convert-lxc', os } });
+    VP.toast('Converted to container: ' + ((r.vm && r.vm.name) || 'OK'), 'success');
+    closeConvert();
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    VP.toast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Convert to Container';
+  }
+}
+
 async function reinstallVm(btn) {
-  const os = document.getElementById('reinstall_os').value || '';
-  const ok = await VP.confirmDialog('Wipe the disk of <%= vm.name %> and reinstall from ' + (os || 'its current OS template') + '? This destroys all data on the disk.', { title: 'Reinstall server?' });
+  // The select lives inside the reinstall modal now; it used to be looked up as a
+  // bare 'reinstall_os' element that no view ever rendered, so the button threw.
+  const sel = document.getElementById('reinstall_os');
+  const os = (sel && sel.value) || '';
+  const what = os || 'its current template';
+  const ok = await VP.confirmDialog(
+    '<%= vm.virt_type === "lxc" ? "Rebuild the container" : "Wipe the disk of" %> <%= vm.name %> from ' + what + '? This destroys all data inside it.',
+    { title: 'Reinstall server?' }
+  );
   if (!ok) return;
   try {
     btn.disabled = true;
     const r = await VP.api('/admin/servers/<%= vm.id %>/action', { method: 'POST', body: { action: 'reinstall', os } });
     VP.toast('Reinstall started: ' + ((r.vm && r.vm.name) || 'OK'), 'success');
-    setTimeout(() => location.reload(), 900);
+    closeReinstall();
+    setTimeout(() => location.reload(), 1200);
   } catch (e) {
     VP.toast(e.message, 'error');
     btn.disabled = false;

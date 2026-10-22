@@ -67,6 +67,20 @@ function run(bin, args, { timeout = 120000 } = {}) {
   });
 }
 
+function shq(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+// Total physical RAM in MB; used to clamp a container's hard memory cap.
+function hostMemMb() {
+  try {
+    const txt = fs.readFileSync('/proc/meminfo', 'utf8');
+    const m = txt.match(/^MemTotal:\s+(\d+)\s+kB/m);
+    if (m) return Math.floor(parseInt(m[1], 10) / 1024);
+  } catch (_) {}
+  return 0;
+}
+
 function readTail(file, bytes = 4000) {
   try {
     const st = fs.statSync(file);
@@ -82,9 +96,27 @@ function readTail(file, bytes = 4000) {
 // ---------------------------------------------------------------------------
 // template download / unpack
 // ---------------------------------------------------------------------------
-function templateUrl(entry) {
+// images.linuxcontainers.org publishes one directory per daily build under
+// .../default/ (no LATEST symlink, no rootfs.tar.xz at the default/ level), so
+// the newest build directory has to be discovered from the listing first.
+function baseDirUrl(entry) {
   const [, distro, release, arch] = entry;
-  return `${TEMPLATE_SERVER}/images/${distro}/${release}/${arch || 'amd64'}/default/rootfs.tar.xz`;
+  return `${TEMPLATE_SERVER}/images/${distro}/${release}/${arch || 'amd64'}/default/`;
+}
+
+function newestBuild(html) {
+  const names = (html || '').match(/\d{8}_\d{2}:\d{2}/g) || [];
+  if (!names.length) return null;
+  return names.sort()[names.length - 1];
+}
+
+async function templateUrl(entry) {
+  const listing = await run('sh', ['-c',
+    `curl -fsSL ${shq(baseDirUrl(entry))} 2>/dev/null || wget -qO- ${shq(baseDirUrl(entry))} 2>/dev/null`
+  ], { timeout: 30000 });
+  const build = newestBuild(listing.stdout);
+  if (!build) return null;
+  return baseDirUrl(entry) + build.replace(':', '%3A') + '/rootfs.tar.xz';
 }
 
 function cachedTemplatePath(entry) {
@@ -97,7 +129,8 @@ async function ensureTemplate(entry) {
   const dest = cachedTemplatePath(entry);
   if (fs.existsSync(dest) && fs.statSync(dest).size > 1024 * 1024) return dest;
   const tmp = dest + '.part';
-  const url = templateUrl(entry);
+  const url = await templateUrl(entry);
+  if (!url) throw new Error('No published build found for ' + entry[0] + ' at ' + baseDirUrl(entry));
   const bin = hasBin('wget') ? 'wget' : (hasBin('curl') ? 'curl' : null);
   if (!bin) throw new Error('Neither wget nor curl is installed on this node');
   const args = bin === 'wget' ? ['-q', '-O', tmp, url] : ['-sSL', '-o', tmp, url];
@@ -136,6 +169,8 @@ function writeConfig(vm) {
   fs.mkdirSync(lxcDir, { recursive: true });
   const memMb = Math.max(64, parseInt(vm.memory, 10) || 512);
   const cpus = Math.max(1, parseInt(vm.cpus, 10) || 1);
+  // Hard cap gets headroom over the advertised soft limit, capped at host RAM.
+  const memHardMb = Math.max(memMb, Math.min(Math.round(memMb * 1.5), hostMemMb() || (memMb * 2)));
 
   const lines = [
     '# Managed by Venlix node agent - edits are overwritten on next start.',
@@ -155,8 +190,10 @@ function writeConfig(vm) {
     'lxc.cgroup2.devices.allow = c 136:* rwm',
     'lxc.cgroup2.devices.allow = c 10:200 rwm',
     'lxc.mount.entry = /dev/net/tun dev/net/tun none bind,create=file',
-    'lxc.cgroup2.memory.max = ' + memMb + 'M',
+    // memory.high is the advertised soft limit; memory.max is headroom above it.
+    // Setting them equal makes the OOM killer fire on ordinary page-cache growth.
     'lxc.cgroup2.memory.high = ' + memMb + 'M',
+    'lxc.cgroup2.memory.max = ' + memHardMb + 'M',
     'lxc.cgroup2.cpu.max = ' + (cpus * 100000) + ' 100000',
   ];
 
@@ -213,12 +250,19 @@ async function unpackRootfs(vm, entry) {
   writeContainerIdentity(vm, root);
 }
 
+// Template lookup that tolerates the label ("Ubuntu 24.04"), the bare distro id
+// ("ubuntu") or "distro/release" ("ubuntu/noble"), because the control that
+// submitted the value differs between the create wizard and the reinstall form.
+function findTemplateEntry(list, id) {
+  if (!id) return null;
+  return (list || []).find((o) => o && (o[0] === id || (o[1] + '/' + o[2]) === id || o[1] === id)) || null;
+}
 // ---------------------------------------------------------------------------
 // create - same contract as qemu.createVm: resolves with the stored VM record
 // ---------------------------------------------------------------------------
 async function createVm({ data, osList }) {
   ensureDirs();
-  const entry = osList.find((o) => o[0] === data.os) || osList[0] || [];
+  const entry = findTemplateEntry(osList, data.os) || osList[0] || [];
   if (!entry.length) throw new Error('No container templates configured on this node');
   const vmName = String(data.name || '').trim().replace(/\s+/g, '-');
   if (!vmName || !/^[a-zA-Z0-9_-]+$/.test(vmName)) {
@@ -595,10 +639,14 @@ async function startOnBootAll() {
 async function rebuildVm(vm, data) {
   // Reinstall = destroy the container, wipe its rootfs and unpack a fresh copy of
   // the (possibly new) template. Mirrors qemu.reinstallVm's contract.
-  const entry = (data && data.os)
-    ? (state.get().os_list_lxc || []).find((o) => o[0] === data.os)
-    : { 0: vm.os_name, 1: vm.os_type, 2: vm.codename, 3: 'amd64' };
-  const tmpl = entry && entry.length ? entry : null;
+  const list = state.get().os_list_lxc || [];
+  // Look the requested template up tolerantly, and fall back to the machine's
+  // current template (label, then distro/release) before giving up - a reinstall
+  // that keeps the same OS must never fail just because the value was submitted
+  // as a distro id.
+  const fromData = data && data.os ? findTemplateEntry(list, data.os) : null;
+  const current = findTemplateEntry(list, vm.os_name) || findTemplateEntry(list, vm.os_type + '/' + vm.codename);
+  const tmpl = fromData || current || (vm.os_name ? { 0: vm.os_name, 1: vm.os_type, 2: vm.codename, 3: 'amd64' } : null);
   if (!tmpl) throw new Error('Container template not found for reinstall');
 
   removeVm(vm);

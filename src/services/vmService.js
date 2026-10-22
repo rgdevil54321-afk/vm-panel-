@@ -1582,7 +1582,10 @@ async function create({ user, data }) {
     ? String(data.virt_type).toLowerCase()
     : String(settings.get('vm.default_virt_type') || 'qemu').toLowerCase();
   const osList = virt === 'lxc' ? lxcService.getLxcOsList() : getOsList();
-  const osEntry = osList.find((o) => o[0] === data.os) || osList[0];
+  // Accept the label, the distro id, or "distro/release" so the value survives
+  // whichever control submitted it; fall back to the first configured template.
+  const osEntry = (virt === 'lxc' ? lxcService.findTemplateEntry(osList, data.os) : null)
+    || osList.find((o) => o[0] === data.os) || osList[0];
   if (!osEntry) {
     throw new Error(virt === 'lxc'
       ? 'No container templates configured — add one in Admin → Settings (vm.os_list_lxc) before creating containers.'
@@ -2378,13 +2381,21 @@ async function reinstall(vm, data, user) {
   // Local QEMU VMs are unaffected by this branch.
   if (isLxc(vm) && !isRemoteVm(vm)) {
     const osList = lxcService.getLxcOsList();
-    const entry = (data && data.os ? osList.find((o) => o[0] === data.os) : null)
-      || osList.find((o) => o[0] === vm.os_type) || osList[0];
+    // data.os may arrive as the label ("Ubuntu 24.04"), the distro ("ubuntu") or
+    // "distro/release" depending on which control submitted it, so accept all
+    // three before falling back to the machine's current template.
+    const findEntry = (id) => lxcService.findTemplateEntry(osList, id);
+    const entry = (data && data.os ? findEntry(data.os) : null)
+      || findEntry(vm.os_type) || osList[0];
     if (!entry) throw new Error('No container template configured — add one in Templates Studio (LXC) first.');
     try { lxcService.stop(vm, true); } catch (_) {}
     await lxcService.rebuildContainer({ vm, entry, onProgress: (m) => logger.info(`[lxc] reinstall vm ${vm.id}: ${m}`) });
+    // Store the same tuple the create path does: os_type is the distro (entry[1]),
+    // codename the release (entry[2]). Writing the label here instead made the
+    // "find by vm.os_type" lookup above miss on the next reinstall and also broke
+    // the server-detail OS field and the LXC badge.
     db.prepare('UPDATE vms SET os_type = ?, codename = ?, updated_at = ? WHERE id = ?')
-      .run(entry[0], entry[2] || '', now(), vm.id);
+      .run(entry[1] || '', entry[2] || '', now(), vm.id);
     setDbStatus(vm.id, 'stopped');
     const fresh = getVm(vm.id);
     await lxcService.start(fresh);
@@ -2406,6 +2417,52 @@ async function reinstall(vm, data, user) {
   } catch (_) {}
   logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:reinstall', details: { os: (data && data.os) || vm.os_type } });
   return r;
+}
+
+// ---------- Engine conversion ----------
+// Turn an existing machine into a container in place: keep the same vmid, name,
+// SSH port and billing record, but throw away the qcow2 and build a rootfs.
+// This is the "upgrade this plan" path - a customer on a small KVM box can be
+// moved to a container so a much larger RAM figure fits on the same hardware.
+// The disk contents are NOT migrated (a VM's filesystem cannot be replayed into
+// a container), so this is destructive by design and the caller must confirm.
+async function convertToLxc(vm, data, user) {
+  if (!vm) throw new Error('Server not found');
+  if (isLxc(vm)) throw new Error('This server is already a container.');
+  if (isRemoteVm(vm)) {
+    throw new Error('Converting a server on a remote node is not supported yet — create a new container on that node instead.');
+  }
+  if (!lxcService.lxcAvailable()) {
+    throw new Error('LXC is not installed on this host. Run install.sh (or apt-get install lxc lxc-templates) first.');
+  }
+  const osList = lxcService.getLxcOsList();
+  const entry = lxcService.findTemplateEntry(osList, data && data.os) || osList[0];
+  if (!entry) throw new Error('No container templates configured — add one in Templates Studio (LXC) first.');
+
+  // Stop the VM and remove every QEMU artefact (disk, seed, pid, additional
+  // disks) so the folder is left holding only the new rootfs.
+  try { await stop(vm, { user, force: true }); } catch (_) {}
+  try {
+    const dir = path.join(VM_DIR, String(vm.id));
+    for (const f of ['disk.qcow2', 'seed.iso', 'qemu.pid', 'agent.iso', 'boot.log', 'console.log']) {
+      try { fs.rmSync(path.join(dir, f), { force: true }); } catch (_) {}
+    }
+  } catch (_) {}
+
+  db.prepare('UPDATE vms SET virt_type = ?, vnc_port = NULL, os_type = ?, codename = ?, updated_at = ? WHERE id = ?')
+    .run('lxc', entry[1] || '', entry[2] || '', now(), vm.id);
+
+  const fresh = getVm(vm.id);
+  ensureAgentPort(fresh);
+  await lxcService.createContainer({
+    vm: fresh,
+    entry,
+    onProgress: (m) => logger.info(`[lxc] convert vm ${vm.id}: ${m}`),
+  });
+  setDbStatus(vm.id, 'stopped');
+  logActivity({ user_id: user ? user.id : null, vm_id: vm.id, event: 'vm:convert', details: { to: 'lxc', template: entry[0] } });
+  webhooks.emit(vm, 'vm:convert', { id: vm.id, name: vm.name, to: 'lxc' });
+  return { ok: true, vm: getVm(vm.id) };
 }
 
 // tmate jobs: the panel request returns instantly (Cloudflare kills requests
@@ -2993,7 +3050,7 @@ module.exports = {
     // ---- virtualization -----------------------------------------------------
     VIRT_TYPES, virtType, isLxc, isContainer: isLxc, getLxcOsList: lxcService.getLxcOsList,
     lxcAvailable: lxcService.lxcAvailable, vmDir,
-  reinstall, getTmateSsh, startTmateJob, tmateJobStatus,
+  reinstall, convertToLxc, getTmateSsh, startTmateJob, tmateJobStatus,
   snapshotsFor, createSnapshotFor, revertSnapshotFor, deleteSnapshotFor, fullStatsFor,
   addDataDiskFor, growDataDiskFor, volumesFor, effectiveQuota,
   renewExpiry, vmExpiry,
