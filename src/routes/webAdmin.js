@@ -122,6 +122,9 @@ router.get('/admin/servers/create', (req, res) => {
     lxcAvailable: typeof vmService.lxcAvailable === 'function' ? vmService.lxcAvailable() : false,
     users,
     nodes,
+    // Operator-confirmed public IPv4 (from install time). Empty when this host
+    // has none - the wizard then explains that the mesh address is used instead.
+    publicIpv4: settings.get('net.public_ipv4') || '',
   });
 });
 
@@ -645,6 +648,15 @@ router.post('/admin/settings/general', express.urlencoded({ extended: true }), (
   }
   if (req.body.vm_default_virt_type && ['qemu', 'lxc'].includes(req.body.vm_default_virt_type)) {
     settings.set('vm.default_virt_type', req.body.vm_default_virt_type);
+  }
+  // This host's public IPv4, used to build the guest connect hint. Validated as
+  // a routable literal so it can never carry a mesh/private address into the
+  // SSH instructions users copy. Blank is legitimate (no public IPv4 here).
+  if (req.body['net.public_ipv4'] !== undefined) {
+    const pip = String(req.body['net.public_ipv4'] || '').trim();
+    if (!pip) settings.set('net.public_ipv4', '');
+    else if (require('../services/hostDetect').isPublicIpv4(pip)) settings.set('net.public_ipv4', pip);
+    // else: silently keep the previous value rather than store a bad address.
   }
   activity.logActivity({ user_id: req.user.id, event: 'admin:settings_update' });
   return res.redirect('/admin/settings?updated=1');

@@ -206,17 +206,79 @@ phase1_collect_install_inputs() {
     esac
   done
 
-  # 5) Tailscale mesh — plus the sub-questions do_tailscale would otherwise
-  #    ask mid-install, so nothing prompts once the package phase begins.
+  # 5) Public IPv4 - decides whether a Tailscale mesh is needed at all.
+  #    A host that already has a routable IPv4 hands that address to its VMs, so
+  #    a mesh would only add a second address nobody needs. A host WITHOUT one
+  #    (IPv6-only, NAT'd, CGNAT) cannot make shared-IPv4 VMs reachable any other
+  #    way, so that is the case where Tailscale is worth setting up.
   echo ""
+  printf "${CYAN}${BOLD}  Does this host have its own public IPv4 address?${NC}\n"
+  echo "  Yes  -> VMs are reached on this host's real public IPv4, and the panel"
+  echo "          will hand out this address. No Tailscale mesh is needed."
+  echo "  No   -> the host has no routable IPv4 (IPv6-only / NAT'd / CGNAT)."
+  echo "          A Tailscale mesh is then the only way to reach shared-IPv4 VMs,"
+  echo "          so the installer will offer to set it up."
+  echo ""
+
+  # Auto-detect so the default is almost always correct; the operator can still
+  # override. HOST_PUB_IP is empty when nothing routable was found.
+  HOST_PUB_IP="$(host_public_ipv4)"
+  if [ -n "$HOST_PUB_IP" ]; then
+    echo "  Detected public IPv4: ${HOST_PUB_IP}"
+    PUB_DEFAULT="Y"
+  else
+    echo "  No public IPv4 detected on this host."
+    PUB_DEFAULT="N"
+  fi
+  echo ""
+  while :; do
+    read -r -p "  Host has a public IPv4? [Y/n]: " HAS_PUBLIC_IPV4
+    HAS_PUBLIC_IPV4="${HAS_PUBLIC_IPV4:-$PUB_DEFAULT}"
+    case "$HAS_PUBLIC_IPV4" in
+      [YyNn]) break ;;
+      *) log_err "Please answer Y or n." ;;
+    esac
+  done
+  # Normalise to a single Y/N for the rest of the script.
+  case "$HAS_PUBLIC_IPV4" in
+    [Yy]) HAS_PUBLIC_IPV4="Y" ;;
+    *)    HAS_PUBLIC_IPV4="N" ;;
+  esac
+
+  # Let the operator pin the exact address, since a multi-homed host may detect
+  # the wrong interface.
+  if [ "$HAS_PUBLIC_IPV4" = "Y" ]; then
+    read -r -p "  Public IPv4 to hand to VMs [default: ${HOST_PUB_IP:-auto-detect}]: " IN_PUB_IP
+    IN_PUB_IP="${IN_PUB_IP:-$HOST_PUB_IP}"
+    if [ -n "$IN_PUB_IP" ] && ! is_public_ipv4 "$IN_PUB_IP"; then
+      log_warn "'${IN_PUB_IP}' does not look like a public IPv4 - ignoring it and auto-detecting."
+      IN_PUB_IP="$HOST_PUB_IP"
+    fi
+  else
+    IN_PUB_IP=""
+  fi
+
+  # 6) Tailscale mesh - only relevant when there is NO public IPv4, because that
+  #    is the only case where shared-IPv4 VMs have no other address to be reached
+  #    on. Plus the sub-questions do_tailscale would otherwise ask mid-install,
+  #    so nothing prompts once the package phase begins.
+  INSTALL_TS="N"
+  TS_GO="" ; TS_MODE="" ; TS_NAME="" ; TS_KEY=""
+  if [ "$HAS_PUBLIC_IPV4" = "Y" ]; then
+    echo ""
+    log_info "Public IPv4 present - skipping the Tailscale mesh (not needed)."
+    echo "         Re-run main menu option [15] anytime if you want a mesh as well."
+  else
+    echo ""
   printf "${CYAN}${BOLD}  Set up a Tailscale mesh for this host now?${NC}\n"
-  echo "  Gives shared-IPv4 VMs a private 100.64/10 address reachable from your"
-  echo "  devices, instead of a public IP. Needs an auth key or a browser login."
+  echo "  Without a public IPv4, a mesh 100.64/10 address is what makes"
+  echo "  shared-IPv4 VMs reachable from your devices at all."
+  echo "  Needs an auth key or a browser login."
   echo "  You can also do this later via the main menu option [15]."
   echo ""
   while :; do
-    read -r -p "  Install Tailscale? [y/N]: " INSTALL_TS
-    INSTALL_TS="${INSTALL_TS:-N}"
+    read -r -p "  Install Tailscale? [Y/n]: " INSTALL_TS
+    INSTALL_TS="${INSTALL_TS:-Y}"
     case "$INSTALL_TS" in
       [YyNn]) break ;;
       *) log_err "Please answer y or N." ;;
@@ -224,7 +286,6 @@ phase1_collect_install_inputs() {
   done
 
   # Tailscale sub-answers; do_tailscale consumes them via the TS_PREFILL flag.
-  TS_GO="" ; TS_MODE="" ; TS_NAME="" ; TS_KEY=""
   if [[ "$INSTALL_TS" =~ ^[Yy]$ ]]; then
     if ! command -v tailscale >/dev/null 2>&1; then
       while :; do
@@ -266,8 +327,9 @@ phase1_collect_install_inputs() {
       fi
     fi
   fi
+fi
 
-  echo ""
+echo ""
   log_info "All answers collected. Starting the unattended install — no more questions until it is done."
   echo ""
 }
@@ -449,6 +511,27 @@ EOF
     console.log('[✔] Host Identity applied: ' + (settings.get('panel.hostname')));
   " || log_warn "Could not apply host identity (you can set it later from Panel > Settings > General)."
 
+  # Record the public-IPv4 decision from Phase 1. The panel prefers this address
+  # when it builds the guest connect hint, so a host that has its own public
+  # IPv4 hands that address to VMs instead of a Tailscale 100.x mesh address.
+  # Left unset (and the setting cleared) when the host has none, which lets the
+  # panel fall back to a mesh address or its own detection.
+  echo ""
+  if [ "$HAS_PUBLIC_IPV4" = "Y" ] && [ -n "$IN_PUB_IP" ]; then
+    log_info "Recording public IPv4 for VM connect hints: ${IN_PUB_IP}"
+    BRAND_PUBIP="$IN_PUB_IP" node -e "
+      const { settings } = require('./src/lib/db');
+      settings.set('net.public_ipv4', process.env.BRAND_PUBIP || '');
+      console.log('[✔] Public IPv4 applied: ' + (settings.get('net.public_ipv4') || 'none'));
+    " || log_warn "Could not record the public IPv4 (set it later from Panel > Settings > Networking)."
+  else
+    log_info "No public IPv4 on this host — clearing any pinned address (mesh/auto-detect will be used)."
+    node -e "
+      const { settings } = require('./src/lib/db');
+      settings.set('net.public_ipv4', '');
+    " >/dev/null 2>&1 || true
+  fi
+
   # Export the VN neofetch banner for this host (neofetch / fastfetch / screenfetch)
   install_vn_fetch_banner
 
@@ -500,9 +583,9 @@ EOF
   fi
 
   # --- Tailscale mesh ------------------------------------------------------
-  # VMs reach the network through port forwards on this host's own address, so
-  # joining a tailnet is what lets them be reached without a public IP. Offer
-  # it here so a fresh install ends up mesh-ready, but never make it mandatory:
+  # Only reached when Phase 1 decided this host has NO public IPv4 — a host that
+  # has one hands that address to its VMs directly, so a mesh adds nothing. Here
+  # the mesh is what lets a shared-IPv4 VM be reached at all. Never mandatory:
   # `tailscale up` needs a browser or an auth key, and a headless box that has
   # neither would otherwise be stuck mid-install.
   echo ""
@@ -1362,6 +1445,51 @@ ts_pause() {
 ts_mesh_ip() {
   command -v tailscale >/dev/null 2>&1 || return 0
   tailscale ip -4 2>/dev/null | head -n1 | tr -d '[:space:]'
+}
+
+# Print this host's own public (routable) IPv4, or empty when it has none.
+# Used to decide whether the host needs a Tailscale mesh at all: a host with a
+# public IPv4 hands that address straight to its VMs, so a mesh is pointless.
+# The address is read from an external echo service and then sanity-checked to be
+# a real, non-private, non-mesh, non-loopback literal — a NAT'd or IPv6-only box
+# whose upstream returns something odd must NOT be mistaken for a public host.
+host_public_ipv4() {
+  local ip=""
+  # Two independent echo services; a resolver/route failure in one is not fatal.
+  for svc in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
+    ip="$(curl -s -m 5 -4 "$svc" 2>/dev/null | tr -d '[:space:]')"
+    [ -n "$ip" ] && break
+  done
+  # Fall back to the first global address on a local interface.
+  if [ -z "$ip" ]; then
+    ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -n1)"
+  fi
+  is_public_ipv4 "$ip" || return 0
+  printf '%s' "$ip"
+}
+
+# True when the argument is a routable IPv4 literal (not RFC1918/CGNAT/mesh/etc).
+is_public_ipv4() {
+  local ip="$1" o
+  # Must be exactly four numeric octets.
+  echo "$ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+  # Each octet in range.
+  local IFS=.
+  for o in $ip; do
+    [ "$o" -ge 0 ] 2>/dev/null && [ "$o" -le 255 ] 2>/dev/null || return 1
+  done
+  local a b
+  a="${ip%%.*}"
+  b="$(echo "$ip" | cut -d. -f2)"
+  [ "$a" -eq 10 ] && return 1                       # 10/8
+  [ "$a" -eq 127 ] && return 1                      # loopback
+  [ "$a" -eq 0 ] && return 1                        # 0.0.0.0/8
+  [ "$a" -ge 224 ] && return 1                      # multicast/reserved
+  [ "$a" -eq 169 ] && [ "$b" -eq 254 ] && return 1  # link-local
+  [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && return 1  # 172.16/12
+  [ "$a" -eq 192 ] && [ "$b" -eq 168 ] && return 1  # 192.168/16
+  [ "$a" -eq 100 ] && [ "$b" -ge 64 ] && [ "$b" -le 127 ] && return 1 # CGNAT/100.64/10 (Tailscale lives here)
+  return 0
 }
 
 ts_status() {

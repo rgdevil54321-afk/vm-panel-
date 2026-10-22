@@ -102,4 +102,17 @@ function detectNetwork() {
   return out;
 }
 
-module.exports = { detectNetwork };
+// True only for a routable IPv4 literal: four in-range octets that are not
+// private, loopback, link-local, multicast/reserved, CGNAT or a Tailscale
+// 100.64/10 mesh address. Mirrors the installer's is_public_ipv4() so the panel
+// accepts exactly what install time would have detected.
+function isPublicIpv4(ip) {
+  const s = String(ip || '').trim();
+  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(s)) return false;
+  const p = s.split('.').map(Number);
+  if (p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  if (p[0] === 0 || p[0] >= 224) return false;   // this-net / multicast+reserved
+  return !isPrivateV4(s);
+}
+
+module.exports = { detectNetwork, isPublicIpv4, isPrivateV4, isTailscaleV4 };

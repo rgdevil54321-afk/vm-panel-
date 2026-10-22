@@ -969,15 +969,28 @@ function serializeVm(row) {
   const staticV4 = ['ipv4_shared', 'ipv4_dedicated', 'dual'].includes(ipMode) && !!v4;
   // Shared IPv4 (SDT-BOT "shared IPv4" concept): NAT / ipv4_shared VMs have no
   // address of their own - they are all reachable THROUGH the panel node's own
-  // reachable IPv4 on a unique forwarded port. Preference (SDT-BOT order):
-  //   1) node's Tailscale 100.x mesh IPv4 (reachable from ANY of your devices,
-  //      no public IPv4 needed - this is exactly how SDT-BOT makes an ipv6-
-  //      only node share an IPv4);
-  //   2) node host if it is a real non-loopback address;
-  //   3) else auto-detect the node's public IPv4 once (cached via hostDetect)
+  // reachable IPv4 on a unique forwarded port. Preference:
+  //   1) the address the installer recorded (net.public_ipv4). The installer
+  //      asks whether this host has its own public IPv4, so when it does, that
+  //      exact address is authoritative - it is what the operator confirmed and
+  //      it is deliberately NOT a 100.64/10 mesh address, so a host with a real
+  //      public IP never hands guests a Tailscale address they cannot use;
+  //   2) node's Tailscale 100.x mesh IPv4 (reachable from ANY of your devices,
+  //      no public IPv4 needed - for a host without its own public IPv4);
+  //   3) node host if it is a real non-loopback address;
+  //   4) else auto-detect the node's public IPv4 once (cached via hostDetect)
   //      so the SSH/overview hint is never 127.0.0.1.
   let sharedV4 = null;
   if (!staticV4) {
+    // Operator-confirmed address from install time wins outright (see above).
+    // Only trusted for a local VM: on a remote node the forward lives on that
+    // node, and this setting describes the panel's own box.
+    if (!remote) {
+      try {
+        const pinned = String(settings.get('net.public_ipv4') || '').trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(pinned)) sharedV4 = pinned;
+      } catch (_) {}
+    }
     // Auto-detection reads the PANEL's own interfaces, so it is only ever the
     // right answer for a VM that lives on this box. For a remote node the port
     // forward is on that node, and handing the guest's connect target to the
@@ -985,7 +998,7 @@ function serializeVm(row) {
     // wrong machine. Tailscale made it worse: a 100.x mesh address outranks a
     // real public IP, so a mesh-enabled panel pointed remote VMs at a mesh
     // address their node is not even on. Remote nodes must use their own host.
-    if (!remote) {
+    if (!sharedV4 && !remote) {
       try {
         const nd = require('./hostDetect').detectNetwork();
         const v4s = (nd.addresses || []).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x.addr) && !String(x.addr).startsWith('127.'));
