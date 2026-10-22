@@ -38,11 +38,30 @@ async function main() {
   const role = args.role || 'admin';
   const name = args.name || username;
 
+  // The installer drives this script entirely through arguments/env with its
+  // stdout and stdin discarded. Asking "update password? (y/N)" there reads EOF
+  // and takes the default — an abort that install.sh used to swallow, leaving
+  // the account on its OLD password while the summary printed the new one. When
+  // every value was supplied up front there is nobody to answer, so an existing
+  // user is treated as an explicit update instead of a prompt.
+  const nonInteractive = !!(args.username || process.env.CREATEUSER_USERNAME)
+    && !!(args.email || process.env.CREATEUSER_EMAIL)
+    && !!(args.password || process.env.CREATEUSER_PASSWORD);
+
   const existing = authService.findByUsername(username);
   if (existing) {
+    // Unsuspend + verify as well: a reset admin that stays suspended or
+    // unverified still cannot sign in, which looks exactly like a wrong
+    // password to whoever is staring at the login page.
+    const promote = { password, role, root_admin: 1, suspended: 0, verified: 1 };
+    if (nonInteractive) {
+      authService.updateUser(existing.id, promote);
+      logger.info(`[createuser] Updated existing user ${username} (admin, unsuspended, verified)`);
+      return;
+    }
     const ans = await ask('User already exists. Update password and promote to admin? (y/N)', 'n');
     if (ans.toLowerCase() === 'y') {
-      authService.updateUser(existing.id, { password, role, root_admin: 1 });
+      authService.updateUser(existing.id, promote);
       logger.info(`[createuser] Updated ${username} (admin)`);
       return;
     }

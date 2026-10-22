@@ -492,11 +492,29 @@ EOF
   log_info "Step 7/7: Creating Administrator Account..."
   log_info "Admin account from Phase 1: username='${IN_USER}' email='${IN_EMAIL}' (password set in Phase 1)"
 
-  CREATEUSER_USERNAME="$IN_USER" \
-  CREATEUSER_EMAIL="$IN_EMAIL" \
-  CREATEUSER_PASSWORD="$IN_PASS" \
-  CREATEUSER_ROLE=admin \
-  node scripts/createuser.js >/dev/null 2>&1 || true
+  # Do NOT hide the output. Previously this ran with >/dev/null 2>&1 || true, so
+  # a failed create (for example an existing account whose password prompt read
+  # EOF and aborted) still looked like success while the summary printed
+  # credentials that did not work. Now the real error is shown, and the
+  # credential self-check below confirms the account can actually sign in.
+  if CREATEUSER_USERNAME="$IN_USER" \
+     CREATEUSER_EMAIL="$IN_EMAIL" \
+     CREATEUSER_PASSWORD="$IN_PASS" \
+     CREATEUSER_ROLE=admin \
+     node scripts/createuser.js; then
+    log_ok "Administrator account ready: ${IN_USER} <${IN_EMAIL}>"
+  else
+    log_err "Could not create the administrator account (see the error above)."
+    log_err "The panel will still start, but no admin login will work until this is fixed."
+  fi
+
+  # Prove the credentials actually authenticate before telling the operator they
+  # work. Reads the hash the same way the login route does.
+  if verify_admin_login "$IN_USER" "$IN_PASS"; then
+    log_ok "Verified: the admin credentials below will sign in."
+  else
+    log_warn "Credential self-check FAILED — the login printed below may not work. Report this."
+  fi
 
   # Customise system identity (host name / CPU / GPU shown in neofetch + UI)
   # — answers collected in Phase 1.
@@ -681,6 +699,24 @@ EOF
 # =============================================================================
 # 2. CREATE / RESET ADMIN USER (usercrate admin)
 # =============================================================================
+# Confirm that a username/password pair really authenticates, using the same
+# bcrypt comparison the login route uses. Catches the class of bug where the
+# installer prints credentials that the stored hash does not match (a failed or
+# skipped create/update). Returns 0 only when the account exists, the password
+# matches, and it is actually an administrator.
+verify_admin_login() {
+  CREDCHECK_USER="$1" CREDCHECK_PASS="$2" node -e "
+    const auth = require('./src/services/authService');
+    const bcrypt = require('bcryptjs');
+    const u = auth.findByUsername(process.env.CREDCHECK_USER);
+    if (!u) { console.log('[x] no such user'); process.exit(1); }
+    if (!bcrypt.compareSync(process.env.CREDCHECK_PASS, u.password)) { console.log('[x] password mismatch'); process.exit(1); }
+    if (u.role !== 'admin' && !u.root_admin) { console.log('[x] not an administrator'); process.exit(1); }
+    if (u.suspended) { console.log('[x] account suspended'); process.exit(1); }
+    console.log('[ok] admin login verified for ' + u.username);
+  "
+}
+
 do_create_user() {
   safe_clear
   printf "${CYAN}${BOLD}"
@@ -731,6 +767,14 @@ do_create_user() {
   "
 
   log_ok "Administrator account '${A_USER}' is ready for login."
+
+  # Same self-check as the installer: never print a green success for
+  # credentials that the stored hash does not actually accept.
+  if verify_admin_login "$A_USER" "$A_PASS"; then
+    log_ok "Verified: '${A_USER}' can sign in with the password you just entered."
+  else
+    log_err "Self-check FAILED — '${A_USER}' could NOT sign in with that password."
+  fi
   echo ""
 }
 
