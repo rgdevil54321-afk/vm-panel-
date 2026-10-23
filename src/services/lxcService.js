@@ -106,6 +106,23 @@ function containerName(vm) {
   return 'vp-' + vm.id + '-' + String(vm.name || 'ct').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
 }
 
+// The lxc CLI resolves `-n <name>` as `<lxcpath>/<name>/config`, defaulting to
+// /var/lib/lxc. The panel keeps each container inside its VM directory instead,
+// so EVERY lxc command must be told where to look with `-P <lxcpath>`.
+// Omitting it is not a cosmetic problem: `lxc-start -n vp-1-test` with no -P
+// looks in /var/lib/lxc/vp-1-test/config, finds nothing, and dies with
+// "No container config specified" - exactly the failure this helper prevents.
+function lxcPath(vm) {
+  const dir = path.join(containerDir(vm), 'lxc');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Build the argv prefix every lxc CLI call needs so it sees the right path.
+function lxcArgs(vm, args) {
+  return ['-P', lxcPath(vm), ...args];
+}
+
 // ---------------------------------------------------------------------------
 // OS / template catalog
 // ---------------------------------------------------------------------------
@@ -191,8 +208,16 @@ async function ensureTemplate(entry, onProgress) {
 // path already uses - no bridge, no NAT, no hostfwd.
 function writeConfig(vm) {
   const dir = containerDir(vm);
-  const lxcDir = path.join(dir, 'lxc');
-  fs.mkdirSync(lxcDir, { recursive: true });
+  // lxc CLI layout: <lxcpath>/<name>/config. lxcPath() creates the parent.
+  const cfgDir = path.join(lxcPath(vm), containerName(vm));
+  fs.mkdirSync(cfgDir, { recursive: true });
+  // The config is regenerated below on every call, so an older install that put
+  // it at the previous (non-CLI) location just leaves a stale file behind. Sweep
+  // it so nothing downstream can read the wrong one.
+  try {
+    const stale = path.join(dir, 'lxc', 'config');
+    if (fs.existsSync(stale)) fs.rmSync(stale, { force: true });
+  } catch (_) {}
   const memMb = Math.max(64, parseInt(vm.memory, 10) || 512);
   const cpus = Math.max(1, parseInt(vm.cpus, 10) || 1);
   // Hard cap gets headroom over the advertised soft limit (see the comment on
@@ -256,8 +281,8 @@ function writeConfig(vm) {
     lines.push('lxc.apparmor.profile = unconfined');
   }
 
-  fs.writeFileSync(path.join(lxcDir, 'config'), lines.join('\n') + '\n', 'utf8');
-  return path.join(lxcDir, 'config');
+  fs.writeFileSync(path.join(cfgDir, 'config'), lines.join('\n') + '\n', 'utf8');
+  return path.join(cfgDir, 'config');
 }
 
 // Look at /etc/subuid and /etc/subgid for a range we can map into. Returns null
@@ -288,7 +313,7 @@ function canUseUnprivileged() {
 // stopped outside the panel, so never trust the DB column for a local container.
 function isRunning(vm) {
   if (!hasBin('lxc-info')) return false;
-  const r = spawnSync('lxc-info', ['-n', containerName(vm), '-s'], { encoding: 'utf8', timeout: 10000 });
+  const r = spawnSync('lxc-info', lxcArgs(vm, ['-n', containerName(vm), '-s']), { encoding: 'utf8', timeout: 10000 });
   if (r.status !== 0 || !r.stdout) return false;
   return /RUNNING/i.test(r.stdout);
 }
@@ -384,7 +409,7 @@ async function bootstrap(vm) {
   ).filter(Boolean);
 
   const script = steps.join('\n');
-  const r = await run('lxc-attach', ['-n', name, '--', '/bin/sh', '-c', script], { timeout: 180000 });
+  const r = await run('lxc-attach', lxcArgs(vm, ['-n', name, '--', '/bin/sh', '-c', script]), { timeout: 180000 });
   if (r.code !== 0) {
     logger.warn('[lxc] bootstrap for vm ' + vm.id + ' reported: ' + (r.stderr || r.stdout || 'exit ' + r.code).slice(0, 400));
   }
@@ -431,9 +456,9 @@ async function start(vm) {
   const name = containerName(vm);
 
   // Guard against a stale registration left by an unclean shutdown.
-  try { spawnSync('lxc-stop', ['-n', name, '-k'], { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
+  try { spawnSync('lxc-stop', lxcArgs(vm, ['-n', name, '-k']), { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
 
-  const r = await run('lxc-start', ['-n', name, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  const r = await run('lxc-start', lxcArgs(vm, ['-n', name, '-d', '-l', 'DEBUG', '-o', logFile]), { timeout: 120000 });
   if (r.code !== 0) {
     const detail = readTail(logFile) || r.stderr || ('lxc-start exited ' + r.code);
     throw new Error('Container failed to start: ' + detail.slice(0, 400));
@@ -463,7 +488,7 @@ function stop(vm, force = false) {
   if (!hasBin('lxc-stop')) return { ok: false, error: 'LXC is not installed on this node' };
   const args = ['-n', name];
   if (force) args.push('-k');       // SIGKILL
-  const r = spawnSync('lxc-stop', args, { encoding: 'utf8', timeout: force ? 20000 : 60000 });
+  const r = spawnSync('lxc-stop', lxcArgs(vm, args), { encoding: 'utf8', timeout: force ? 20000 : 60000 });
   if (r.status !== 0) {
     const err = String(r.stderr || '');
     // "not running" is a success as far as the panel is concerned.
@@ -487,9 +512,9 @@ async function restart(vm) {
 // directory itself is removed by the caller along with the VM row.
 function remove(vm) {
   const name = containerName(vm);
-  try { if (isRunning(vm)) spawnSync('lxc-stop', ['-n', name, '-k'], { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
+  try { if (isRunning(vm)) spawnSync('lxc-stop', lxcArgs(vm, ['-n', name, '-k']), { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
   if (hasBin('lxc-destroy')) {
-    const r = spawnSync('lxc-destroy', ['-n', name], { encoding: 'utf8', timeout: 30000 });
+    const r = spawnSync('lxc-destroy', lxcArgs(vm, ['-n', name]), { encoding: 'utf8', timeout: 30000 });
     if (r.status !== 0 && !/does not exist|no such container/i.test(String(r.stderr || ''))) {
       logger.warn('[lxc] lxc-destroy for ' + name + ': ' + String(r.stderr || '').slice(0, 200));
     }
@@ -547,7 +572,7 @@ function liveStats(vm) {
 
 function containerInitPid(vm) {
   if (!hasBin('lxc-info')) return null;
-  const r = spawnSync('lxc-info', ['-n', containerName(vm), '-p'], { encoding: 'utf8', timeout: 8000 });
+  const r = spawnSync('lxc-info', lxcArgs(vm, ['-n', containerName(vm), '-p']), { encoding: 'utf8', timeout: 8000 });
   if (r.status !== 0 || !r.stdout) return null;
   const m = String(r.stdout).match(/\d+/);
   return m ? parseInt(m[0], 10) : null;
@@ -570,7 +595,7 @@ function dirSize(dir, seen = { bytes: 0 }) {
 // Network totals come from the container's own /proc/net/dev via attach, which is
 // accurate for host networking regardless of which veth (if any) is involved.
 async function netTotals(vm) {
-  const r = await run('lxc-attach', ['-n', containerName(vm), '--', '/bin/sh', '-c', 'cat /proc/net/dev 2>/dev/null'], { timeout: 15000 });
+  const r = await run('lxc-attach', lxcArgs(vm, ['-n', containerName(vm), '--', '/bin/sh', '-c', 'cat /proc/net/dev 2>/dev/null']), { timeout: 15000 });
   if (r.code !== 0) return { rx: 0, tx: 0 };
   let rx = 0;
   let tx = 0;
