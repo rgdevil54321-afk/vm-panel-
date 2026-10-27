@@ -20,6 +20,24 @@ const state = require('./state');
 
 const NODE_DIR = path.resolve(__dirname, '..');
 const VM_DIR = path.resolve(NODE_DIR, process.env.VM_DIR || 'vms');
+
+function hostLoadInfo() {
+  try {
+    const load = os.loadavg && os.loadavg()[0];
+    const cores = os.cpus ? os.cpus().length : 1;
+    if (typeof load === 'number' && cores > 0) {
+      return { load, cores, ratio: load / cores };
+    }
+  } catch (_) {}
+  return { load: 0, cores: 1, ratio: 0 };
+}
+
+function assertHostNotOverloaded(action = 'start') {
+  const info = hostLoadInfo();
+  if (info.ratio >= 0.98) {
+    throw new Error(`Host is overloaded (load ${info.load.toFixed(2)} / ${info.cores} cores). Free up CPU/RAM before trying to ${action} an LXC VPS.`);
+  }
+}
 const TEMPLATE_CACHE = path.join(VM_DIR, '.lxc-templates');
 const TEMPLATE_SERVER = process.env.LXC_TEMPLATE_SERVER || 'https://images.linuxcontainers.org';
 
@@ -464,6 +482,7 @@ function waitForPort(port, timeoutMs) {
 }
 
 async function startVm(vm) {
+  try { assertHostNotOverloaded('start'); } catch (e) { return { ok: false, error: e.message }; }
   if (!lxcAvailable()) return { ok: false, error: 'LXC is not installed on this node (apt-get install -y lxc lxc-templates)' };
   if (!rootfsReady(vm)) return { ok: false, error: 'Container rootfs is missing - reinstall this machine' };
   if (isRunning(vm)) return { ok: true, already: true };

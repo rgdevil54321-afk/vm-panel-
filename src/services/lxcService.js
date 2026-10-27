@@ -21,7 +21,26 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { spawn, spawnSync, execFileSync } = require('child_process');
+
+function hostLoadInfo() {
+  try {
+    const load = os.loadavg && os.loadavg()[0];
+    const cores = os.cpus ? os.cpus().length : 1;
+    if (typeof load === 'number' && cores > 0) {
+      return { load, cores, ratio: load / cores };
+    }
+  } catch (_) {}
+  return { load: 0, cores: 1, ratio: 0 };
+}
+
+function assertHostNotOverloaded(action = 'start') {
+  const info = hostLoadInfo();
+  if (info.ratio >= 0.98) {
+    throw new Error(`Host is overloaded (load ${info.load.toFixed(2)} / ${info.cores} cores). Free up CPU/RAM before trying to ${action} an LXC VPS.`);
+  }
+}
 const config = require('../lib/config');
 const { settings } = require('../lib/db');
 const logger = require('../lib/logger');
@@ -442,6 +461,7 @@ function agentSourceUrl() {
 // Start a container. Mirrors vmService.start's contract: resolve to a small
 // result object rather than throwing, so the route layer can report a reason.
 async function start(vm) {
+  try { assertHostNotOverloaded('start'); } catch (e) { throw e; }
   if (!lxcAvailable()) {
     throw new Error('LXC is not installed on this node. Run: apt-get install -y lxc lxc-templates (or use a QEMU machine).');
   }
