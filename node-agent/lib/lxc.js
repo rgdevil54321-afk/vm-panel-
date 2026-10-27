@@ -468,12 +468,23 @@ async function startVm(vm) {
   if (!rootfsReady(vm)) return { ok: false, error: 'Container rootfs is missing - reinstall this machine' };
   if (isRunning(vm)) return { ok: true, already: true };
   const dir = vmDir(vm);
-  writeConfig(vm);
+  const cfgPath = writeConfig(vm);
   const name = containerName(vm);
   const logFile = path.join(dir, 'lxc-start.log');
+  try { spawnSync('lxc-stop', ['-f', cfgPath, '-n', name, '-k'], { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
   try { spawnSync('lxc-stop', lxcArgs(vm, ['-n', name, '-k']), { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
+  try { spawnSync('lxc-stop', ['-n', name, '-k'], { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
 
-  const r = await run('lxc-start', lxcArgs(vm, ['-n', name, '-d', '-l', 'DEBUG', '-o', logFile]), { timeout: 120000 });
+  let r = await run('lxc-start', ['-f', cfgPath, '-n', name, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  if (r.code !== 0) {
+    r = await run('lxc-start', lxcArgs(vm, ['-n', name, '-d', '-l', 'DEBUG', '-o', logFile]), { timeout: 120000 });
+  }
+  if (r.code !== 0) {
+    r = await run('lxc-start', ['-P', path.join(dir, 'lxc'), '-n', name, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  }
+  if (r.code !== 0) {
+    r = await run('lxc-start', ['-f', cfgPath, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  }
   if (r.code !== 0) {
     return { ok: false, error: 'Container failed to start: ' + (readTail(logFile) || r.stderr || '').slice(0, 400) };
   }
@@ -490,9 +501,14 @@ async function startVm(vm) {
 
 function stopVm(vm, force = false) {
   if (!hasBin('lxc-stop')) return { ok: false, error: 'LXC is not installed on this node' };
+  let cfgPath;
+  try { cfgPath = writeConfig(vm); } catch (_) {}
   const args = ['-n', containerName(vm)];
   if (force) args.push('-k');
-  const r = spawnSync('lxc-stop', lxcArgs(vm, args), { encoding: 'utf8', timeout: force ? 20000 : 60000 });
+  let r = spawnSync('lxc-stop', lxcArgs(vm, args), { encoding: 'utf8', timeout: force ? 20000 : 60000 });
+  if (r.status !== 0 && cfgPath) {
+    try { r = spawnSync('lxc-stop', ['-f', cfgPath, ...args], { encoding: 'utf8', timeout: force ? 20000 : 60000 }); } catch (_) {}
+  }
   if (r.status !== 0) {
     const err = String(r.stderr || '');
     if (!/not running|does not exist|no such container/i.test(err)) return { ok: false, error: err.slice(0, 300) };

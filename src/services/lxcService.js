@@ -451,14 +451,27 @@ async function start(vm) {
   if (isRunning(vm)) return { ok: true, already: true };
 
   const dir = containerDir(vm);
-  writeConfig(vm);
+  const cfgPath = writeConfig(vm);
   const logFile = path.join(dir, 'lxc-start.log');
   const name = containerName(vm);
 
   // Guard against a stale registration left by an unclean shutdown.
+  try { spawnSync('lxc-stop', ['-f', cfgPath, '-n', name, '-k'], { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
   try { spawnSync('lxc-stop', lxcArgs(vm, ['-n', name, '-k']), { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
+  try { spawnSync('lxc-stop', ['-n', name, '-k'], { stdio: 'ignore', timeout: 20000 }); } catch (_) {}
 
-  const r = await run('lxc-start', lxcArgs(vm, ['-n', name, '-d', '-l', 'DEBUG', '-o', logFile]), { timeout: 120000 });
+  // Prefer explicit config path (-f) to avoid lxcpath/name resolution issues
+  let r = await run('lxc-start', ['-f', cfgPath, '-n', name, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  if (r.code !== 0) {
+    r = await run('lxc-start', lxcArgs(vm, ['-n', name, '-d', '-l', 'DEBUG', '-o', logFile]), { timeout: 120000 });
+  }
+  if (r.code !== 0) {
+    r = await run('lxc-start', ['-P', path.join(dir, 'lxc'), '-n', name, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  }
+  if (r.code !== 0) {
+    // Last resort: try without -n if config is self-describing
+    r = await run('lxc-start', ['-f', cfgPath, '-d', '-l', 'DEBUG', '-o', logFile], { timeout: 120000 });
+  }
   if (r.code !== 0) {
     const detail = readTail(logFile) || r.stderr || ('lxc-start exited ' + r.code);
     throw new Error('Container failed to start: ' + detail.slice(0, 400));
@@ -486,9 +499,14 @@ async function start(vm) {
 function stop(vm, force = false) {
   const name = containerName(vm);
   if (!hasBin('lxc-stop')) return { ok: false, error: 'LXC is not installed on this node' };
+  let cfgPath;
+  try { cfgPath = writeConfig(vm); } catch (_) {}
   const args = ['-n', name];
   if (force) args.push('-k');       // SIGKILL
-  const r = spawnSync('lxc-stop', lxcArgs(vm, args), { encoding: 'utf8', timeout: force ? 20000 : 60000 });
+  let r = spawnSync('lxc-stop', lxcArgs(vm, args), { encoding: 'utf8', timeout: force ? 20000 : 60000 });
+  if (r.status !== 0 && cfgPath) {
+    try { r = spawnSync('lxc-stop', ['-f', cfgPath, ...args], { encoding: 'utf8', timeout: force ? 20000 : 60000 }); } catch (_) {}
+  }
   if (r.status !== 0) {
     const err = String(r.stderr || '');
     // "not running" is a success as far as the panel is concerned.
