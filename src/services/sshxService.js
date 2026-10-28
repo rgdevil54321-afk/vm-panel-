@@ -119,6 +119,11 @@ function writeWrapper(vm, target, useSshpass) {
   }
   const file = path.join(SESSION_DIR, `vm${vm.id}-${Date.now()}.sh`);
   const sshCmd = 'ssh ' + [
+    // -tt forces a remote TTY even when the local stdin is not one. sshx's
+    // --shell runs the wrapper without guaranteeing a PTY, and without this an
+    // interactive-less ssh starts a non-interactive bash that prints nothing
+    // and exits immediately - the user just sees an empty shared terminal.
+    '-tt',
     '-o', 'StrictHostKeyChecking=no',
     '-o', 'UserKnownHostsFile=/dev/null',
     '-o', 'LogLevel=ERROR',
