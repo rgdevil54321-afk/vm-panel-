@@ -289,19 +289,12 @@ function writeConfig(vm) {
     'lxc.cgroup2.cpu.max = ' + (cpus * 100000) + ' 100000',
   ];
 
-  // Unprivileged mapping is only possible when the host has a subuid/subgid
-  // range configured; otherwise lxc-start refuses to boot the container.
-  const unpriv = canUseUnprivileged();
-  if (unpriv) {
-    lines.push('lxc.idmap = u 0 ' + unpriv.uidBase + ' 65536');
-    lines.push('lxc.idmap = g 0 ' + unpriv.gidBase + ' 65536');
-    lines.push('lxc.apparmor.profile = generated');
-  } else {
-    lines.push('# unprivileged mapping unavailable on this host - try privileged mode');
-    lines.push('lxc.apparmor.profile = unconfined');
-    lines.push('# lxc.idmap entries removed for compatibility');
-  }
-  // Extra compatibility for some LXC versions
+  // Disable idmap/console allocation for maximum compatibility on shared hosts
+  lines.push('# idmap disabled for terminal/pts compatibility');
+  lines.push('lxc.apparmor.profile = unconfined');
+  lines.push('lxc.tty.max = 0');
+  lines.push('lxc.pty.max = 0');
+  lines.push('lxc.console.path = none');
   lines.push('lxc.cap.drop = ');
   lines.push('lxc.hook.autodev = 1');
 
