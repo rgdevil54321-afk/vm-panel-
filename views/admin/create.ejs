@@ -679,16 +679,18 @@ function selectVirt(virt) {
   if (first) { first.checked = true; selectOsCard(first); }
 
   // QEMU-only knobs: a container has no qcow2 image, no VNC, no cloud-init.
-  ['fDisk', 'fPool'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.closest('.form-group').style.display = isLxc ? 'none' : '';
-  });
+  const elPool = document.getElementById('fPool');
+  if (elPool && elPool.closest('.form-group')) elPool.closest('.form-group').style.display = isLxc ? 'none' : '';
+
+  // Disk is needed for both: QEMU uses qcow2 disk, LXC uses rootfs size
+  const elDisk = document.getElementById('fDisk');
+  if (elDisk && elDisk.closest('.form-group')) elDisk.closest('.form-group').style.display = '';
 
   const hint = document.getElementById('lxcHint');
   if (hint) {
     hint.style.display = isLxc ? 'block' : 'none';
     hint.textContent = isLxc
-      ? 'Container mode: the disk is the node filesystem (no qcow2 image), memory is a soft cgroup limit, and access is SSH only (no VNC).'
+      ? 'Container mode: disk defines rootfs size on the node filesystem, memory is a soft cgroup limit, and access is SSH only (no VNC).'
       : '';
   }
   updateSummary();
